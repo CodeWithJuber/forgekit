@@ -43,7 +43,7 @@ function parse({ file, text }) {
       });
     } else if (kind) limitations.add("unnamed-or-pattern-declaration");
     function reference(fields) {
-      refs.push({ owner, line: line(n.getStart(tree)), ...fields });
+      refs.push({ owner, line: line(n.getStart(tree)), position: n.getStart(tree), ...fields });
     }
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
       if (n.moduleSpecifier && ts.isStringLiteralLike(n.moduleSpecifier)) {
@@ -70,7 +70,11 @@ function parse({ file, text }) {
         if (clause.token !== ts.SyntaxKind.ExtendsKeyword) continue;
         for (const base of clause.types) {
           if (ts.isIdentifier(base.expression))
-            reference({ kind: "inherits", target: base.expression.text });
+            reference({
+              kind: "inherits",
+              target: base.expression.text,
+              position: base.getStart(tree),
+            });
           else limitations.add("dynamic-base");
         }
       }

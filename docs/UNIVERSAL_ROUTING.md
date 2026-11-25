@@ -1,22 +1,22 @@
-# Universal routing
+# Model routing
 
-`forge route universal` recommends a model, or a cascade of models ("try A; if a check fails, try B"), for a task. It works with any provider's models.
+## Repository recommendations
 
-The router code names no vendor, model, tier or threshold, and a test enforces that. Models come from data (`data/models.json`, plus `.forge/models.json` in a project). What each model can do and what it costs is learned from recorded outcomes.
+`forge route "<task>"` selects an exact wire ID for the active provider when the operator has chosen a model or the repository has evidence. Without either it returns `status: "unrated"` and a null model. `forge route universal "<task>" --provider NAME` compares first attempts for the account-listed models bound to that profile. Filters include an explicit workload and a measured high, medium or low band. These recommendations are advisory. Native coding clients control their own model. [Provider inventory and configuration](MODELS-AND-COMPONENTS.md)
 
-> **Evidence status (2026-09-26).** Three results, kept apart:
->
-> - **The run-4 held-out headline** (76.3% solved at $0.093 per task) is **repository-reported**. It was produced by an external harness (harness-bench) that is not shipped here; its split ids, pre-registration and metric code are not in this repository, and it has not been independently reproduced.
-> - **The shipped prior's refit is reproduced in this repository.** `bench/universal-router/reproduce.sh` downloads the pinned, sha256-checked public inputs and refits `data/router_prior.json`; on 2026-09-26 all 176 fitted values came out identical (only `provenance.fittedAt` differs). That shows the calculation reproduces. It is the project's own run, not an independent third-party replication (see [Reproducibility](#reproducibility)).
-> - **A new held-out replay in this repository** (a different split, not run 4) finds that the router does **not** beat a fixed cascade chosen on the same dev tasks: 80.0% solved at $0.124 per task, against the cascade's 80.6% at $0.136 ([details](#a-new-held-out-replay-in-this-repository-2026-09-26)).
->
-> The shipped prior is a useful initialization, not a guarantee about your workload. The universal router is a separately versioned component from the old tiered router whose 62.1% saving was refuted (`research/empirical-refutation/`); neither result transfers to the other.
+A local verifier event authenticates an attempt’s pass or fail verdict for the checkout and code state. The operator reports the task, model, workload and cost. The interval describes the recorded cohort. Selecting among candidate sequences on that cohort and changes behind a stable model alias can affect performance on future tasks. Outcomes with a recorded registry binding include the profile, wire model and transport fingerprint. Renaming a deployment or changing the endpoint makes its previous samples ineligible for account-scoped recommendations. Older rows without this binding remain readable for benchmark fitting. For each model and task, the first verified attempt is eligible. Replays and retries cannot improve the rate. For an exact repeat, the cohort is that task. Otherwise, models must have common tasks with a finite, nonnegative cost for every compared model. An empty intersection, an all-failing cohort or a stale provider listing yields no automatic selection.
 
-How a recommendation is chosen, run and learned from:
+For a candidate sequence and each common task, replay its recorded attempts in order until one passes. Divide the tasks solved by the number of tasks to obtain the observed success proportion. Sum the costs of the attempts reached on each task and average across tasks. This replay preserves correlations in both failures and attempt costs. Within a cohort the estimate comes with a descriptive two-sided 95% Wilson interval. The default chooses the cheapest sequence equaling or exceeding the best single model’s lower success bound. Every candidate has the same denominator. An explicit budget, target probability, or value per solved task changes the objective. The interval is descriptive after model selection and gives no guarantee of future success or charges.
 
-[![forge route universal: the task's 12 features and each model's P(solve) and expected cost select the best cascade for the objective, or report INFEASIBLE with a labeled least-bad fallback; the caller runs the cascade: each attempt is checked by tests or forge verify, a failure escalates to the next model, and forge route outcome records each outcome for forge route fit, which refits a local estimate shrunk toward the shipped prior](diagrams/router-cascade.svg)](https://jubershaikh.com/forgekit/diagrams/router-cascade.html)
+Ordinary routing compares single models. For example, `forge route universal "Update the parser" --provider lab --workload repair --depth 2 --objective target:0.8` can compare one- and two-model sequences. A target must be met by the lower Wilson bound. An infeasible objective returns a labeled fallback. `forge route calibrate --workload repair` reports per-model leave-one-task-out Brier scores from verified first attempts when at least two tasks exist.
 
-<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/router-cascade.html): pan, zoom, search, and trace any node.</sub>
+## Offline benchmark comparison
+
+Without a provider, `forge route universal` uses the public SWE-bench fit or a local refit. Registry-only models with no fitted outcomes are excluded. The public experiment estimates results on its historical scaffold. Current account inventory and local workload evidence are separate sources.
+
+On 2026-11-25 the prior was refitted from 5,500 scored attempts on 500 public tasks across 11 models. Its inputs are the logarithms of prompt character count and newline count, and half the count of Markdown code fences. All coefficients were refitted after removing the handwritten rubric features. The all-task fit selected one latent dimension and prior scale 4. A second fit reproduced all 162 values compared by the strict reproduction script, excluding the timestamp. The seeded replay trained on 150 development tasks and evaluated on 350 held-out tasks. It solved 80.0% at $0.128 per task. The development-selected fixed cascade solved 80.6% at $0.136. The paired bootstrap difference in success was −0.6 percentage points (95% interval −1.4 to 0.0). Results below dated September describe the previous feature set. [Inputs and reproduction commands](../bench/universal-router/README.md)
+
+[![Three observed text measurements and fitted costs produce an offline benchmark comparison of cascades. A caller verifies attempts and records their outcomes.](diagrams/router-cascade.svg)](https://jubershaikh.com/forgekit/diagrams/router-cascade.html)
 
 ## The model
 
@@ -29,7 +29,7 @@ P(model m solves task j | θ_j) = σ( a_m − w·x_j + λ_m·θ_j ),   θ_j ~ N(
 | Symbol | Meaning |
 |---|---|
 | `a_m` | the ability of model m |
-| `x_j` | task features (text; repository signals when a repo is present) |
+| `x_j` | three observable text counts standardized on training data |
 | `w` | learned weights that turn features into a difficulty, so unseen tasks get one |
 | `θ_j` | the difficulty the features miss, shared by all models through their loadings `λ_m` |
 
@@ -68,16 +68,7 @@ Every ordered cascade of up to 3 candidates is evaluated; `--depth` bounds the s
 
 **When no cascade satisfies the objective.** A `budget:B` or `target:p` that nothing can meet is reported as infeasible, never as a quiet best effort: the result carries `feasible: false`, `budgetMet: false` for a budget objective, the `minimumExpectedCost` any candidate cascade achieves, the `estimatedCostIfAllAttemptsRun` of the recommended cascade (the sum of every attempt's expected cost — a modeled figure for the path where each stage runs, not a bound on what a run can bill; formerly `maxPossibleCost`), and a `reason`, and `forge route universal` prints an explicit `INFEASIBLE` line. The caller must choose a fallback. Expected cost, the estimated cost if every attempt runs, and the cost actually charged are three different numbers; forgekit advises, and enforcing a hard spend cap belongs to whatever runs the attempts.
 
-**4. Learning locally.**
-- `forge route outcome "<task>" --model <id> --pass|--fail [--cost <usd>] [--attempt <id>] [--verify-run <run id>]` records the result of one attempt. Only a hash of the task and its features are stored, never the text. The pass/fail is entered by the caller, so a record is labelled `provenance: "self-reported"`; with `--verify-run`, naming a `forge verify` run in this checkout's verifier-event log whose PASS or FAIL agrees with it, the record is labelled `provenance: "verify-event"` instead (a disagreeing or missing run is refused, and so is a run that already backs another attempt). The event must be authenticated: its MAC must verify under this machine's evidence key. It must also name this checkout (an events file copied from another checkout backs nothing), and it must have finished on the code state the outcome is recorded against (the record stores that state, so an old PASS cannot back a later attempt on other code). When no key is available, the MAC does not verify, or the run is from another checkout or other code, the outcome is still recorded, but as self-reported with a `provenanceNote`. The stored label is informational only. `readOutcomes` re-derives every row's provenance from the authenticated events on each read, so a hand-edited label, a missing run, a verdict mismatch or a second attempt citing the same run reads as self-reported and is counted in `readOutcomes.lastDowngraded`. A verifier event vouches for the pass/fail verdict only, never for which model produced the patch or what it cost (`verifiedFields: ["passed"]` in the fitted model's provenance). Every record carries an `attemptId` (`--attempt`, or a fresh id when omitted), and recording the same attempt id again counts once, so a retry or a replayed outcomes file cannot count one attempt twice. Records are schema-validated when written and when read.
-- `forge route fit` refits with the shipped fit as the prior mean. It is a MAP, empirical-Bayes-style **shrinkage** update — a few local outcomes barely move it and many outcomes dominate — not a maintained posterior: it returns a point estimate and carries no covariance over from the shipped fit.
-- Cost intercepts are updated with a unit-information prior.
-- A model in the registry but not in the fit enters "cold", at the population-mean ability and loadings, until outcomes arrive. Its point estimate hides a large epistemic uncertainty.
-
-**5. Candidates.**
-- `--provider <name>` limits the candidates to models that provider can serve (the `providers` map in the registry).
-- `--provider any` (the default) gives advice across every model.
-- The shipped registry gives provider ids only for Anthropic models; the other seven registry entries are recommended by id but cannot be applied until you add a provider id. Add ids for OpenRouter, a LiteLLM gateway or a native API in `.forge/models.json`. Registry presence is not availability: a model with no provider id is advice only. The CLI marks such a cascade step `no provider id` and prints an `advice only` line; `--json` gives each step its `providers` and `costSource`, plus `applicable: false` and the `unmapped` models. Where the registry has prices, each carries its source and the date it was checked.
+**4. Learning locally.** Record a result using `forge route outcome "<task>" --model REGISTRY_ID --pass --cost USD --verify-run RUN_ID`. A self-reported outcome remains inspectable. Only authenticated verdicts are eligible for fitting. `forge route fit` updates the benchmark’s ability and cost parameters toward local observations. It rejects an empty verified training set. Historical outcome vectors are read using their three shared measurements. Older fitted coefficients require a new fit.
 
 ## Shipped prior
 
@@ -135,13 +126,13 @@ harness-bench run 4 is pre-registered. It fits on 150 dev issues and scores 350 
 - **Against the best single model on dev** it solves +4.0 points [+0.6, +7.4] at −$0.644 per task, mostly because one cheap model (minimax-m2.5) opens 308 of the 350 cascades. That comparison depends on which model wins dev: across the six splits the interval excludes zero only for seed 20260926.
 - **The replay is optimistic about deployment.** It stops at the first attempt whose recorded label is "resolved", which assumes a perfect, free check between attempts; a deployed cascade needs its own verifier, which can be wrong and costs money. The same data limits apply as to the shipped prior: one scaffold, one attempt per model and task, twelve Python repositories, February 2026 costs.
 
-## Reproducibility
+## Historical reproduction record (2026-09-26)
 
 | Part | Where | Status |
 |---|---|---|
 | Public inputs | Hugging Face `SWE-bench/SWE-bench_Verified` @ `78f471b` (not `princeton-nlp/SWE-bench_Verified`, which does not contain that revision); the eleven `per_instance_details.json` files at SWE-bench/experiments `40f164d` | Pinned with URL, revision, size and sha256 in `bench/universal-router/sources.json`; `build_input.py` checks every download against them |
 | Building the fit input (`universal_all.json`) | `bench/universal-router/build_input.py` | **In this repository**; no harness-bench needed |
-| Prior refit | `bench/universal-router/reproduce.sh` (build the input, refit with `fit_prior.mjs`, compare with `compare_priors.mjs`) | **Reproduced exactly in this repository (2026-09-26).** From an empty work directory, all 176 fitted values are identical to `data/router_prior.json` (only `provenance.fittedAt` differs), with the router code of `d2abfa6` and again with the review changes committed in `aedddf5`. The refit takes about 7 minutes (413–424 s on a 4-vCPU Intel Xeon @ 2.80GHz, Node v22.22.2, Python 3.11.15). The external review of 2026-09-26 stopped its refit at a 180-second limit, which was too short: not evidence against the fit. The 37.6 s and 45.9 s in the 2026-09-22 report are the 150-issue dev fit inside the held-out test, not this 500-issue refit. These are the project's own runs: the calculation reproduces; no third party has replicated it |
+| Prior refit | `bench/universal-router/reproduce.sh` (build the input, refit with `fit_prior.mjs`, compare with `compare_priors.mjs`) | **Reproduced exactly in this repository (2026-09-26).** From an empty work directory, all 176 fitted values were identical to the prior shipped at that revision (only `provenance.fittedAt` differs), with the router code of `d2abfa6` and again with the review changes committed in `aedddf5`. The refit takes about 7 minutes (413–424 s on a 4-vCPU Intel Xeon @ 2.80GHz, Node v22.22.2, Python 3.11.15). The external review of 2026-09-26 stopped its refit at a 180-second limit, which was too short: not evidence against the fit. The 37.6 s and 45.9 s in the 2026-09-22 report are the 150-issue dev fit inside the held-out test, not this 500-issue refit. These are the project's own runs: the calculation reproduces; no third party has replicated it |
 | Run-4 held-out benchmark (150/350 split ids, pre-registration, metric aggregation, bootstrap) | harness-bench `test universal` | **Not reproducible from this repository**; the split ids, harness, metric JSON and environment lock would have to be published or pinned for a cold machine to reproduce the table above |
 | A new held-out replay (a different split; not run 4) | `bench/universal-router/holdout_eval.mjs` | **In this repository**; refits on dev tasks only and compares against baselines chosen on dev, including a fixed cascade. Results [above](#a-new-held-out-replay-in-this-repository-2026-09-26); it does not stand in for run 4 |
 
@@ -157,10 +148,6 @@ harness-bench run 4 is pre-registered. It fits on 150 dev issues and scores 350 
 ## Next evidence
 
 The evidence that would test the router rather than its training data: fresh, time-held-out tasks (private or permissioned) or unseen repositories; another agent scaffold; another language; and actual end-to-end spend under an external hard cap, not repriced tokens. SWE-bench Multilingual can support a separate transfer study only after its license and task setup are checked — its [dataset documentation](https://www.swebench.com/SWE-bench/guides/datasets/) describes 300 tasks across nine languages. Report the full cost/success curve with paired uncertainty, and the fixed-cascade baseline beside it.
-
-## Relation to `forge route`
-
-`forge route` (tiered: haiku / sonnet / opus / fable) is unchanged and remains the default for Claude Code model selection. The universal router is opt-in: run `forge route universal`, or set `route.objective` in `.forge/config.json` to choose its default objective.
 
 ## Monitor a frozen model for regressions
 

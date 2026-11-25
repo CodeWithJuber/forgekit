@@ -31,12 +31,11 @@
 //   - src/eval.js         defines it (:28) (no other same-file caller)
 //   - test/eval.test.js   imports { evalImpact } (:7) and calls it (:34) — the only referencer
 //
-// isStale (src/atlas.js) — 10 files
+// isStale (src/atlas.js) — 9 files
 //   - src/atlas.js             defines it (:1033)
 //   - src/verify.js            imports { isStale } (:11) and calls it (:456)
 //   - src/doctor.js            imports { isStale } (:18) and calls it (:249)
 //   - src/cli/memory.js       checks graph freshness before context packet assembly
-//   - src/test_select.js       checks the cached atlas before traversing affected tests
 //   - src/substrate.js         imports it ALIASED (`isStale as atlasIsStale`, :11) and calls
 //                              it twice (:177, :269) — an aliased import is still a reference
 //   - src/coupling.js          imports it ALIASED (`isStale as atlasIsStale`, :20) and calls
@@ -78,6 +77,8 @@
 // one hop. The case is kept for its fan-out, not for the miss.
 //   - src/util.js         defines it (:65); slug() calls it (:28)
 //   - src/atlas.js        imports { contentHash } (:19), aliases it (:190)
+//   - src/cortex.js and src/cortex_observations.js hash correction identities and private event paths
+//   - src/harden.js binds the managed Git hook to its generated content
 //   - src/cortex_hook.js  imports it (:9) and calls it (:98)
 //   - src/cost_report.js  imports it (:14); routeRef() calls it (:212)
 //   - src/diagnose.js     imports it (:15); failureSignature() calls it (:57)
@@ -92,6 +93,9 @@
 //   - src/public_lookup.js hashes public research cache keys (extracted from evidence.js)
 //   - src/discovery.js hashes public candidate identities
 //   - src/source_local.js hashes file chunk identities
+//   - src/evidence_team.js hashes the proposed decomposition
+//   - src/team_schedule.js hashes the recorded work contract
+//   - src/pre_edit.js binds pre-edit evidence to its exact inputs
 //   - src/source_remote.js hashes remote connection scope
 //   - src/sources.js hashes the workspace and local source scope
 //   (src/ledger_store.js:586 also names it in a doc comment — same file, already labeled.)
@@ -116,7 +120,6 @@ export const IMPACT_CASES = [
       "src/atlas.js",
       "src/verify.js",
       "src/doctor.js",
-      "src/test_select.js",
       "src/substrate.js",
       "src/coupling.js",
       "test/atlas.test.js",
@@ -155,6 +158,9 @@ export const IMPACT_CASES = [
       "src/ambient_memory.js",
       "src/util.js",
       "src/atlas.js",
+      "src/cortex.js",
+      "src/cortex_observations.js",
+      "src/harden.js",
       "src/cortex_hook.js",
       "src/cost_report.js",
       "src/diagnose.js",
@@ -170,6 +176,9 @@ export const IMPACT_CASES = [
       "src/auto_adoption.js",
       "src/public_lookup.js",
       "src/discovery.js",
+      "src/evidence_team.js",
+      "src/team_schedule.js",
+      "src/pre_edit.js",
       "src/source_local.js",
       "src/harness_council.js",
       "src/harness_jobs.js",

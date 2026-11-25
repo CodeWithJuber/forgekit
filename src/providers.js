@@ -626,7 +626,7 @@ export function applyRoute(tierKey, { settingsPath, exactId = undefined } = {}) 
     settings = JSON.parse(readFileSync(target, "utf8"));
   } catch {}
   const modelId = MODELS[tierKey]?.id;
-  if (!modelId) return { ok: false, reason: `unknown tier "${tierKey}"` };
+  if (!modelId && !exactId) return { ok: false, reason: `unknown tier "${tierKey}"` };
   const prev = settings.model;
   if (exactId && !SAFE_MODEL_ID.test(exactId)) return { ok: false, reason: "Invalid model id" };
   settings.model = exactId || tierKey;

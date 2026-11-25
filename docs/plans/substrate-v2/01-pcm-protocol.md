@@ -68,8 +68,7 @@ claim := {
 ## 2. The oracle taxonomy
 
 An oracle is a source of confirm/contradict signals *external to fθ*. Each has a base
-weight `w ∈ (0,1]` — its prior reliability — extending the signal table already shipped
-in `src/lessons.js` (`SIGNALS` S1–S7):
+weight `w ∈ (0,1]` for its prior reliability in this historical protocol design. The current correction learner tracks observed sources and distinct receipts ([memory guide](../../MEMORY.md)).
 
 | oracle | example | w | family |
 |---|---|---|---|
@@ -83,7 +82,7 @@ in `src/lessons.js` (`SIGNALS` S1–S7):
 
 Rules inherited from cortex, now protocol law: **injection/retrieval is never
 confirmation**; a `behavioral` signal can never move confidence alone (needs a second
-family — the noisy-OR cross-family gate of `scoreMistake()`).
+family in this original design).
 
 ## 3. Evidence and confidence
 

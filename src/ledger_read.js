@@ -1,19 +1,15 @@
-// forge ledger read — the P2 read-path flip (docs/plans/substrate-v2/01-pcm-protocol.md §7).
-// Since P1 the PCM ledger has been the convergent WRITE store while the legacy stores
-// (lessons/*.md, recall/brain facts) served every read. This module turns reads into a
-// MERGED VIEW (legacy ∪ ledger) so knowledge that arrives via `forge ledger merge`
-// actually reaches injection and retrieval. The legacy file is still the canonical
-// LOCAL state — the ledger only ADDS what teammates know — so the merge dedupes by the
-// legacy id with the legacy record winning. Retiring the legacy formats entirely is the
-// next step (ROADMAP.md).
-//
-// Everything here is READ-ONLY and best-effort by design: hooks call these on every
-// session start / pre-edit, so a missing or corrupt ledger degrades to legacy-only —
-// never an error, never a write.
-import { DEFAULT_HALF_LIFE_DAYS, isDormant, sticky, val, validOutcome } from "./ledger.js";
+// Project the content-addressed ledger into the lesson and fact shapes used by all hosts.
+import { existsSync } from "node:fs";
+import {
+  DEFAULT_HALF_LIFE_DAYS,
+  evidenceEvents,
+  isDormant,
+  sticky,
+  val,
+  validOutcome,
+} from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
-import { load } from "./lessons_store.js";
-import { ledgerOnly, slug } from "./util.js";
+import { slug } from "./util.js";
 
 /**
  * Map a ledger `lesson` claim onto the legacy lesson shape (lessons.js), so every
@@ -23,6 +19,8 @@ import { ledgerOnly, slug } from "./util.js";
  * the legacy lesson id rides in provenance.task (it is excluded from the content
  * address so teammates converge on one claim id).
  *
+ * Version 2 uses deduplicated supporting and opposing receipts. The historical shape
+ * below retains the earlier rules.
  * The legacy lifecycle (candidate/active/quarantined/retired) is local mutable state
  * the ledger deliberately does not store, so status is DERIVED from evidence:
  *
@@ -52,23 +50,21 @@ export const LESSON_KEEP_VAL = 0.55;
 
 export function claimToLesson(claim, nowDay = 0) {
   const body = claim.body ?? {};
-  const evidence = (claim.evidence ?? []).filter(validOutcome);
+  const observed = body.correctionVersion === 2;
+  const evidence = observed
+    ? evidenceEvents(claim.evidence)
+    : (claim.evidence ?? []).filter(validOutcome);
   const confirms = evidence.filter((e) => e.result === "confirm");
   const contradictions = evidence.length - confirms.length;
   const createdDay = claim.provenance?.t ?? 0;
-  const v = val(claim, nowDay);
-  const active = sticky(claim, {
-    high: LESSON_ACTIVE_VAL,
-    low: LESSON_KEEP_VAL,
-    nowDay,
-  });
-  const status = claim.tombstone
-    ? "retired"
-    : active
-      ? "active"
-      : v < 0.45 && contradictions >= 1
-        ? "quarantined"
-        : "candidate";
+  let status = "candidate";
+  if (claim.tombstone) status = "retired";
+  else if (observed) {
+    if (confirms.length > contradictions) status = "active";
+    else if (contradictions) status = "quarantined";
+  } else if (sticky(claim, { high: LESSON_ACTIVE_VAL, low: LESSON_KEEP_VAL, nowDay }))
+    status = "active";
+  else if (contradictions && val(claim, nowDay) < 0.45) status = "quarantined";
   return {
     id: String(claim.provenance?.task || "") || `lsn_${claim.id.slice(0, 8)}`,
     trigger: {
@@ -88,7 +84,22 @@ export function claimToLesson(claim, nowDay = 0) {
     lastConfirmedDay: confirms.length ? Math.max(...confirms.map((e) => e.t ?? 0)) : createdDay,
     halfLifeDays: DEFAULT_HALF_LIFE_DAYS,
     // The claim id is the audit pointer back to the ledger (`forge ledger blame <id>`).
-    provenance: { episodes: [], signals: [], claim: claim.id },
+    provenance: {
+      ...(observed ? { correctionVersion: 2 } : {}),
+      ...(body.check ? { check: body.check } : {}),
+      ...(body.operatorText ? { operatorText: true } : {}),
+      episodes: [
+        ...new Set([
+          ...(Array.isArray(claim.provenance?.episodes) ? claim.provenance.episodes : []),
+          ...evidence.flatMap((e) => {
+            const match = /^episode:(.+?)(?:#[nc]\d+)?$/.exec(e.ref);
+            return match ? [match[1]] : [];
+          }),
+        ]),
+      ],
+      signals: Array.isArray(claim.provenance?.signals) ? claim.provenance.signals : [],
+      claim: claim.id,
+    },
   };
 }
 
@@ -96,6 +107,7 @@ export function claimToLesson(claim, nowDay = 0) {
  *  ledger or it is unreadable (best-effort — hooks call this on every event). */
 export function ledgerLessons(root, nowDay = 0, candidates = undefined) {
   try {
+    if (!candidates && !existsSync(repoLedger(root))) return [];
     return (candidates ?? loadClaims(repoLedger(root)))
       .filter((c) => c.kind === "lesson")
       .map((c) => claimToLesson(c, nowDay));
@@ -113,28 +125,14 @@ const preferred = (a, b) => {
   return b.lastConfirmedDay > a.lastConfirmedDay ? b : a;
 };
 
-/**
- * The merged lesson read: legacy `load(root)` ∪ ledger lessons, deduped by the LEGACY
- * id with the legacy file winning — the legacy store is still the canonical local
- * state (recordMistake/confirm/contradict edit it), so a local lesson's own shadow
- * claim (same provenance.task) is invisible here, while a teammate's claim (different
- * task, no local file) surfaces. Order is deterministic: legacy lessons in file order,
- * then ledger-only lessons sorted by lesson id.
- * @param {string} root
- * @param {number} [nowDay]
- * @returns {object[]}
- */
+/** Materialize one current claim per lesson ID after a rewrite or a merge. */
 export function mergedLessons(root, nowDay = 0, candidates = undefined) {
-  // Legacy-store retirement: with no legacy files, the merged view is the ledger alone.
-  const legacy = ledgerOnly() ? [] : load(root);
-  const local = new Set(legacy.map((l) => l.id));
   const byId = new Map();
   for (const l of ledgerLessons(root, nowDay, candidates)) {
-    if (local.has(l.id)) continue; // legacy wins — the local file is canonical
     const prev = byId.get(l.id);
     byId.set(l.id, prev ? preferred(prev, l) : l);
   }
-  return [...legacy, ...[...byId.values()].sort((a, b) => (a.id < b.id ? -1 : 1))];
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** Live (non-tombstoned) `fact` claims of one ledger as {slug, name, text} — the fact

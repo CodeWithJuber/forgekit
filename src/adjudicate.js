@@ -14,6 +14,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { buildHttpRunner as httpRunner } from "./llm.js";
 import { MODELS, resolveTierModel } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
+import { defaultDispatchModel } from "./route.js";
 import { hasSecret } from "./secrets.js";
 
 /**
@@ -67,20 +68,19 @@ export function runnerModel(model, { root = process.cwd(), fetchImpl, env } = {}
  *  lookup rides along with the (much slower) model call it precedes. */
 /** @param {{model?:string,timeoutMs?:number,profile?:string,root?:string,onReceipt?:Function}} options */
 export function buildRunner({
-  model = "haiku",
+  model,
   timeoutMs = 20000,
   root = process.cwd(),
   profile,
   onReceipt,
 } = {}) {
-  /** @type {string|null} */
-  let resolved = null;
   const provider = activeProvider(root);
-  const modelId = () =>
-    (resolved ??=
-      Object.hasOwn(MODELS, model) && provider.selectedModel
+  const modelId = (prompt) =>
+    !model
+      ? defaultDispatchModel(root, prompt, provider.name)
+      : Object.hasOwn(MODELS, model) && provider.selectedModel
         ? envModelOverride(provider) || provider.selectedModel
-        : runnerModel(model, { root }));
+        : runnerModel(model, { root });
   if (
     profile ||
     provider.name !== "anthropic" ||
@@ -91,7 +91,7 @@ export function buildRunner({
     return httpRunner({ model, timeoutMs, root, profile, onReceipt });
   }
   return (prompt) =>
-    execFileSync("claude", ["-p", "--model", modelId()], {
+    execFileSync("claude", ["-p", "--model", modelId(prompt)], {
       input: prompt,
       encoding: "utf8",
       timeout: timeoutMs,

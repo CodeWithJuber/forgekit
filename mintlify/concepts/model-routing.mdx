@@ -1,184 +1,39 @@
 ---
 title: "Model routing"
-description: "A deterministic, diffable rubric picks the cheapest capable model tier before dispatch — each tier a model family, resolved to the newest live model with a fail-safe fallback."
+description: "Choose a provider model using verified first attempts, observed costs, an explicit objective and a scoped account listing."
 ---
 
-<Frame>
-  <img src="/images/illustrations/model-routing.webp" alt="One ember line splits into three paths through gates of rising brightness: a cascade that escalates only on failure." />
-</Frame>
-
-Forge recommends the cheapest capable model for a task **before** dispatch, from a
-deterministic rubric you can read in the repo (`src/route.js`). Unlike a gateway
-that decides inside the proxy at request time, the routing decision is visible and
-diffable in git.
-
-## Recommend a tier — `forge route`
+## Choose a model
 
 ```bash
-forge route "<task>"            # cheapest capable model tier for the task
-forge route gateway             # emit LiteLLM gateway config
+forge models --refresh --json
+forge route "Update the parser" --provider PROFILE --json
+forge config model --exact MODEL_ID --profile PROFILE
 ```
 
-The recommendation is exemplar k-NN math over a labeled bank (English + Hinglish rows)
-under an overlap-similarity metric with a confidence gate — not a keyword lookup.
+ForgeKit reports `unrated` on a new repository. An operator can select a deployment explicitly. A configured selection identifies the exact wire ID and carries no inferred score. Native coding clients manage their own model selection.
 
-<Note>
-  Start at the recommended `route.tier` and escalate only after an external verifier
-  fails, never preemptively. This keeps spend down without capping capability when a task
-  genuinely needs it.
-</Note>
-
-## Unattended agents — `--mode unattended`
-
-The default mode is **conservative**: a model's vote for a higher tier is reported, never
-applied, because a person can retry on a stronger tier after a check fails. An agent nobody
-watches has no cheap retry loop, so `forge route "<task>" --mode unattended` (or
-`route.mode: "unattended"` via `forge orchestration set`) adds four steps:
-
-<Steps>
-  <Step title="Vote raise">
-    A proposer's `premium` vote at p ≥ 0.9 raises to the premium tier; a `mid`-or-higher vote
-    at p ≥ 0.5 raises to at least mid. A vote with no probability never raises.
-  </Step>
-  <Step title="Writes-code floor">
-    A task that writes code starts at mid. `--read-only` lets exploration stay cheap.
-  </Step>
-  <Step title="Risk floor">
-    Money, auth, secrets, migrations or security in the task: never below the premium tier.
-  </Step>
-  <Step title="Top-tier gate">
-    `route.topTier: explicit` (default) allows the top tier only with `--allow-top` and the
-    deterministic score at its cutoff; `never` and `auto` are the other settings. Votes and
-    floors stop one tier below it.
-  </Step>
-</Steps>
-
-`--json` reports the generic tier key (`key`: haiku / sonnet / opus / fable) and every step
-under `policy.steps`. Details: [Agent orchestration](/guides/agent-orchestration).
-
-## A second model at decision points — the advisor
-
-Routing picks the cheapest capable tier for the whole task. Claude Code's advisor tool is the
-complementary move: keep the routed main model and let it consult a stronger one only at decision
-points (approach, recurring error, done check). `forge advisor set opus` configures it, `sync`
-emits it, and the pairing is checked against the main model first; see
-[Advisor pairing](/guides/advisor).
-
-## Optional typed proposer — TypeSafe Jev
-
-The rubric is the judge; an optional **proposer** layer can refine it. With `FORGE_LLM=1`
-plus `TYPESAFE_API_KEY` set, `route` asks TypeSafe's System One model (Jev) for the
-complexity band as a typed `choice` with probabilities and confidence in ~150ms — instead
-of a multi-second text-LLM round-trip. The same applies to preflight's assumption gate,
-scored as one batched `noul` per rubric dimension.
-
-<Note>
-  Fail-safe by construction: any Jev error falls back to the text-LLM proposer, then to
-  the deterministic rubric — and a miss never changes a verdict. Without the key, behavior
-  is byte-identical. `forge route --json` shows which proposer answered under
-  `llm.provider` (`jev` / `text`), with Jev's confidence. `TYPESAFE_BASE_URL` overrides
-  the endpoint for staging or self-hosted deployments.
-</Note>
-
-## Intent, then tier
-
-Routing shares its math with intent detection (`src/intent.js`): a prompt maps to an
-intent by the same exemplar k-NN estimator. Note the two use different stop-sets — route
-treats generic verbs (`fix` / `add` / `build`) as complexity noise, but those verbs are
-exactly the intent signal.
-
-## Tiers name families; ids are resolved
-
-Each tier names a model **family** (haiku / sonnet / opus / fable). The concrete id and price
-are resolved where they are needed — the LLM runner, the gateway config, the cost estimate,
-`forge route`, `forge models` — never on the per-prompt hook path:
-
-<Steps>
-  <Step title="Newest of the family in the live catalog">
-    The active provider's own model list — the Anthropic Models API (`GET /v1/models`, with
-    `ANTHROPIC_API_KEY`), a custom gateway's `/v1/models`, or OpenRouter's list. The family
-    word must be a whole token of the id or display name; "newest" is the catalog's
-    `created_at`. No model id is listed in the code.
-  </Step>
-  <Step title="Live price">
-    OpenRouter's public catalog, per-token prices converted to per million, matched to the
-    resolved id by its tokens (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
-  </Step>
-  <Step title="Fallback">
-    Only when the previous step is unavailable: the last cached catalog response, then the
-    shipped snapshot in `src/model_tiers.json` (with its `pricingVerified` date). Doc prices
-    are reconciled against that snapshot by the docs check.
-  </Step>
-</Steps>
-
-`forge models` prints what every tier resolves to and where each id and price came from.
-Catalogs are cached under `.forge/cache/`, refreshed only by what the response's own
-`Cache-Control` / `Expires` / `ETag` allow; `FORGE_NO_CATALOG_FETCH=1` keeps it offline.
-
-## Self-hosted gateway remap
-
-A self-hosted LiteLLM or proxy gateway serves its own model names, so a snapshot ID sent
-verbatim would 404. When a non-default gateway base URL is configured, Forge
-(`src/gateway_model_map.js`) reads its `GET /v1/models` and maps each tier onto the newest
-advertised model of its family — the same rule as above: the family word is a hard gate,
-then the gateway's creation time, the parsed version, and the id closest to the canonical
-name decide.
-
-<Warning>
-  An explicit `.forge/providers.json` alias or an `ANTHROPIC_MODEL` override is never
-  touched. The remap fails safe to the snapshot ID on an unreachable `/v1/models` or no
-  family match.
-</Warning>
-
-`forge doctor`'s **gateway models** row prints the resolved `tier → model` mapping for
-verification.
-
-## Universal router — `forge route universal`
-
-A separate, opt-in router: it recommends one model, or a cascade that escalates on a failed
-check, across every provider in the registry, minimising **expected** cost for the success
-you ask for.
-
-<Frame>
-  <img src="/images/diagrams/router-cascade.svg" alt="forge route universal: the task's 12 features and each model's P(solve) and expected cost select the best cascade for the objective, or report INFEASIBLE with a labeled least-bad fallback; the caller runs the cascade: each attempt is checked by tests or forge verify, a failure escalates to the next model, and forge route outcome records each outcome for forge route fit, which refits a local estimate shrunk toward the shipped prior" />
-</Frame>
-
-[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/router-cascade.html): pan, zoom, search, and trace any node.
+## Compare repository outcomes
 
 ```bash
-forge route universal "<task>"                         # match the best single model
-forge route universal "<task>" --objective target:0.8  # or value:<$>, budget:<$>
-forge route universal "<task>" --provider anthropic    # only models you can call there
+forge route outcome "Update the parser" --provider PROFILE --model REGISTRY_ID --pass --cost 0.12 --verify-run RUN_ID --workload repair
+forge route universal "Check pagination" --provider PROFILE --workload repair --objective target:0.8 --depth 2 --json
+forge route calibrate --workload repair
 ```
 
-- **Infeasible is explicit.** A budget no cascade fits, or a target none reaches, prints
-  `INFEASIBLE` and exits 1 (`ok: false`, `feasible: false`, the minimum achievable expected
-  cost, and the least-bad cascade only as a labeled `fallback` in `--json`). `budget:` bounds
-  expected cost, not what one task can spend; each recommendation also shows the cost if
-  every attempt runs.
-- **In the registry is not callable.** A recommended model that no configured provider
-  serves is marked `no provider id` and the recommendation is `advice only`
-  (`applicable: false`). Add its id under `providers` in `.forge/models.json`, or pass
-  `--provider`.
-- **Learning from your outcomes.** `forge route outcome` records one attempt, validated
-  (known model, finite non-negative cost, the right feature length). It is self-reported
-  unless `--verify-run <run id>` ties it to an authenticated `forge verify` run with the same
-  verdict, from this checkout, that finished on the code the outcome is recorded against,
-  and one run backs one attempt. The label is re-derived from the verifier events on
-  every read, so an edited label counts for nothing, and the event vouches for pass/fail
-  only (never the model or the cost). `--attempt <id>` makes re-recording idempotent.
-  `forge route fit` then updates the shipped prior with them.
+The scoped router compares first verified attempts on common tasks with recorded prices, a current listing and matching provider deployment. It reports success, a 95% Wilson interval, cohort size and mean reported cost. The operator can specify `budget:USD`, `target:P` or `value:USD`. For a cascade the replay charges each reached attempt. The operator reports the model and cost. The verifier authenticates the verdict against the checkout and code state. `forge route fit` updates the offline benchmark fit with authenticated local outcomes.
 
-<Warning>
-  The shipped prior was fitted on public SWE-bench Verified outcomes: one agent scaffold,
-  Python repositories, February 2026 prices. Its refit reproduces exactly from pinned public
-  data (`bench/universal-router/reproduce.sh`). The 76.3% / $0.093 held-out headline is
-  repository-reported from an external harness, not independently reproduced. In an in-repo
-  held-out replay the router did not beat a fixed cascade on solve rate, and expected cost was
-  under-predicted by 5–22% because failed attempts cost more. Treat it as a starting point for
-  your own outcomes, not a guarantee. The full evidence and limits are in
-  [docs/UNIVERSAL_ROUTING.md](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/UNIVERSAL_ROUTING.md).
-</Warning>
+Use `--schema 1` for the historical family table. A configured top-model authorization can prevent automatic selection of that specific deployment.
+
+## Offline benchmark comparison
+
+`forge route universal "<task>"` with no provider compares historical fitted models using a multidimensional item-response model. Three observed prompt measurements, estimated success and fitted costs determine which candidate sequences meet the objective. On 350 held-out SWE-bench tasks the router solved 80.0% at $0.128 per task. A fixed cascade chosen on development data solved 80.6% at $0.136.
+
+<Frame>
+  <img src="/images/diagrams/router-cascade.svg" alt="Three text measurements and fitted costs inform an offline benchmark cascade. The caller verifies each attempt and records its outcome." />
+</Frame>
+
+[Interactive benchmark diagram](https://jubershaikh.com/forgekit/diagrams/router-cascade.html) · [Measurement methods and limitations](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/UNIVERSAL_ROUTING.md)
 
 ## Providers and cost
 

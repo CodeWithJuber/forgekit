@@ -51,3 +51,42 @@ Reader credentials can list the workspace and retrieve eligible artifacts, inclu
 - Reusing a deleted workspace ID requires deliberate baseline replacement on the newly enrolled client. A new workspace ID starts empty.
 
 The API exposes `GET /v1/workspaces/{id}` for the manifest and latest 100 receipts, `GET /v1/workspaces/{id}/events?after=<revision>` for paginated incremental receipts, `GET /v1/workspaces/{id}/events?id=<revision>` for changed paths and content hashes, `GET /v1/workspaces/{id}/artifact?path=…` for a base64-encoded artifact and hash, `POST /v1/workspaces/{id}/sync` for a versioned change batch and `DELETE /v1/workspaces/{id}` for deletion. One upload at a time bounds receiver memory. A busy receiver responds with HTTP 429. Local `forge dash` remains independent of the web service.
+
+## End-to-end encrypted relay
+
+Choose `forge relay` when the receiver should store encrypted content. The same Node and SQLite service can run in relay mode on a separate port with a separate private data directory. Use the scoped principal configuration above. A workspace can have independent dashboard and relay enrollments. Each has its own credentials, queue, revision and logout.
+
+Generate one random 32-byte workspace encryption key using a secret manager, with standard base64 encoding. For example, `openssl rand -base64 32` produces that format. Keep the key on the authorized clients and deliver it to collaborators through an independent trusted channel. Use a different bearer credential for each reader, writer and administrator. Keep the encryption key out of the server configuration, shell logs and project files. Losing every copy of the key makes the encrypted workspace unreadable.
+
+Start the receiver with `forge relay serve --config /private/relay.json`. It binds to loopback, accepts the scoped relay API and serves a text landing page. Use an HTTPS reverse proxy for remote access. The operator controls bearer credentials, the tenant and workspace IDs, storage, deletion and backups. Read decrypted files with an independently installed client.
+
+The service exposes status, sync, events, artifact retrieval and administrator deletion under `/v1/relay/{tenant}/{workspace}`. Artifact retrieval takes an opaque object identifier and the expected current revision. An operator with the scoped administrator credential can delete the active data through the API if all clients lose their encryption keys.
+
+The following commands assume the client has the workspace key in `WORKSPACE_RELAY_KEY` and the appropriate scoped bearer credential in `WORKSPACE_ACCESS`.
+
+```sh
+forge relay configure --full-workspace --url https://relay.example.org --tenant team --workspace demo --token-env WORKSPACE_ACCESS --key-env WORKSPACE_RELAY_KEY
+forge relay preview
+forge relay push
+forge relay status --remote
+forge relay list
+forge relay read README.md --revision "$EXPECTED_REVISION" --json
+```
+
+A push returns its revision. Send that revision over an independent channel when a second device needs to verify an exact snapshot. Set `EXPECTED_REVISION` on the reader to that value. On the reader, configure the same endpoint, tenant and workspace with its own bearer credential and the shared encryption key. `list` decrypts names and metadata locally. `read` writes the verified bytes to stdout. Use `--path=--help` for a file named `--help`. The JSON form returns base64 bytes, verified SHA-256 and the revision. The reader chooses the destination. Provision a reader or administrator token for file contents. A writer with the workspace key can verify the encrypted manifest for replacement. `watch`, `logout` and administrator `delete --confirm` follow the cloud operations above in the relay's separate storage namespace.
+
+### What the relay can observe
+
+The client encrypts the manifest and changed artifacts after local redaction. Protocol version 1 derives separate keys with HKDF-SHA-256 for each tenant and workspace. A path becomes an HMAC-SHA-256 identifier. Each record uses an independently derived revision-and-object key, a random 96-bit nonce and AES-256-GCM with a 128-bit tag. Authenticated data includes the protocol, tenant, workspace, object identifier and revision. The encrypted manifest binds the path, content digest, media type, redaction status, ciphertext digest and originating revision of every file. The client verifies the complete manifest and the selected file before returning its bytes. Retrying a pending push reuses the exact sealed batch. An unchanged artifact retains its identifier and ciphertext.
+
+The receiver sees tenant and workspace IDs, credentials presented to it, timestamps, revision links, counts, ciphertext lengths and repeated opaque file identifiers. It can infer which encrypted objects changed and can withhold or serve older data. A revision received through an independent channel detects a rollback. A first-time reader without such a revision establishes only that the snapshot was written by someone holding the shared key. `status --remote` verifies the manifest locally and reports its revision, authentication status and file count. An empty or deleted workspace with no encrypted manifest reports `authenticated: false`. A key holder can create a valid manifest. Client compromise, access-pattern privacy and individual author signatures are outside this protocol. [HKDF](https://www.rfc-editor.org/rfc/rfc5869) · [GCM](https://csrc.nist.gov/pubs/sp/800/38/d/final)
+
+The 128 MiB snapshot limit includes the sealed manifest and encryption overhead. Up to 20,000 artifacts are supported, with one additional manifest. The existing 24 MiB file limit applies to plaintext artifacts and to the encoded manifest before encryption. Exceeding any bound fails the push. The client records the credential variable names and a key binding in enrollment state. Pending artifact bytes and the cursor manifest are encrypted on disk. A client-only authentication tag covers the full pending request. If local queue bytes change, the client rejects the retry before contacting the receiver.
+
+Changing either scope or key requires a new enrollment. To rotate after a device loses access, provision a new workspace ID, encryption key and scoped bearer credentials, publish a fresh snapshot, revoke the old credentials and apply your retention policy to the old workspace. A holder of a previous key may retain already decrypted files and decrypt copies of ciphertext they retained. Remote deletion clears active contents and receipts. Operators separately expire old database copies, WAL archives, volume snapshots and replicas according to policy.
+
+### Verify a deployment
+
+Use disposable tenants and synthetic files. Publish a known text fixture and binary artifact, transfer the resulting revision to a separate reader, and verify the local content digests. Confirm a credential scoped to another tenant cannot read this workspace even when both tenants use the same workspace ID. Disconnect a writer after the server stores a revision, then retry the push and check it reports the same revision. Delete the sandbox as an administrator and verify the old writer's queued parent revision is rejected.
+
+For backup acceptance, use SQLite's online backup API or the SQLite shell's `.backup` command to a new owner-only file on the operator's private volume. Restore it into a fresh private data directory on a separate loopback instance. Verify a known saved revision and file digest with the trusted client. The repository's `test/cloud_relay.test.js` runs this drill with synthetic keys and checks that a later receipt detects a stale restore. Record the production TLS configuration, recovery time, effective access policy and backup expiry for the deployment where they were observed.

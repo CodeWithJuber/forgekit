@@ -6,36 +6,48 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  RELAY_MANIFEST,
+  RELAY_OVERHEAD,
+  RELAY_VERSION,
+  isRevision as uuid,
+} from "./cloud_relay.js";
 import { MAX_FILE, MAX_FILES, MAX_TOTAL, sha, validPath, workspaceId } from "./cloud_snapshot.js";
 import { installedHarnessProgram } from "./harness_python.js";
 
 const worker = fileURLToPath(new URL("./cloud_store.py", import.meta.url));
 const page = readFileSync(new URL("./cloud_dashboard.html", import.meta.url));
 const digest = (s) => createHash("sha256").update(s).digest();
-const uuid = (s) => typeof s === "string" && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(s);
 const fail = (status, message) => Object.assign(new Error(message), { status });
-function validateChange(c) {
+function validateChange(c, relay) {
   if (
     !c ||
+    (relay && c.version !== RELAY_VERSION) ||
     !uuid(c.id) ||
     !(c.parent === null || uuid(c.parent)) ||
     !Array.isArray(c.files) ||
     !Array.isArray(c.removed) ||
-    c.files.length > MAX_FILES ||
+    c.files.length > MAX_FILES + Number(relay) ||
     c.removed.length > MAX_FILES
   )
     throw fail(400, "Invalid snapshot change");
   const paths = new Set();
   let total = 0;
   function unique(p) {
-    if (!validPath(p) || paths.has(p)) throw fail(400, "Invalid or duplicate file path");
+    if (
+      !validPath(p) ||
+      paths.has(p) ||
+      (relay && p !== RELAY_MANIFEST && !/^[a-f0-9]{64}$/.test(p))
+    )
+      throw fail(400, "Invalid or duplicate file path");
     paths.add(p);
   }
   for (const f of c.files) {
     if (
       !f ||
       typeof f.content !== "string" ||
-      f.content.length > Math.ceil(MAX_FILE / 3) * 4 ||
+      f.content.length > Math.ceil((MAX_FILE + (relay ? RELAY_OVERHEAD : 0)) / 3) * 4 ||
+      (relay && (f.kind !== "binary" || f.redacted !== false)) ||
       !["text", "binary"].includes(f.kind) ||
       typeof f.redacted !== "boolean"
     )
@@ -43,7 +55,8 @@ function validateChange(c) {
     unique(f.path);
     const bytes = Buffer.from(f.content, "base64");
     if (
-      bytes.length > MAX_FILE ||
+      bytes.length > MAX_FILE + (relay ? RELAY_OVERHEAD : 0) ||
+      (relay && (bytes.length < RELAY_OVERHEAD || bytes[0] !== RELAY_VERSION)) ||
       bytes.length !== f.bytes ||
       bytes.toString("base64") !== f.content ||
       sha(bytes) !== f.sha256
@@ -51,6 +64,7 @@ function validateChange(c) {
       throw fail(400, "Artifact checksum mismatch");
     total += bytes.length;
   }
+  if (relay && !paths.has(RELAY_MANIFEST)) throw fail(400, "Encrypted manifest required");
   for (const p of c.removed) unique(p);
   if (total > MAX_TOTAL) throw fail(413, "Workspace exceeds capacity");
 }
@@ -108,7 +122,9 @@ async function body(req) {
     throw fail(400, "Malformed JSON");
   }
 }
-export function cloudService({ dataDir, principals }, env = process.env) {
+export function cloudService({ dataDir, principals, transport = "cloud" }, env = process.env) {
+  if (!["cloud", "relay"].includes(transport)) throw new Error("Unknown cloud transport");
+  const relay = transport === "relay";
   if (!dataDir || !isAbsolute(dataDir) || !Array.isArray(principals) || !principals.length)
     throw new Error("Provide an absolute private dataDir and scoped principals");
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
@@ -150,7 +166,8 @@ export function cloudService({ dataDir, principals }, env = process.env) {
     return {
       hash: digest(token),
       workspace: p.workspace,
-      scope: `${p.tenant}/${p.workspace}`,
+      tenant: p.tenant,
+      scope: (relay ? "relay:" : "") + p.tenant + "/" + p.workspace,
       role: p.role,
     };
   });
@@ -166,6 +183,13 @@ export function cloudService({ dataDir, principals }, env = process.env) {
     try {
       const u = new URL(req.url, "http://localhost");
       if (req.method === "GET" && u.pathname === "/") {
+        if (relay) {
+          res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end(
+            "ForgeKit encrypted relay. Read your workspace locally using forge relay list or forge relay read.",
+          );
+          return;
+        }
         res.setHeader(
           "Content-Security-Policy",
           "default-src 'none'; script-src 'sha256-" +
@@ -176,14 +200,19 @@ export function cloudService({ dataDir, principals }, env = process.env) {
         res.end(page);
         return;
       }
-      const [, scope, action] =
-        /^\/v1\/workspaces\/([a-z0-9_-]+)(?:\/(artifact|sync|events))?$/i.exec(u.pathname) || [];
-      if (!scope) throw fail(404, "Unknown endpoint");
+      const match = relay
+        ? /^\/v1\/relay\/([a-z0-9_-]+)\/([a-z0-9_-]+)(?:\/(artifact|sync|events))?$/i.exec(
+            u.pathname,
+          )
+        : /^\/v1\/workspaces\/([a-z0-9_-]+)(?:\/(artifact|sync|events))?$/i.exec(u.pathname);
+      if (!match) throw fail(404, "Unknown endpoint");
+      const [scope, action] = relay ? match.slice(2) : match.slice(1);
       const auth = req.headers.authorization;
       if (!auth?.startsWith("Bearer ")) throw fail(401, "Authentication required");
       const token = digest(auth.slice(7));
       const peer = keys.find((k) => timingSafeEqual(k.hash, token));
-      if (!peer || peer.workspace !== scope) throw fail(403, "Access denied");
+      if (!peer || peer.workspace !== scope || (relay && peer.tenant !== match[1]))
+        throw fail(403, "Access denied");
       let query;
       if (req.method === "GET" && !action) query = { op: "status" };
       else if (req.method === "GET" && action === "events") {
@@ -193,10 +222,13 @@ export function cloudService({ dataDir, principals }, env = process.env) {
           throw fail(400, "Invalid journal cursor");
         query = { op: "events", after, id };
       } else if (req.method === "GET" && action === "artifact") {
-        if (peer.role === "writer") throw fail(403, "Reader authorization required");
         const path = u.searchParams.get("path");
+        if (peer.role === "writer" && !(relay && path === RELAY_MANIFEST))
+          throw fail(403, "Reader authorization required");
         if (!validPath(path)) throw fail(400, "Invalid artifact path");
-        query = { op: "artifact", path };
+        const atRevision = relay ? u.searchParams.get("revision") : null;
+        if (relay && !uuid(atRevision)) throw fail(400, "Expected revision required");
+        query = { op: "artifact", path, atRevision };
       } else if (req.method === "DELETE" && !action) {
         if (peer.role !== "admin") throw fail(403, "Admin authorization required");
         query = { op: "delete" };
@@ -206,8 +238,14 @@ export function cloudService({ dataDir, principals }, env = process.env) {
         activeWrites++;
         try {
           const change = await body(req);
-          validateChange(change);
-          const result = await storage(python, database, { scope: peer.scope, op: "push", change });
+          validateChange(change, relay);
+          const result = await storage(python, database, {
+            scope: peer.scope,
+            op: "push",
+            change,
+            maxFiles: MAX_FILES + Number(relay),
+            maxBytes: MAX_TOTAL,
+          });
           json(result.error ?? 200, result);
           return;
         } finally {

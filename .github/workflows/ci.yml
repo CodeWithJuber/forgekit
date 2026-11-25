@@ -14,18 +14,15 @@ permissions:
   contents: read
 
 jobs:
-  # Smart test selection: determines the minimal honest test scope.
-  # - cosmetic (docs-only) → skip test matrix, run biome check only
-  # - low (test files only) → run changed test files
-  # - medium (src changes) → related tests + typecheck
-  # - high (anything else) → full suite (fail-safe)
-  # The selector NEVER skips verification — it only selects scope.
-  smart-select:
-    name: Smart test selection
+  # Each matrix runner checks evidence against its own platform and Node version.
+  # A checkout without a trusted complete dependency observation runs the full suite.
+  test:
+    name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    outputs:
-      tier: ${{ steps.select.outputs.tier }}
-      tests: ${{ steps.select.outputs.tests }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -33,8 +30,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
-          node-version: 22
-      - id: select
+          node-version: ${{ matrix.node }}
+      - name: Install dependencies
+        run: npm ci
+      - name: Select tests for this runner
+        id: select
         env:
           BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
         run: |
@@ -45,51 +45,33 @@ jobs:
             console.log("tier=" + plan.tier);
             console.log("tests=" + JSON.stringify(plan.tests));
           ' >> "$GITHUB_OUTPUT"
-
-  test:
-    name: Test (Node ${{ matrix.node }})
-    needs: smart-select
-    # NOTE: no job-level `if:` here. A job-level skip prevents matrix expansion, so
-    # GitHub records the check as the literal "Test (Node ${{ matrix.node }})" and
-    # branch protection's required "Test (Node 20)"/"Test (Node 22)" contexts never
-    # appear — blocking every docs-only PR. The cosmetic skip lives INSIDE the steps
-    # instead, so the matrix always expands and the check names always resolve.
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [20, 22]
-    steps:
-      - name: Skip matrix for cosmetic changes
-        if: needs.smart-select.outputs.tier == 'cosmetic'
-        run: echo "Cosmetic (docs-only) change — test matrix skipped; biome check in quality-gate covers it."
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: needs.smart-select.outputs.tier != 'cosmetic'
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        if: needs.smart-select.outputs.tier != 'cosmetic'
-        with:
-          package-manager-cache: false
-          node-version: ${{ matrix.node }}
-      - name: Install dependencies
-        if: needs.smart-select.outputs.tier != 'cosmetic'
-        run: npm ci
       - name: Run selected tests
-        if: needs.smart-select.outputs.tier != 'cosmetic'
+        if: steps.select.outputs.tier == 'medium'
         env:
-          TEST_TIER: ${{ needs.smart-select.outputs.tier }}
-          SELECTED_TESTS: ${{ needs.smart-select.outputs.tests }}
+          SELECTED_TESTS: ${{ steps.select.outputs.tests }}
         run: |
-          if [ "$TEST_TIER" = low ] || [ "$TEST_TIER" = medium ]; then
-            node -e '
-              const files = JSON.parse(process.env.SELECTED_TESTS);
-              if (!files.length) process.exit(1);
-              require("node:child_process").execFileSync(process.execPath,
-                ["--test", "--import", "./test/_setup.js", "--", ...files], {stdio: "inherit"});
-            '
-            if [ "$TEST_TIER" = medium ]; then npm run typecheck; fi
-          else
-            npm test
-          fi
+          node -e '
+            const files = JSON.parse(process.env.SELECTED_TESTS);
+            if (!files.length) process.exit(1);
+            require("node:child_process").execFileSync(process.execPath,
+              ["--test", "--import", "./test/_setup.js", "--", ...files], {stdio: "inherit"});
+          '
+          npm run typecheck
+      - name: Run full suite
+        if: steps.select.outputs.tier != 'medium'
+        run: npm test
+
+  # Keep the published check name used by repository protection.
+  smart-select:
+    name: Smart test selection
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check that each runner completed its verification plan
+        env:
+          MATRIX_RESULT: ${{ needs.test.result }}
+        run: test "$MATRIX_RESULT" = success
 
   # Windows-git-bash coverage: the guards are bash and the suite does a lot of path work,
   # so run the unit suite on windows-latest under Git Bash. Invoke `node --test` directly
@@ -98,8 +80,6 @@ jobs:
   # hooks) self-skip via `process.platform === 'win32'` guards in the tests themselves.
   test-windows:
     name: Test (Windows / Git Bash)
-    needs: smart-select
-    if: needs.smart-select.outputs.tier != 'cosmetic'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

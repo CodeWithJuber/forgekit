@@ -12,14 +12,30 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { cloudSnapshotPaths, sha, workspaceId, workspaceSnapshot } from "./cloud_snapshot.js";
+import {
+  inspectRelay,
+  pendingRelayChange,
+  queueRelayChange,
+  RELAY_MANIFEST,
+  relayChange,
+  relayKeys,
+  remoteRelayIndex,
+} from "./cloud_relay.js";
+import {
+  cloudSnapshotPaths,
+  MAX_FILE,
+  sha,
+  workspaceId,
+  workspaceSnapshot,
+} from "./cloud_snapshot.js";
 import { outsideWorkspace } from "./private_paths.js";
 import { userStateDir } from "./util.js";
 
-function directory(root) {
+function directory(root, transport = "cloud") {
+  if (transport !== "cloud" && transport !== "relay") throw new Error("Unknown cloud transport");
   const home = outsideWorkspace(
     root,
-    join(userStateDir(), "cloud"),
+    join(userStateDir(), transport),
     "Cloud enrollment requires private state outside the workspace",
   );
   const dir = join(home, sha(realpathSync.native(root)));
@@ -116,9 +132,16 @@ function publicConfig(config) {
     workspace: config.workspace,
     tokenEnv: config.tokenEnv,
     scope: "full-workspace",
+    ...(config.transport === "relay"
+      ? { transport: "relay", tenant: config.tenant, keyEnv: config.keyEnv }
+      : {}),
   };
 }
-export async function configureCloud(root, { url, workspace, tokenEnv, fullWorkspace }) {
+export async function configureCloud(
+  root,
+  { url, workspace, tokenEnv, fullWorkspace, tenant = undefined, keyEnv = undefined },
+  transport = "cloud",
+) {
   if (!fullWorkspace)
     throw new Error(
       "Full workspace content includes source, prompts, memory and recorded artifacts. Configure with --full-workspace to enroll.",
@@ -129,20 +152,34 @@ export async function configureCloud(root, { url, workspace, tokenEnv, fullWorks
     !/^[A-Z_][A-Z0-9_]*$/.test(tokenEnv)
   )
     throw new Error("Provide a workspace ID and credential environment-variable name");
+  if (
+    transport === "relay" &&
+    (!workspaceId(tenant) || !/^[A-Z_][A-Z0-9_]*$/.test(keyEnv || "") || keyEnv === tokenEnv)
+  )
+    throw new Error(
+      "Relay enrollment requires a tenant and a distinct key environment-variable name",
+    );
   cloudSnapshotPaths(root);
-  const dir = directory(root);
+  const dir = directory(root, transport);
   return locked(dir, () => {
     const path = join(dir, "config.json");
     if (existsSync(path))
       throw new Error("Workspace already enrolled. Use logout before changing enrollment.");
-    const config = { endpoint: endpoint(url), workspace, tokenEnv };
+    const config = {
+      endpoint: endpoint(url),
+      workspace,
+      tokenEnv,
+      ...(transport === "relay" ? { transport, tenant, keyEnv } : {}),
+    };
+    if (transport === "relay") Object.assign(config, { keyBinding: relayKeys(config).binding });
     save(path, config);
     return publicConfig(config);
   });
 }
-function configured(dir) {
+function configured(dir, transport = "cloud") {
   const config = get(join(dir, "config.json"));
-  if (!config) throw new Error("Workspace has no cloud enrollment");
+  if (!config) throw new Error("Workspace has no " + transport + " enrollment");
+  if ((config.transport ?? "cloud") !== transport) throw new Error("Enrollment transport mismatch");
   return config;
 }
 function authorization(config) {
@@ -152,7 +189,10 @@ function authorization(config) {
   return token;
 }
 async function request(config, method, sub = "", body = undefined) {
-  const r = await fetch(`${config.endpoint}/v1/workspaces/${config.workspace}${sub}`, {
+  const relay = config.transport === "relay";
+  if (relay) relayKeys(config);
+  const prefix = relay ? "/v1/relay/" + config.tenant + "/" : "/v1/workspaces/";
+  const r = await fetch(`${config.endpoint}${prefix}${config.workspace}${sub}`, {
     method,
     headers: {
       Authorization: `Bearer ${authorization(config)}`,
@@ -176,42 +216,116 @@ async function request(config, method, sub = "", body = undefined) {
       { status: r.status },
     );
   }
-  return r.json();
+  if (!relay) return r.json();
+  // Enforce the bound on decompressed bytes even when a remote omits Content-Length.
+  const reader = r.body?.getReader();
+  if (!reader) throw new Error("Missing relay response");
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > Math.ceil((MAX_FILE * 4) / 3) + 65536) {
+      await reader.cancel();
+      throw new Error("Relay response exceeds capacity");
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-export function previewCloud(root) {
-  const dir = directory(root),
+export function previewCloud(root, transport = "cloud") {
+  const dir = directory(root, transport),
     config = get(join(dir, "config.json"));
   const token = config ? process.env[config.tokenEnv] : undefined;
-  const snapshot = workspaceSnapshot(root, token ? [token] : []);
+  const secrets = token ? [token] : [];
+  if (config?.transport === "relay") {
+    relayKeys(config);
+    secrets.push(process.env[config.keyEnv]);
+  }
+  const snapshot = workspaceSnapshot(root, secrets);
   return {
     bytes: snapshot.bytes,
     skipped: snapshot.skipped,
     files: snapshot.files.map(({ content, ...meta }) => meta),
   };
 }
-export async function cloudStatus(root, remote = false) {
-  const dir = directory(root),
+export async function cloudStatus(root, remote = false, transport = "cloud") {
+  const dir = directory(root, transport),
     config = get(join(dir, "config.json"));
   if (!config) return { enrolled: false };
   const state = get(join(dir, "cursor.json"));
+  let remoteState;
+  if (remote) {
+    if (transport === "relay") {
+      const index = await remoteRelayIndex(
+        relayKeys(config),
+        (sub) => request(config, "GET", sub),
+        undefined,
+      );
+      remoteState = {
+        revision: index.revision,
+        authenticated: Boolean(index.manifest),
+        files: index.files.length,
+      };
+    } else remoteState = await request(config, "GET");
+  }
   return {
     enrolled: true,
     ...publicConfig(config),
     revision: state?.revision ?? null,
     pending: existsSync(join(dir, "pending.json")),
-    ...(remote ? { remote: await request(config, "GET") } : {}),
+    ...(remote ? { remote: remoteState } : {}),
   };
 }
-export async function pushCloud(root, { replaceRemote = false, confirmed = false } = {}) {
+export async function pushCloud(
+  root,
+  { replaceRemote = false, confirmed = false } = {},
+  transport = "cloud",
+) {
   if (replaceRemote && !confirmed)
     throw new Error("Replacing the remote baseline requires --confirm");
   cloudSnapshotPaths(root);
-  const dir = directory(root);
+  const dir = directory(root, transport);
   return locked(dir, async () => {
-    const config = configured(dir),
+    const config = configured(dir, transport),
       token = authorization(config);
     const queued = join(dir, "pending.json"),
       cursor = join(dir, "cursor.json");
+    if (transport === "relay") {
+      const keys = relayKeys(config);
+      const base = replaceRemote
+        ? await remoteRelayIndex(keys, (sub) => request(config, "GET", sub), undefined)
+        : (get(cursor) ?? { revision: null, manifest: null });
+      if (replaceRemote) {
+        save(cursor, { revision: base.revision, manifest: base.manifest });
+        rmSync(queued, { force: true });
+      }
+      const stored = get(queued);
+      let change = stored && pendingRelayChange(keys, stored);
+      if (change && change.id !== base.revision && change.parent !== base.revision)
+        throw new Error("Pending relay upload has a different parent revision");
+      let skipped = {};
+      if (!change) {
+        const snapshot = workspaceSnapshot(root, [token, process.env[config.keyEnv]]);
+        skipped = snapshot.skipped;
+        change = relayChange(keys, base, snapshot);
+        if (!change) return { revision: base.revision, modified: 0, removed: 0, skipped };
+        save(queued, queueRelayChange(keys, change));
+      }
+      const answer = await request(config, "POST", "/sync", change);
+      if (answer.revision !== change.id)
+        throw new Error("Invalid relay acknowledgement; snapshot is pending");
+      const manifest = change.files.find((f) => f.path === RELAY_MANIFEST);
+      save(cursor, { revision: change.id, manifest });
+      rmSync(queued);
+      return {
+        revision: change.id,
+        modified: change.files.length - 1,
+        removed: change.removed.length,
+        skipped,
+      };
+    }
     if (replaceRemote) {
       const remote = await request(config, "GET");
       const files = Object.fromEntries(
@@ -255,12 +369,16 @@ export async function pushCloud(root, { replaceRemote = false, confirmed = false
     };
   });
 }
-export async function removeCloud(root, remote = false, confirmed = false) {
+export async function readRelay(root, path = undefined, revision = undefined) {
+  const config = configured(directory(root, "relay"), "relay");
+  return inspectRelay(relayKeys(config), (sub) => request(config, "GET", sub), path, revision);
+}
+export async function removeCloud(root, remote = false, confirmed = false, transport = "cloud") {
   if (remote && !confirmed)
     throw new Error("Cloud delete requires --confirm and an admin credential");
-  const dir = directory(root);
+  const dir = directory(root, transport);
   return locked(dir, async () => {
-    if (remote) await request(configured(dir), "DELETE");
+    if (remote) await request(configured(dir, transport), "DELETE");
     for (const name of ["config.json", "pending.json", "cursor.json"])
       rmSync(join(dir, name), { force: true });
     return { enrolled: false, remoteDeleted: remote };

@@ -47,7 +47,7 @@ import {
   load as loadAtlas,
 } from "./atlas.js";
 import { BRAND } from "./brand.js";
-import { readSession, sessionPath } from "./cortex_hook.js";
+import { readSession, sessionFile, sessionPath } from "./cortex_hook.js";
 import { couplingHazards, renderHazards } from "./coupling.js";
 import { decisionsPath } from "./decide.js";
 import { statePath } from "./handoff.js";
@@ -551,7 +551,7 @@ export function stopGate(root, sid, hook = {}) {
     let startedAt = base?.t ?? null;
     if (startedAt == null) {
       try {
-        startedAt = statSync(sessionPath(root, sid)).birthtimeMs || null;
+        startedAt = statSync(sessionFile(root, sid)).birthtimeMs || null;
       } catch {}
     }
     const stateTouched =

@@ -27,6 +27,9 @@ for table, key in tables[sys.argv[3]]:
     where = f" WHERE {key}=?" if key else ""
     for item in db.execute(f"SELECT * FROM {table}{where} ORDER BY rowid",(scope,) if key else ()) :
         fields = dict(item)
+        if table == "items":
+            # MinHash bytes are a local search accelerator derived from the claim text.
+            fields.pop("signature", None)
         if table == "jobs":
             fields.pop("token",None)
         limits += len(json.dumps(fields).encode())

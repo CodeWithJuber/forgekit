@@ -13,11 +13,8 @@ import { mintClaim, val } from "../src/ledger.js";
 import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
 import { MCP_TOOL_GUIDE, mcpInstructions, ORIENT_TOOLS } from "../src/orient.js";
+import { epochDay } from "../src/util.js";
 import { fakeGithubPat } from "./_fixtures.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 test("handle: initialize advertises the forge-cortex server", async () => {
   const r = await handle({
@@ -183,8 +180,8 @@ test("live server over stdio returns learned lessons for a repo", () => {
     { type: "edit", file: "src/tax.ts" },
     { type: "bash", command: "npm test", exitCode: 0 },
   ];
-  processSession(root, session(), 1);
-  processSession(root, session(), 2); // → active lesson
+  processSession(root, session(), epochDay() - 1, { sessionId: "first-session" });
+  processSession(root, session(), epochDay(), { sessionId: "second-session" }); // → active lesson
 
   const requests = [
     JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),

@@ -1,13 +1,4 @@
-// forge ledger bridge — the P1 migration seam between the legacy stores (lessons/*.md,
-// recall facts) and the PCM ledger. The ledger shadows every write as the new
-// canonical, and `forge ledger import` back-fills pre-ledger history. P2 (shipped —
-// see ledger_read.js) flipped READS to a merged view (legacy ∪ ledger); the legacy
-// files remain the canonical LOCAL state until full retirement.
-// Spec: docs/plans/substrate-v2/01-pcm-protocol.md §7.
-//
-// Every entry point here is BEST-EFFORT by design: the legacy store is still
-// canonical for local state, so a bridge failure returns {ok:false} and must never
-// break a hook or CLI write that already succeeded.
+// Write lesson observations, revisions and facts through the authoritative PCM ledger.
 import { mintClaim, outcomeRecord } from "./ledger.js";
 import {
   appendEvidence,
@@ -19,13 +10,8 @@ import {
   repoLedger,
   tombstone,
 } from "./ledger_store.js";
-import { load as loadLessons } from "./lessons_store.js";
-// listStored, NOT list: the bridge reconciles the FILE store against the ledger. The
-// merged `list` (P2 read flip) includes ledger-only teammate facts, which have no file
-// and would read here as "deleted from the store".
-import { listStored as listFacts, readStoredFact } from "./recall.js";
 import { describeConflicts, sameSemantics, semanticConflicts } from "./semantic_guard.js";
-import { epochDay, gitAuthor, ledgerOnly, slug } from "./util.js";
+import { epochDay, gitAuthor, slug } from "./util.js";
 
 /** One best-effort policy for the whole bridge (never throws into a caller). */
 const bestEffort = (fn) => {
@@ -47,6 +33,9 @@ export function lessonClaim(lesson, t = 0, lineage = {}) {
   return mintClaim({
     kind: "lesson",
     body: {
+      ...(lesson.provenance?.correctionVersion === 2 ? { correctionVersion: 2 } : {}),
+      ...(lesson.provenance?.check ? { check: lesson.provenance.check } : {}),
+      ...(lesson.provenance?.operatorText ? { operatorText: true } : {}),
       correctedBehavior: lesson.correctedBehavior ?? "",
       trigger: {
         action: lesson.trigger?.action ?? "",
@@ -58,7 +47,14 @@ export function lessonClaim(lesson, t = 0, lineage = {}) {
     },
     scope: { level: lesson.scope ?? "repo" },
     // `lineage` (supersedes/rewrite/conflicts) rides in PROVENANCE — never the content address.
-    provenance: { agent: "cortex", author: gitAuthor(), task: lesson.id ?? "", ...lineage },
+    provenance: {
+      agent: "cortex",
+      author: gitAuthor(),
+      task: lesson.id ?? "",
+      ...(lesson.provenance?.episodes?.length ? { episodes: lesson.provenance.episodes } : {}),
+      ...(lesson.provenance?.signals?.length ? { signals: lesson.provenance.signals } : {}),
+      ...lineage,
+    },
     t,
   });
 }
@@ -67,18 +63,15 @@ export function lessonClaim(lesson, t = 0, lineage = {}) {
  *  file-parse import path mint the SAME id for the same fact. `rev` (≥1) re-asserts a value
  *  whose rev-0 claim was retracted — see shadowFact; rev 0 keeps the historical id.
  *  @returns {{ok:boolean, reason?:string, claim?:any}} */
-export function factClaim(name, text, t = 0, rev = 0) {
+export function factClaim(name, text, t = 0, rev = 0, provenance = {}) {
   return mintClaim({
     kind: "fact",
     body: { name: String(name).trim(), text: String(text).trim(), ...(rev ? { rev } : {}) },
     scope: { level: "repo" },
-    provenance: { agent: "recall", author: gitAuthor() },
+    provenance: { agent: "recall", author: gitAuthor(), ...provenance },
     t,
   });
 }
-
-/** The content key of a fact — what "the same fact" means across revisions. */
-const factKey = (name, text) => JSON.stringify([String(name).trim(), String(text).trim()]);
 
 /**
  * Shadow-write one lesson event into the repo ledger.
@@ -92,10 +85,12 @@ const factKey = (name, text) => JSON.stringify([String(name).trim(), String(text
 export function recordLessonEvent(root, lesson, ev = {}) {
   return bestEffort(() => {
     const dir = repoLedger(root);
-    const minted = lessonClaim(lesson, ev.t ?? 0);
+    const minted = lessonClaim(
+      lesson,
+      lesson.provenance?.correctionVersion === 2 ? lesson.createdDay : (ev.t ?? 0),
+    );
     if (!minted.ok) return { ok: false, reason: minted.reason };
-    const put = putClaim(dir, minted.claim);
-    if (!put.ok) return put;
+    let outcome;
     if (ev.result) {
       const o = outcomeRecord({
         oracle: ev.oracle ?? "cortex.episode",
@@ -109,7 +104,17 @@ export function recordLessonEvent(root, lesson, ev = {}) {
           ok: false,
           reason: "reason" in o ? o.reason : "invalid outcome",
         };
-      const a = appendEvidence(dir, minted.claim.id, o.outcome);
+      outcome = o.outcome;
+    }
+    const existing = getClaimByPrefix(dir, minted.claim.id, { attic: true });
+    if (existing?.archived || existing?.tombstone)
+      return { ok: false, reason: "This lesson was retired" };
+    if (!existing) {
+      const put = putClaim(dir, minted.claim);
+      if (!put.ok) return put;
+    }
+    if (outcome) {
+      const a = appendEvidence(dir, minted.claim.id, outcome);
       if (!a.ok) return a;
     }
     return { ok: true, id: minted.claim.id };
@@ -230,129 +235,4 @@ export function shadowFact(ledgerDir, name, text, t = epochDay(), { replace = tr
     reindex(ledgerDir, t);
     return { ...put, id: minted.claim.id };
   });
-}
-
-/**
- * Re-align a ledger's fact claims with the store they shadow: any live fact claim
- * whose (name, text) no longer exists as a stored fact is tombstoned. Called after
- * `forge recall consolidate` (which rm's duplicate files) so deleted memories don't
- * survive as live claims.
- */
-export function reconcileFacts(store, ledgerDir, t = epochDay()) {
-  return bestEffort(() => {
-    // Ledger-only: there are no fact FILES to reconcile against — the ledger IS the
-    // store, so "no backing file ⇒ tombstone" is inverted and would wipe every fact.
-    // Reconciliation only makes sense while the file store is canonical (default off).
-    if (ledgerOnly()) return { ok: true, removed: 0 };
-    // Compare CONTENT (name, text), not ids: a restored value lives under a `rev` id
-    // (shadowFact) that factClaim(name, text) alone would not reproduce.
-    const current = new Set();
-    for (const slug of listFacts(store)) {
-      const f = readStoredFact(store, slug);
-      if (f) current.add(factKey(f.name, f.text));
-    }
-    let removed = 0;
-    for (const c of loadClaims(ledgerDir)) {
-      // Only reconcile claims THIS author minted: a locally-authored claim with no
-      // backing file means the file was deleted (consolidate rm'd a duplicate). A
-      // teammate's claim (arrived via `forge ledger merge`) never had a local file —
-      // with the P2 read flip it IS the readable fact, and tombstoning it here would
-      // silently delete team knowledge on every consolidate.
-      const mine = (c.provenance?.author ?? "") === gitAuthor();
-      const backed = current.has(factKey(c.body?.name ?? "", c.body?.text ?? ""));
-      if (c.kind === "fact" && !c.tombstone && mine && !backed) {
-        tombstone(ledgerDir, c.id, {
-          author: gitAuthor(),
-          reason: "removed-from-store",
-          t,
-        });
-        removed++;
-      }
-    }
-    if (removed) reindex(ledgerDir, t);
-    return { ok: true, removed };
-  });
-}
-
-/**
- * Import every fact in a recall/brain store into a ledger (idempotent; supersedes
- * stale same-name claims via shadowFact).
- * @returns {{facts:number, refused:string[]}}
- */
-export function importFacts(store, ledgerDir, nowDay = 0) {
-  const refused = [];
-  let facts = 0;
-  for (const slug of listFacts(store)) {
-    const f = readStoredFact(store, slug);
-    if (!f) {
-      refused.push(`fact ${slug}: unreadable`);
-      continue;
-    }
-    const r = shadowFact(ledgerDir, f.name, f.text, nowDay);
-    if (r.ok && !r.existed) facts++;
-    else if (!r.ok) refused.push(`fact ${slug}: ${r.reason}`);
-  }
-  return { facts, refused };
-}
-
-/**
- * One-shot back-fill of PRE-LEDGER history. A lesson whose claim already exists in
- * the ledger is skipped entirely — its live shadow-writes are already tracking it,
- * and re-synthesizing evidence from the (still-moving) legacy counters would double-
- * count and break idempotence. Only never-seen claims get their aggregate counts
- * expanded into conservative `legacy.import` outcomes.
- * @param {string} root repo root (lessons + repo ledger)
- * @param {{recallStore?:string, recallLedger?:string, nowDay?:number}} opts
- * @returns {{lessons:number, facts:number, outcomes:number, refused:string[]}}
- */
-export function importLegacy(root, { recallStore, recallLedger, nowDay = 0 } = {}) {
-  const dir = repoLedger(root);
-  const refused = [];
-  let lessons = 0;
-  let outcomes = 0;
-
-  for (const lesson of loadLessons(root)) {
-    const minted = lessonClaim(lesson, lesson.createdDay ?? 0);
-    if (!minted.ok) {
-      refused.push(`lesson ${lesson.id}: ${minted.reason}`);
-      continue;
-    }
-    const put = putClaim(dir, minted.claim);
-    if (!put.ok) {
-      refused.push(`lesson ${lesson.id}: ${put.reason}`);
-      continue;
-    }
-    if (put.existed) continue; // already tracked live — never re-synthesize
-    lessons++;
-    // Aggregate counts become individual, decay-dated outcomes: confirms carry the
-    // last-confirmed day (what freshness keyed on), contradictions the created day
-    // (the legacy store kept no per-contradiction date — documented approximation).
-    /** @type {{result:"confirm"|"contradict", t:number, n:number}[]} */
-    const synth = [];
-    for (let i = 0; i < (lesson.evidenceCount ?? 0); i++)
-      synth.push({ result: "confirm", t: lesson.lastConfirmedDay ?? 0, n: i });
-    for (let i = 0; i < (lesson.contradictionCount ?? 0); i++)
-      synth.push({ result: "contradict", t: lesson.createdDay ?? 0, n: i });
-    for (const s of synth) {
-      const o = outcomeRecord({
-        oracle: "legacy.import",
-        result: s.result,
-        ref: `legacy:${lesson.id}#${s.result}${s.n}`,
-        t: s.t,
-      });
-      if (!o.ok) continue;
-      const a = appendEvidence(dir, minted.claim.id, o.outcome);
-      if (a.ok && !a.deduped) outcomes++;
-    }
-  }
-
-  let facts = 0;
-  if (recallStore) {
-    const r = importFacts(recallStore, recallLedger ?? dir, nowDay);
-    facts = r.facts;
-    refused.push(...r.refused);
-  }
-
-  reindex(dir, nowDay);
-  return { lessons, facts, outcomes, refused };
 }

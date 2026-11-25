@@ -60,12 +60,9 @@ export const ORACLES = {
 /** One source of truth for scope weighting — lessons.js re-exports this. */
 export const SCOPE_WEIGHT = { symbol: 1.0, dir: 0.8, repo: 0.6, global: 0.4 };
 
-/** Retrieval weights for Eq. 3 (a=relevance, b=recency, g=validity, s=scope). a/b/g are the
- *  spec defaults (01-pcm-protocol.md §4); they are NOT calibrated — the planned
- *  logistic-regression calibration on retrieval outcomes has not been run. `s` puts scope
- *  INSIDE the linear term as a small prior (symbol vs global differ by s·0.6 = 0.06): it
- *  breaks ties between comparably relevant claims but can never outrank a relevance gap. */
-export const EQ3_WEIGHTS = { a: 0.55, b: 0.15, g: 0.3, s: 0.1 };
+/** Historical Eq. 3 coefficients for reproducible v1 audits and explicit custom scoring. */
+export const EQ3_WEIGHTS = Object.freeze({ a: 0.55, b: 0.15, g: 0.3, s: 0.1 });
+export const LEDGER_RANKING = "empirical-midranks-v2";
 
 export const DEFAULT_HALF_LIFE_DAYS = 45;
 /** Below this val a claim is dormant: kept for audit, never retrieved. The trusted
@@ -711,93 +708,122 @@ export function claimText(claim) {
 const sketchOf = (claim) => (claim._sketch ??= sketch(claimText(claim)));
 const termsOf = (claim) => (claim._terms ??= new Set(normalizeText(claimText(claim))));
 
-/**
- * Eq. 3 retrieval score (paper §7.1): σ(a·rel + b·rec + g·val + s·scope). The `g·val` term is
- * the protocol's load-bearing addition — outcome-confirmed claims outrank merely-recent ones.
- * Scope sits INSIDE the linear term as a small prior (EQ3_WEIGHTS.s). It used to multiply
- * σ from outside; with a+b+g = 1, σ only spans [0.5, 0.731], so the multiplier made scope a
- * strict priority — an unrelated, 400-day-old, contradicted symbol claim (0.5375) outranked a
- * perfect-match repo claim (0.3853) (review C5).
- *
- * `query` may be a string, a relQuery() object, or (legacy) a bare sketch array — the last
- * gets Jaccard-only relevance. `sim` (optional) replaces the lexical `rel` term with a
- * caller-supplied similarity (the ADR-0005 embeddings tier — built by callers from embed.js;
- * this pure core NEVER imports a provider). It returns a cosine in [-1,1] or null; null (or
- * any non-finite value) falls back to lexical relevance, and negatives clamp to 0 —
- * "anti-similar" is just irrelevant, never a penalty below unrelated. (retrieve() decides the
- * backend once per ranking, so one ranking never mixes cosine with Jaccard.)
- * @param {*} query
- * @param {any} claim
- * @param {{nowDay?:number, weights?:{a:number,b:number,g:number,s?:number}, sim?:(query:any, claim:any)=>number|null}} [opts]
- */
-export function score(query, claim, opts = {}) {
-  return scoreParts(query, claim, opts).score;
+/** The backend for a ranking must measure every candidate on the same scale. */
+function relevance(query, claim, sim) {
+  const measured = sim?.(query, claim);
+  if (Number.isFinite(measured)) return Math.max(0, Math.min(1, measured));
+  const q =
+    typeof query === "string" ? relQuery(query) : Array.isArray(query) ? { sketch: query } : query;
+  return lexicalRel(q, claim);
 }
 
-/** score() plus the relevance term it used — retrieve() reports `rel` so callers (déjà vu)
- *  can gate on relevance rather than on the whole score.
- *  @param {*} query
- *  @param {any} claim
- *  @param {{nowDay?:number, weights?:{a:number,b:number,g:number,s?:number},
- *           sim?:((query:any, claim:any)=>number|null)|null}} [opts]
- *  @returns {{score:number, rel:number}} */
-function scoreParts(query, claim, { nowDay = 0, weights = EQ3_WEIGHTS, sim } = {}) {
-  let rel = null;
-  if (sim) {
-    const s = sim(query, claim);
-    if (typeof s === "number" && Number.isFinite(s)) rel = Math.max(0, Math.min(1, s));
-  }
-  if (rel === null) {
-    const q =
-      typeof query === "string"
-        ? relQuery(query)
-        : Array.isArray(query)
-          ? { sketch: query }
-          : query;
-    rel = lexicalRel(q, claim);
-  }
-  const scopeW = SCOPE_WEIGHT[claim.scope?.level] ?? 0.5;
+/** Historical v1 single-claim score. The live v2 score requires the candidate distribution.
+ * @param {any} query
+ * @param {any} claim
+ * @param {{nowDay?:number,weights?:{a:number,b:number,g:number,s?:number},sim?:(query:any,claim:any)=>number|null}} [opts]
+ */
+export function scoreEq3V1(
+  query,
+  claim,
+  { nowDay = 0, weights = EQ3_WEIGHTS, sim = undefined } = {},
+) {
+  const rel = relevance(query, claim, sim);
   const x =
     weights.a * rel +
     weights.b * rec(claim, nowDay) +
     weights.g * val(claim, nowDay) +
-    (weights.s ?? 0) * scopeW;
-  return { score: 1 / (1 + Math.exp(-x)), rel };
+    (weights.s ?? 0) * (SCOPE_WEIGHT[claim.scope?.level] ?? 0.5);
+  return 1 / (1 + Math.exp(-x));
+}
+export const score = scoreEq3V1;
+
+function scopeMatch(queryTerms, claim) {
+  if (!queryTerms.size) return 0;
+  const scope = claim.scope ?? {},
+    trigger = claim.body?.trigger ?? {};
+  const names = [scope.repo, scope.dir, scope.symbol, trigger.files, trigger.symbols]
+    .flat()
+    .filter((n) => typeof n === "string");
+  const terms = new Set(normalizeText(names.join(" ")));
+  let hits = 0;
+  for (const t of queryTerms) if (terms.has(t)) hits++;
+  return hits / queryTerms.size;
 }
 
-/** Rank live (non-dormant, non-tombstoned) claims for a query; caps at `budget`. Each row is
- *  {claim, score, rel}. Optional `sim` as in score() — the caller-built embedding
- *  similarity; the query string is what a sim sees. The backend is chosen ONCE per ranking:
- *  cosine only when the provider embedded every candidate, lexical for all otherwise —
- *  dense cosines sit at 0.4–0.6 for unrelated same-domain text while Jaccard sits near 0,
- *  so a partially embedded ledger used to rank every embedded claim above every lexical one.
- *  @param {*} query
- *  @param {any[]} claims
- *  @param {{nowDay?:number, budget?:number, weights?:{a:number,b:number,g:number,s?:number},
- *           sim?:((query:any, claim:any)=>number|null)|null}} [opts]
- *  @returns {{claim:any, score:number, rel:number}[]} */
+/** Compute midranks once per distinct measurement. Average tie positions preserve
+ * permutation invariance. Constant measurements provide no ordering information. */
+function cohortScores(rows) {
+  for (const field of ["rel", "recency", "validity", "scope"]) {
+    const sorted = rows.slice().sort((a, b) => a[field] - b[field]);
+    if (!sorted.length || sorted[0][field] === sorted[sorted.length - 1][field]) continue;
+    for (let start = 0; start < sorted.length; ) {
+      let end = start + 1;
+      while (end < sorted.length && sorted[end][field] === sorted[start][field]) end++;
+      // Empirical CDF with half credit for ties, the normalized Borda score.
+      const percentile = (start + end) / (2 * sorted.length);
+      for (let index = start; index < end; index++) {
+        sorted[index].sum += percentile;
+        sorted[index].axes++;
+      }
+      start = end;
+    }
+  }
+  return rows.map((r) => ({
+    claim: r.claim,
+    rel: r.rel,
+    // Both a textual match and an explicit scope match provide query evidence.
+    // An unrelated fresh claim cannot displace a claim with matching evidence.
+    score: Math.max(r.rel, r.scope) * (r.axes ? r.sum / r.axes : 1),
+  }));
+}
+
+/** Rank eligible claims using query relevance, last confirmation, validated evidence and
+ * scope terms that actually match the query. Choose a single similarity backend for the
+ * whole request. Passing explicit v1 weights preserves earlier custom ranking callers.
+ * @param {string} query
+ * @param {any[]} claims
+ * @param {{nowDay?:number,budget?:number,ranking?:string,weights?:{a:number,b:number,g:number,s?:number},sim?:(query:any,claim:any)=>number|null}} [opts]
+ */
 export function retrieve(
   query,
   claims,
-  { nowDay = 0, budget = 12, weights = EQ3_WEIGHTS, sim } = {},
+  { nowDay = 0, budget = 12, weights, ranking = weights ? "eq3-v1" : LEDGER_RANKING, sim } = {},
 ) {
-  const q = String(query);
-  const rq = relQuery(q);
+  if (ranking !== LEDGER_RANKING && ranking !== "eq3-v1") throw new Error("Unknown ledger ranking");
+  if (weights && ranking !== "eq3-v1") throw new Error("Custom weights require the eq3-v1 ranking");
+  const q = String(query),
+    rq = relQuery(q);
   const live = claims.filter((c) => !c.tombstone && !isDormant(c, nowDay));
-  let boundSim;
-  if (sim && live.length) {
-    const sims = live.map((c) => sim(q, c));
-    if (sims.every((x) => typeof x === "number" && Number.isFinite(x))) {
-      const byClaim = new Map(live.map((c, i) => [c, sims[i]]));
-      boundSim = (_q, c) => byClaim.get(c);
-    }
-  }
-  return live
-    .map((c) => {
-      const p = scoreParts(rq, c, { nowDay, weights, sim: boundSim });
-      return { claim: c, score: p.score, rel: p.rel };
-    })
-    .sort((a, b) => b.score - a.score || (a.claim.id < b.claim.id ? -1 : 1))
+  const sims = sim ? live.map((c) => sim(q, c)) : [];
+  const complete =
+    Boolean(sim) && sims.every((value) => typeof value === "number" && Number.isFinite(value));
+  const measured = live.map((claim, i) => {
+    const rel = complete ? Math.max(0, Math.min(1, sims[i])) : lexicalRel(rq, claim);
+    return { claim, rel };
+  });
+  const ranked =
+    ranking === "eq3-v1"
+      ? measured.map(({ claim, rel }) => ({
+          claim,
+          rel,
+          score: scoreEq3V1(rq, claim, { nowDay, weights, sim: () => rel }),
+        }))
+      : cohortScores(
+          measured.map(({ claim, rel }) => ({
+            claim,
+            rel,
+            recency: rec(claim, nowDay),
+            validity: val(claim, nowDay),
+            scope: scopeMatch(rq.terms, claim),
+            sum: 0,
+            axes: 0,
+          })),
+        );
+  return ranked
+    .sort(
+      (a, b) =>
+        b.score - a.score || (a.claim.id < b.claim.id ? -1 : a.claim.id > b.claim.id ? 1 : 0),
+    )
     .slice(0, budget);
 }
 

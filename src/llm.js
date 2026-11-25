@@ -18,6 +18,7 @@ import {
   profileCredential,
   trustedModelProfile,
 } from "./providers.js";
+import { defaultDispatchModel } from "./route.js";
 
 // Anthropic Messages API — POST {baseUrl}/v1/messages, x-api-key / bearer auth.
 const HTTP_CHILD_ANTHROPIC = `let raw="";process.stdin.on("data",(d)=>{raw+=d;});process.stdin.on("end",async()=>{try{const{url,model,prompt,maxTokens}=JSON.parse(raw);const key=process.env._FORGE_LLM_KEY||"";const headers={"content-type":"application/json","anthropic-version":"2023-06-01"};if(key.startsWith("Bearer "))headers.authorization=key;else if(key)headers["x-api-key"]=key;const body=JSON.stringify({model,max_tokens:maxTokens||1024,messages:[{role:"user",content:prompt}]});const res=await fetch(url,{method:"POST",headers,body,redirect:"error"});if(!res.ok){process.stderr.write("llm: http "+res.status);process.exit(1);}const data=await res.json();const text=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");process.stdout.write(JSON.stringify({text,model:data.model||null,usage:data.usage||null}));}catch(e){process.stderr.write("llm: "+(e.message||e));process.exit(1);}});`;
@@ -67,15 +68,14 @@ export function resolveHttpProvider({ root = process.cwd(), profile = undefined 
     path,
     format: openai ? "openai" : "anthropic",
     model: envModelOverride(selected) || selected.selectedModel || null,
-    defaultModel: openai ? (selected.models?.sonnet ?? null) : null,
+    defaultModel: envModelOverride(selected) || selected.selectedModel || null,
   };
 }
 
 /**
  * Build an HTTP-based LLM runner. Same contract as adjudicate.buildRunner:
  * returns (prompt) => string. Selects the Anthropic or OpenAI-compatible wire format
- * from the resolved provider. With no `model`, the haiku tier is resolved at call time (live
- * catalog, else the shipped snapshot) — there is no model id pinned here.
+ * from the resolved provider. An omitted model uses an explicit operator pin or a verified workload route.
  * @param {{model?: string, timeoutMs?: number, root?:string,profile?:string,onReceipt?:Function, spawn?:typeof spawnSync}} [opts]
  */
 export function buildHttpRunner({
@@ -93,12 +93,11 @@ export function buildHttpRunner({
         "no LLM provider configured — set ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, OPENAI_API_KEY, or GEMINI_API_KEY",
       );
     const child = provider.format === "openai" ? HTTP_CHILD_OPENAI : HTTP_CHILD_ANTHROPIC;
-    const exact = model && !Object.hasOwn(MODELS, model);
-    const chosenModel = exact
-      ? model
-      : provider.model ||
-        (!model && provider.defaultModel) ||
-        resolveTierModel(model || "haiku", { root, provider: provider.profile })?.id;
+    const chosenModel = !model
+      ? defaultDispatchModel(root, prompt, provider.profile.name)
+      : Object.hasOwn(MODELS, model)
+        ? provider.model || resolveTierModel(model, { root, provider: provider.profile })?.id
+        : model;
     if (!SAFE_MODEL_ID.test(chosenModel || "")) throw new Error("Invalid selected model ID");
     const input = JSON.stringify({
       url: `${provider.baseUrl}${provider.path}`,

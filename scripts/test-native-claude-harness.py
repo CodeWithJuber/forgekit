@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import threading
 
-from native_harness_fixture import HarnessModel, prepare_project, ROOT, TASK
+from native_harness_fixture import NativeEditReview, HarnessModel, prepare_project, ROOT, TASK
 
 
 def tool_result(request):
@@ -52,16 +52,19 @@ class LocalModels(HarnessModel):
         turn = len(history)
         prefix = self.server.prefix
         call = None
-        if turn == 1 and "call forge_harness_run" in json.dumps(req["messages"]).lower():
+        if getattr(self.server, "edit", None):
+            if self.server.edit.next_edit(req["messages"]):
+                call = ("Write", {"file_path": str(self.server.edit.file), "content": "reviewed fixture"})
+        elif turn == 1 and "call forge_harness_run" in json.dumps(req["messages"]).lower():
             call = ("ToolSearch", {"query": "select:" + prefix + "run," + prefix + "status"})
-        if turn == 2 and prefix + "run" in tool_result(req) and prefix + "status" in tool_result(req):
+        if not getattr(self.server, "edit", None) and turn == 2 and prefix + "run" in tool_result(req) and prefix + "status" in tool_result(req):
             call = (prefix + "run", {"task": TASK, "acceptance": ["Calculator suite passes"]})
-        if turn == 3:
+        if not getattr(self.server, "edit", None) and turn == 3:
             try:
                 call = (prefix + "status", {"id": json.loads(tool_result(req))["id"]})
             except (ValueError, KeyError):
                 pass
-        if turn == 4:
+        if not getattr(self.server, "edit", None) and turn == 4:
             call = ("Bash", {"command": "echo escaped > native-bypass.txt",
                              "description": "Exercise the native tool boundary"})
         usage = {"input_tokens": 50, "output_tokens": 10}
@@ -91,7 +94,7 @@ class LocalModels(HarnessModel):
             self.wfile.write(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n".encode())
 
 
-def verify(claude, folder, server, mode):
+def verify(claude, folder, server, mode, version):
     repo, home, config, bin_dir, state = (folder / p for p in ("repo", "home", "claude", "bin", "state"))
     for d in (repo, home, config, bin_dir, state):
         d.mkdir()
@@ -115,9 +118,24 @@ def verify(claude, folder, server, mode):
             raise RuntimeError(f"{args[0]} failed: {(result.stdout + result.stderr)[-1400:]}")
         return result.stdout.strip()
 
-    if not run(claude, "--version").startswith("2.1.325 "):
-        raise RuntimeError("Expected Claude Code 2.1.325")
+    if not run(claude, "--version").startswith(version + " "):
+        raise RuntimeError(f"Expected Claude Code {version}")
     run("git", "init", "-q")
+    (config / ".claude.json").write_text(json.dumps({"hasCompletedOnboarding": True, "projects": {
+        str(repo): {"hasTrustDialogAccepted": True, "enabledMcpjsonServers": ["forge-cortex"]}}}))
+    if mode == "project":
+        run("forge", "hooks", "on", "--hosts", "claude")
+        edit_registration = []
+    else:
+        edit_registration = ["--plugin-dir", str(ROOT)]
+    server.prefix = ""
+    server.outer = []
+    server.edit = NativeEditReview(repo, lambda id: run("forge", "impact", "--review", id, "--json"))
+    run(claude, "-p", "Create the fixture note.", "--no-session-persistence",
+        *edit_registration, "--allowedTools", "Write")
+    server.edit.check(f"Claude Code {version} ({mode})")
+    server.edit = None
+    server.outer.clear()
     run("forge", "harness", "init", "--hosts", "claude", "--supervised")
     if mode == "plugin":
         # Isolate the packaged native entry point: omit generated project hooks
@@ -131,9 +149,7 @@ def verify(claude, folder, server, mode):
         prefix = "mcp__forge-cortex__forge_harness_"
     server.prefix = prefix
     marker = prepare_project(repo, env, run, node, url + "/v1")
-    (config / ".claude.json").write_text(json.dumps({"hasCompletedOnboarding": True, "projects": {
-        str(repo): {"hasTrustDialogAccepted": True, "enabledMcpjsonServers": ["forge-cortex"]}}}))
-    run(claude, "-p", TASK, "--no-session-persistence", "--model", "sonnet",
+    run(claude, "-p", TASK, "--no-session-persistence",
         *registration,
         "--allowedTools", prefix + "run", prefix + "status", "ToolSearch", "Bash")
     if len(server.outer) != 5 or len(server.inner) != 2:
@@ -147,20 +163,22 @@ def verify(claude, folder, server, mode):
         raise RuntimeError("The real gated read did not supply the random workspace-only value")
     if "supervised ForgeKit" not in tool_result(server.outer[4]) or (repo / "native-bypass.txt").exists():
         raise RuntimeError("The native hook did not prevent the direct file write")
-    print(f"Claude Code 2.1.325 ({mode}) discovered the deferred MCP schemas on a plain prompt, called supervised run and status, "
+    print(f"Claude Code {version} ({mode}) discovered the deferred MCP schemas on a plain prompt, called supervised run and status, "
           "obtained signed suite evidence after a gated file read, and blocked a native Bash write.")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--claude", type=Path, required=True)
-    cli = p.parse_args().claude.resolve()
+    p.add_argument("--expect-version", default="2.1.325")
+    parsed = p.parse_args()
+    cli = parsed.claude.resolve()
     for mode in ("project", "plugin"):
         with tempfile.TemporaryDirectory(prefix="forge-claude-harness-") as directory:
             with ThreadingHTTPServer(("127.0.0.1", 0), LocalModels) as server:
                 server.outer, server.inner = [], []
                 threading.Thread(target=server.serve_forever, daemon=True).start()
                 try:
-                    verify(cli, Path(directory), server, mode)
+                    verify(cli, Path(directory), server, mode, parsed.expect_version)
                 finally:
                     server.shutdown()

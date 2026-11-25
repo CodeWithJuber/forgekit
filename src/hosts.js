@@ -50,7 +50,7 @@ import { readJsonSafe, userStateDir } from "./util.js";
  *  `ask` / `context` / `block`: the verdicts this event can express; anything else degrades
  *  (ask → deny) or is dropped. `emptyJson`: an empty reply must still be a JSON object.
  *  @typedef {{as: CanonEvent, tool?: string, lift?: string[], skipTools?: string[],
- *    ask?: boolean, context?: boolean, block?: boolean, emptyJson?: boolean}} HostEvent */
+ *    ask?: boolean, context?: boolean, block?: boolean, emptyJson?: boolean, mcpOnly?: boolean}} HostEvent */
 /** @typedef {{label: string, tool: string, file: string|null, layout: "groups"|"flat"|"copilot"|"module",
  *    dialect: keyof typeof DIALECTS, events: Record<string, HostEvent>,
  *    tools: Record<string, string>, timeoutMs?: boolean, named?: boolean, matchAll?: string,
@@ -137,7 +137,7 @@ export const HOSTS = {
       beforeSubmitPrompt: { as: "UserPromptSubmit", block: true },
       // A shell command fires both events; this one can pause for a human, so it owns Bash.
       beforeShellExecution: { as: "PreToolUse", tool: "Bash", lift: ["command"], ask: true },
-      beforeMCPExecution: { as: "PreToolUse", ask: true },
+      beforeMCPExecution: { as: "PreToolUse", ask: true, mcpOnly: true },
       preToolUse: { as: "PreToolUse", skipTools: ["Bash"] },
       postToolUse: { as: "PostToolUse", context: true },
       postToolUseFailure: { as: "PostToolUseFailure", context: true },
@@ -223,7 +223,8 @@ export const HOSTS = {
       list: "LS",
       patch: "Edit",
     },
-    trust: "the plugin loads on the next session; a missing forge CLI is a no-op",
+    trust:
+      "the plugin loads on the next session; a missing or incompatible guard CLI blocks tool use",
   },
   // Devin (the CLI and the desktop app that was Windsurf) reads Claude Code's settings file,
   // so it has no file of its own: the claude channel serves it, with Devin's own limits.
@@ -804,6 +805,7 @@ export function render(hostId, nativeEvent, verdict) {
       return def.ask
         ? say.ask(e, verdict.reason, context)
         : say.deny(e, `${verdict.reason}${NO_CONFIRM}`);
+    if (hostId === "opencode") return json({ decision: "allow", ...(context ? { context } : {}) });
     if (hostId === "cursor" && nativeEvent === "beforeMCPExecution")
       return json({ permission: "allow" });
     return context ? say.context(e, context) : nothing;
@@ -1049,7 +1051,8 @@ export async function runHook({
       const reason = nativeHarnessDenial({ host, event, payload, env });
       if (reason) return render(host, event, { decision: "deny", reason, context: "", block: "" });
     }
-    if (hooksDisabled(env)) return silent;
+    if (hooksDisabled(env))
+      return host === "opencode" && def.as === "PreToolUse" ? json({ decision: "allow" }) : silent;
     if (invalidPayload)
       return def.as === "PreToolUse"
         ? deny("ForgeKit could not validate the pre-tool event.")
@@ -1172,6 +1175,10 @@ export async function runHook({
       selectedManifest = { [norm.event]: groups };
     }
     let verdict = merge([]);
+    // One patch has one impact review. Per-target path/security checks still run first.
+    /** @type {GuardStep[]} */
+    const impactSteps = [];
+    const editPaths = [];
     for (let i = 0; i < norm.payloads.length; i += PATCH_CONCURRENCY) {
       const timeoutMs = Math.ceil(deadline - performance.now());
       if (timeoutMs <= 0) {
@@ -1181,7 +1188,15 @@ export async function runHook({
       }
       const batch = norm.payloads.slice(i, i + PATCH_CONCURRENCY);
       const runs = await Promise.all(
-        batch.map((p) => run(guardChain(p, selectedManifest), p, { env, timeoutMs })),
+        batch.map((p) => {
+          const ordinary = guardChain(p, selectedManifest).filter((step) => {
+            if (step.guard !== "pre-edit-impact.sh") return true;
+            if (!impactSteps.length) impactSteps.push(step);
+            editPaths.push(p.tool_input.file_path ?? p.tool_input.notebook_path);
+            return false;
+          });
+          return run(ordinary, p, { env, timeoutMs });
+        }),
       );
       const results = runs.flatMap((steps, index) =>
         steps.map((step) => {
@@ -1205,6 +1220,27 @@ export async function runHook({
       verdict = merge([verdict, ...results]);
       if (verdict.decision === "deny") return render(as, event, verdict);
     }
+    const [impactStep] = impactSteps;
+    if (impactStep && env.FORGE_GATE !== "advisory") {
+      const timeoutMs = Math.ceil(deadline - performance.now());
+      if (timeoutMs <= 0)
+        return deny("The deadline elapsed before the edit impact could be checked.");
+      const { editIntent } = await import("./pre_edit.js");
+      const rawName = def.tool ?? pick(payload, FIELDS.tool_name);
+      const rawInput = def.tool ? first.tool_input : pick(payload, FIELDS.tool_input);
+      const operation = {
+        cwd: first.cwd,
+        session_id: sid,
+        paths: editPaths,
+        intent: editIntent(rawName, rawInput),
+      };
+      const steps = await run(
+        [{ ...impactStep, args: [...impactStep.args, "--batch"] }],
+        operation,
+        { env, timeoutMs },
+      );
+      verdict = merge([verdict, ...steps.map((step) => interpret(norm.event, step))]);
+    }
     if (
       !component &&
       norm.def.context &&
@@ -1219,9 +1255,12 @@ export async function runHook({
       queueQuery(as, first.cwd, sid, verdict.block ? "" : first.prompt);
     if (!component && norm.event === "PostToolUse") {
       // Other hosts deliver failures inside the ordinary result, e.g. a nonzero Codex Bash exit.
+      const failure = failureQuery(first);
       const guidance = await hookEvidence(
         first.cwd,
-        [failureQuery(first), pending].filter(Boolean).join("\n"),
+        [failure, pending].filter(Boolean).join("\n"),
+        undefined,
+        Boolean(failure),
       );
       verdict.context = join2(verdict.context, guidance, "\n\n");
     }

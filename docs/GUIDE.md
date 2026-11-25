@@ -34,7 +34,7 @@ Every command is real and wired. Grouped by what it does:
 | **Memory**              | `forge hikmah` · `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge claim` · `forge handoff` · `forge decide` · `forge know`                                                                                                                                                                                 |
 | **Quality**             | `forge scan` · `forge vet` · `forge spec` · `forge harden` · `forge radar` · `forge hooks`                                                                                                                                                                                                                                                             |
 | **Config**              | `forge prompts` · `forge discover` · `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                                                                                                                             |
-| **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge cloud` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide`                                                                                                                                   |
+| **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge cloud` · `forge relay` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide`                                                                                                                   |
 <!-- forge:render:command-groups:end -->
 
 Storage in one line: the code graph is `.forge/atlas.json` (plain JSON, not SQLite); the
@@ -122,10 +122,9 @@ $ forge substrate "Change verifyToken in src/auth.js to require length > 20; upd
 Forge substrate — pre-action check
 
   proceed: yes
-  assumption: low risk · completeness 0.88
+  prerequisites: unknown · coverage unknown
 
-  route: Haiku 5.5 (simple) · complexity 0.15
-    driven by: base cost of any task
+  route: No model recommendation. No verified task outcomes have been recorded in this repository.
 
   context: complete — 4 required item(s), 1840/12000 tokens (`forge context` for the assembly)
 
@@ -153,130 +152,34 @@ breaks: on forgekit itself they take the median answer from 15 files to about 80
 0.09). Pass `relations: ["reverse"]` to `substrateCheck` for the old answer; `forge impact`
 stays reverse-only unless you add `--all-relations`.
 
-**A vague task — it tells you to ask first:**
+### Check declared prerequisites
 
-```console
-$ forge substrate "make the auth better"
-
-Forge substrate — pre-action check
-
-  proceed: ASK FIRST
-  assumption: high risk · completeness 0.23
-
-  clarify:
-    - What exactly should this produce, and how will we know it is correct?
-
-  route: Haiku 5.5 (simple) · complexity 0.15
-  impact: 0 file(s) predicted
+```sh
+forge preflight "Update the importer" --require-file schemas/order.json --require-file fixtures/order.csv --json
 ```
 
-Add `--json` for machine-readable output (see [Use it in a script](#use-it-in-a-script)).
+If one of these two files is present, prerequisite coverage is 0.5 and the result names the missing file. Without declared requirements, coverage is unknown. File and symbol references extracted from prose are advisory. A new symbol may be an intended output. A short acknowledgement or a different language supplies no evidence that the task is underspecified.
 
-### `forge preflight "<task>"` — is this clear enough to start?
+With a configured, opt-in provider, the substrate can return an advisory reading. Operators can set `FORGE_PREFLIGHT_MIN_CONFIDENCE` between zero and one to allow the provider's reported confidence to affect a suggestion. An explicitly missing requirement still stands. `FORGE_MAX_IMPACT_FILES` sets an optional positive limit for the number of measured dependent files in the enforcement gate. Without a limit, the impact report remains available for review.
 
-The assumption gate on its own. Flags names the repo doesn't define and vague wording.
+### `forge route "<task>"` chooses a model from repository evidence
 
-```console
-$ forge preflight "fix the thing in authManager so it works properly"
+An operator can choose an exact provider model. For an automatic choice, ForgeKit needs a fresh account-scoped listing, an exact registry binding, and first attempts on comparable tasks with verified verdicts and recorded costs. The default command, MCP tool and prompt hook use cached metadata. Refresh the inventory explicitly when needed.
 
-Forge preflight — assumption check
-
-  info-gap: 1.00  · completeness 0.01  (referenced 1 symbol(s), 0 file(s))
-
-## Before starting — clarify (Forge Preflight)
-This task has unknowns that would otherwise become assumptions:
-
-- `authManager` — not found in the code. Different name, or should it be created?
-- Ambiguous: "properly" — state concrete acceptance criteria.
-- Which specific file, module, component, or symbol should this change touch?
-- How will we verify it: tests, acceptance criteria, benchmark, or reference behavior?
-
-_Advisory: ask rather than assume._
+```sh
+forge models --refresh --json
+forge config model --exact MODEL_ID --profile PROFILE
+forge route "Update the parser" --provider PROFILE --json
+forge route outcome "Update the parser" --model REGISTRY_ID --pass --cost 0.12 --verify-run RUN_ID
+forge route universal "Update the parser" --provider PROFILE --workload repair --depth 2
+forge route calibrate --workload repair
 ```
 
-### `forge route "<task>"` — the cheapest capable model
+With no measurements or explicit selection, the result is `unrated` and `model` is null. A configured model has no inferred score. A measured recommendation returns the provider's exact wire ID, verified success rate, 95% Wilson interval, matched task count and reported mean cost. The verifier authenticates the verdict. The operator supplies the model, task, workload and attempt cost.
 
-A transparent, deterministic rubric (never a second LLM call), and every score is
-attributable. **The text side works by resemblance:** your task is compared to ~50
-example tasks with known difficulty, and the closest matches — which the output names —
-set the estimate (a similarity-weighted k-NN over the labeled `EXEMPLARS` bank in
-`src/route.js`). The repo side scores real signals (files in scope, impact fan-out,
-churn, past-mistake density, ambiguity). Whichever facet detects difficulty sets the tier.
+For a repeated task the router uses matching first attempts. For a new task it compares the same set of workload tasks across candidates. `--objective target:P` requires the lower confidence bound to reach P. `budget:USD` constrains mean historical cost. `value:USD` trades the lower success bound against observed cost. Single-model selection is the default. An organization’s explicitly restricted top deployment remains subject to its top-tier authorization. The scoped universal command can replay longer sequences on the same tasks and count costs only for attempts reached after an earlier failure.
 
-```console
-$ forge route "write an is_prime function"
-  → Haiku 5.5  (simple, $0.1/$0.5 per M tok, current effective)
-    model: claude-haiku-5-5 — shipped snapshot, pricing verified 2026-11-03 (no ANTHROPIC_API_KEY for the Models API)
-    lint, formatting, docs, stubs, trivial well-defined edits
-    driven by: similar to "check if a number is prime" (sim 1.00, complexity 0.08)
-
-$ forge route "design and implement a distributed rate limiter with sliding windows across 3 services"
-  → Opus 5.5  (complex, $4/$20 per M tok, current effective)
-    model: claude-opus-5-5 — shipped snapshot, pricing verified 2026-11-03 (no ANTHROPIC_API_KEY for the Models API)
-    architecture, cross-module refactor, novel algorithms, multi-layer debugging
-    complexity 0.73 · driven by: similar to "implement a rate limiter with a token bucket" (sim 0.43, complexity 0.78)
-```
-
-The recommendation is a **tier**, and a tier names a model **family** (haiku / sonnet / opus /
-fable). The `model:` line is that family resolved to a concrete id at the moment you ask —
-`forge models` (below) explains how. With `ANTHROPIC_API_KEY` set it reads
-`newest opus in the api.anthropic.com catalog, created …`, and the price says `live price`
-when OpenRouter lists that id.
-
-Unseen phrasings route by resemblance — "two threads deadlock when the queue is full"
-lands in the concurrency neighborhood without any keyword list needing the literal
-token "race condition". To tune routing, add labeled rows to `EXEMPLARS` (data, not
-weights). `ANTHROPIC_MODEL` / `FORGE_MODEL` override the tier choice entirely.
-
-Run `forge route gateway` to emit a LiteLLM config so the routing happens automatically.
-Its tier aliases point at the same resolved ids, and each alias carries an `# id:` comment
-saying where its id came from (the live catalog, or the shipped snapshot and why).
-
-`forge route universal "<task>"` is a separate, opt-in router: it recommends a model or a
-cascade across providers, minimising **expected** cost for the success you ask for
-(`--objective match-best-single | target:p | value:V | budget:B`). Its shipped prior was fitted
-on public SWE-bench Verified outcomes and refits exactly from pinned public data
-(`bench/universal-router/reproduce.sh`); its held-out headline is repository-reported, from an
-external harness, not independently reproduced, and a new in-repo held-out replay finds it no
-better than a fixed cascade chosen on the same dev tasks. `budget:B` bounds expected cost, not what a task
-can actually spend; an objective no cascade can meet is reported as infeasible (an explicit
-`INFEASIBLE` line; `feasible: false` with the minimum achievable expected cost in `--json`).
-A recommended model that no configured provider serves is marked `no provider id`, and the
-recommendation is labelled `advice only` (`applicable: false`, `unmapped` in `--json`).
-Being in the registry does not make a model callable. Add its id under `providers` in
-`.forge/models.json`, or pass `--provider <name>` to route only among models you can call.
-`forge route outcome` records one attempt's pass/fail, labelled self-reported unless
-`--verify-run <run id>` ties it to an authenticated `forge verify` run whose verdict agrees;
-`--attempt <id>` makes recording idempotent. The label is re-derived from the verifier events
-every time outcomes are read, so editing it in the file changes nothing. The model, its evidence status and its limits:
-[docs/UNIVERSAL_ROUTING.md](UNIVERSAL_ROUTING.md).
-
-**Unattended agents — `--mode unattended`.** The default mode is conservative: a model's vote
-for a higher tier is reported, never applied. For an agent nobody watches (no cheap retry
-loop), `forge route "<task>" --mode unattended` adds four steps on top of the tier above, and
-reports each in `--json` under `policy.steps`:
-
-1. a proposer's `premium` vote at p ≥ 0.9 raises to the premium tier, a `mid`-or-higher vote at
-   p ≥ 0.5 to at least mid (a vote without a probability never raises);
-2. a task that writes code starts at mid (`--read-only` lets exploration stay cheap);
-3. a task naming money, auth, secrets, migrations or security is never below the premium tier;
-4. the top tier only with `--allow-top` and the deterministic score at its cutoff
-   (`route.topTier`: `never` | `explicit` | `auto`); votes and floors stop one tier below it.
-
-```console
-$ forge route "add a refund endpoint for payments" --mode unattended
-  → Opus 5.5  (complex, …)
-    …
-    mode: unattended · tier key: opus (policy: writes-code-floor, risk-floor)
-```
-
-`key` in `--json` is the generic tier key (`haiku` / `sonnet` / `opus` / `fable`) a lead agent
-maps to its own tool's model names. Set the mode once with
-`forge orchestration set route.mode unattended` (see below). Enable Jev with
-`forge discover setup --global --decisions on` and `TYPESAFE_API_KEY`, or use
-`FORGE_LLM=1` for the existing proposer layer. With the latter but without a TypeSafe key,
-the text model's vote carries no probability and never raises the tier.
-The floors and gate run on the deterministic score. [Discovery and decision setup](DISCOVERY.md)
+Without a provider, `forge route universal` is an offline comparison against a fitted benchmark. Its result names the fit and model registry. Native coding clients control their own models. `forge route gateway` emits aliases for clients that explicitly request them. [Routing methods, evidence and limitations](UNIVERSAL_ROUTING.md)
 
 ### `forge harness` — run and verify a coding task
 
@@ -365,89 +268,19 @@ table (`source/advisor.json`, which records the date it was verified against the
 
 Three more places the advisor shows up, all advisory: the prompt-time substrate advisory adds
 one line when an advisor is configured and the prompt is a decision point (under-specified, a
-premium-tier route, or a money/auth/secrets/migrations/security task); the doom-loop advisory
+measured high workload band, or an explicitly reported risk); the doom-loop advisory
 names the advisor when the same failure recurs; `forge doctor` has an `advisor` row that reports
 the pairing and warns when `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` or a variable that turns
 Claude Code's feature-flag fetching off (`DISABLE_TELEMETRY`,
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`) keeps it off whatever is configured.
 
-### `forge models` — what each tier resolves to
+### `forge models` lists configured provider profiles
 
-Forge ships no model id it depends on. `src/model_tiers.json` names each tier's **family**
-and keeps a snapshot of ids and prices (with its `pricingVerified` date) as data of last
-resort. Wherever a concrete id or price is actually needed — the LLM runner, the gateway
-config, the cost estimate, `forge route`, `forge models` — it is resolved at that moment:
+`forge models --json` reports the schema-2 inventory across profiles. Each row includes its provider model ID, listing date, availability and evidence source. Profiles with missing credentials or failed refreshes explain their status. Provider listings describe catalog access. Successful inference calls provide separate, time-stamped evidence of callability. Use `--offline` to read the cache and `--refresh` to request fresh listings. Workload bands are relative to comparable verified first attempts. Without enough evidence to separate three groups, the band is `unrated`.
 
-1. **Model id** — the newest model of the family in the active provider's **live catalog**:
-   the Anthropic Models API (`GET /v1/models`, all pages; needs `ANTHROPIC_API_KEY`), a custom
-   gateway's `/v1/models`, or OpenRouter's list for an OpenRouter provider. "Of the family"
-   means the family word is a whole token of the id or display name; "newest" is the
-   catalog's own `created_at` (then the parsed version, for catalogs without dates). No model
-   id is listed anywhere in the code.
-2. **Price** — OpenRouter's public catalog (`GET https://openrouter.ai/api/v1/models`, no key),
-   converted from USD per token to per million and matched to the resolved id by its tokens
-   (`claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
-3. **Fallback**, each step only when the previous one is unavailable (no key, offline, timeout,
-   non-2xx, no family match): the last cached catalog response, then the shipped snapshot.
-   When a tier falls back to the snapshot but OpenRouter's price catalog lists a newer model
-   of the same family, `forge models` and `forge route` say so on the provenance line
-   (`snapshot stale: <newer id> seen in the openrouter.ai catalog`).
-   An id configured explicitly (`.forge/providers.json`, a gateway alias) is used as-is, and
-   `ANTHROPIC_MODEL` / `FORGE_MODEL` still pin every call.
+`forge models --schema 1 --json` provides the historical family-and-price table for existing consumers. A gateway alias is an explicit client choice.
 
-```console
-$ forge models
-  provider  anthropic (Anthropic (direct))
-
-  tier     family  model                        created     $/M tok    id from   price from
-  simple   haiku   claude-haiku-5-5             —           $0.1/$0.5  snapshot  snapshot
-  medium   sonnet  claude-sonnet-5-5            —           $2/$10     snapshot  snapshot
-  complex  opus    claude-opus-5-5              —           $4/$20     snapshot  snapshot
-  extreme  fable   claude-fable-5-1             —           $10/$50    snapshot  snapshot
-
-  haiku   shipped snapshot, pricing verified 2026-11-03 (no ANTHROPIC_API_KEY for the Models API)
-  …
-```
-
-With a key, `id from` reads `catalog`, `created` is the catalog's date, and the provenance
-line names the catalog (`newest opus in the api.anthropic.com catalog, created …`). `--json`
-prints the full resolution. Catalog responses are cached under `.forge/cache/` (git-ignored),
-and **freshness comes from the response itself**: a cached response is reused without a
-request only while its `Cache-Control: max-age` / `Expires` says it is fresh; otherwise the
-next use revalidates it with `If-None-Match` / `If-Modified-Since`, and when that request
-fails the cached copy is used (reported as the last cached copy). Forge has no TTL of its own.
-Lookups time out after 3 s and never throw, and the per-prompt hooks never resolve anything.
-`FORGE_NO_CATALOG_FETCH=1` keeps every lookup offline (the cache, then the snapshot).
-
-**`forge route calibrate`** is the _advisory → gated promotion_ (overview §4): it fits an
-affine correction of the rubric's score toward a held-out split of a labelled fixture and
-reports whether that calibration **measurably** beats the raw rubric (lower held-out MAE past a
-margin) — the same kill-criteria discipline as the risk predictor (`src/predictor.js`),
-generalized in `src/promote.js` so any advisory signal (routing weights here;
-consolidation and hazard next) can only become active by measurement, never by assertion.
-
-Read the name literally: it calibrates **the rubric against hand-written labels**, not against
-outcomes. The fixture is 24 hand-written task phrases with hand-assigned complexities, and forge
-records nothing that could replace them — a `route` metrics event carries the tier and a task
-hash, a `verify` event carries pass/fail with no task reference — so there is no
-(task, tier, outcome) triple to calibrate on. It is advisory twice over: routing keeps the raw
-rubric, and nothing in `src/` adopts a promoted calibration.
-
-```console
-$ forge route calibrate
-Forge route calibrate — rubric calibration check (measured gate)
-
-  samples: 24 hand-labelled task phrase(s) — no routing outcomes exist
-  held-out MAE: rubric 0.191 · calibrated 0.266
-  → keep the rubric — baseline retained — candidate did not beat it by the margin
-
-  advisory — routing stays on the rubric; nothing adopts a promoted calibration yet,
-  and calibrating on real routing outcomes needs data forge does not record
-```
-
-Here the gate does exactly its job: the rubric already generalizes well, the affine
-calibration would make held-out error _worse_, so it is **refused**. A promotion only
-happens when the measurement earns it — an assertion never does.
+`forge route calibrate --workload NAME` reports a leave-one-task-out Brier score for each model with at least two distinct verified tasks. Each prediction uses the Jeffreys posterior mean for the other tasks in that workload. Lower scores indicate smaller probability errors. An empty result reports `unrated`. [Model discovery and standalone components](MODELS-AND-COMPONENTS.md)
 
 ### `forge config` — provider setup
 
@@ -747,7 +580,7 @@ The substrate has several memory shelves (decisions, ledger facts, personal reca
 handoff state, contributor rules…) and the routing discipline used to be prose — exactly
 what sessions forget, so knowledge landed nowhere and was re-learned. `forge know` makes
 the routing a function, and a **total** one (formal-synthesis Theorem T6): the same
-exemplar k-NN as `forge route`/intent classification picks the home, and a fact that
+knowledge-specific classifier picks the home, and a fact that
 resembles nothing in the bank falls back to the ledger (where unverified claims decay
 toward _unsure_) — it is never dropped.
 
@@ -1004,7 +837,7 @@ on the code the outcome is recorded against.
 independent lenses over the same diff — the test suite, unknown symbols, atlas
 dependents the diff never touched, code-without-docs drift, secret-shaped tokens in
 the added lines, spec-lock drift, and (opt-in) a reviewer panel — and aggregates them
-the way the lesson miner scores mistakes: a noisy-OR **defect risk score (heuristic)**,
+with a noisy-OR **defect risk score (heuristic)**,
 `p = 1 − ∏(1 − wᵢsᵢ)` (shown as `P(defect)` in the CLI), with a **cross-family gate**, so
 any number of correlated structural signals stays advisory while a failing test suite or a
 leaked secret blocks on its own. `p` is a calibrated heuristic, not a measured probability
@@ -1068,11 +901,82 @@ the project. The setting persists across incremental rebuilds. Use `--portable` 
 
 `forge atlas build --json` reports the backend for each file, parser failures, limitations
 such as computed imports, and counts of unindexed file extensions (including assets).
-Named nodes, static imports and source extents come from syntax trees when available.
-Runtime targets, reflection and type-dependent dispatch can remain unresolved. Calls resolved
-by name across files are estimates. The selector requests full verification when an enabled
-parser reports incomplete dependency evidence. Missing parser installations or syntax errors
-leave the lexical index available with a recorded fallback reason.
+The TypeScript checker resolves call signatures, receiver methods, type references and
+re-exports within the indexed JS/TS sources. Compiler edges carry
+`evidence: "typescript-checker"`. The in-memory project reads the repository's path aliases
+and uses bundler-style module resolution. External packages, type libraries, project
+references, and runtime plugin selection remain outside this compiler snapshot. Resource
+limits and worker failures appear under `coverage.compiler`. The checker accepts up to 512
+files and 2 MiB of JS/TS text in one invocation. In a larger monorepo, run the build from
+the individual package directory to inspect local symbols. Portable name matches remain
+estimates for code navigation.
+
+### Select tests from measured dependencies
+
+`forge test-select --json` keeps the ordinary full suite when a change has no complete,
+current dependency observation. It can select a smaller set even for a schema, template or
+file consumed across language boundaries. From every changed path, it walks dependency
+edges backwards to all discovered test files. A visited set handles cycles in time
+proportional to the nodes and edges. A path which reaches no test, one unresolved input,
+or a change to the checkout or runner environment invalidates the reduction.
+
+A trusted test or build pipeline supplies the full test inventory, input graph and identity
+of its execution environment. For runtime traces, include all inputs that can alter test
+discovery or execution, including configs, test fixtures, conditional loads and child
+processes. A passing sample or aggregate line-coverage report alone cannot establish that.
+Record unresolved inputs in the observation whenever the producer cannot close the graph.
+
+1. On the checkout where tests will run, set `FORGE_TEST_ENVIRONMENT` to the protected
+   pipeline's environment identity. For example, use the immutable image digest plus a
+   digest of the relevant run configuration. Ensure it changes when tools, installed
+   dependencies, services or inputs outside Git change. Run
+   `forge test-select --state --json` before and after collecting dependencies. Publish the
+   `checkout` object only when both observations match.
+2. Save the producer's JSON outside the repository. The example below shows the field
+   names. Replace the empty `checkout` with the state from step 1 and supply the runner's
+   actual discovered tests and dependencies.
+
+```json
+{
+  "schemaVersion": 1,
+  "producer": "CI test-discovery and dependency collector",
+  "runner": "node:test",
+  "checkout": {},
+  "complete": true,
+  "unresolved": [],
+  "tests": ["test/invoice.mjs", "test/search.mjs"],
+  "dependencies": [
+    ["test/invoice.mjs", "workers/price.py"],
+    ["workers/price.py", "schemas/rate.json"],
+    ["test/search.mjs", "src/search.ts"]
+  ]
+}
+```
+
+Each pair is a consumer followed by its dependency. The optional `lcov` string accepts
+per-test LCOV records with a discovered repository-relative test path in `TN`, a
+repository-relative source path in `SF`, `DA` line-hit counts and `end_of_record`.
+Positive hits add edges to the producer's graph. Inputs and test entry points must be
+tracked, regular files. ForgeKit binds the receipt to Git HEAD, index records, working file
+bytes, non-ignored untracked input, OS, architecture, Node version and the declared
+environment identity. Merge conflicts, submodules and oversized snapshots use full verification.
+The producer is responsible for its test-discovery and completeness claims.
+
+```sh
+forge test-select --evidence /protected/test-dependencies.json --changed schemas/rate.json --json
+forge test-select --register /protected/test-dependencies.json
+forge test-select --base origin/main --head HEAD --json
+```
+
+The first command would select `test/invoice.mjs` for the complete example graph. The
+second stores the observation privately for the checkout. A ref range includes pending
+worktree changes because the runner will see those bytes. Each Linux CI matrix member
+rechecks the evidence under its own Node version. With no enrolled observation, CI runs
+the full suite. The Windows job runs the full suite.
+
+`forge develop --mode focused|repair|standard` selects the planning workflow. A focused
+plan still uses the same verification scope. A recorded failing verification can select the
+repair workflow. Task wording alone supplies no evidence about test coverage.
 
 ### `forge stack` — what is THIS repo actually built with?
 
@@ -1276,22 +1180,11 @@ $ forge recall list
   - db-port
 ```
 
-### `forge cortex [status | why <symbol>]` — self-correcting memory
+### `forge cortex` and correction review
 
-Status of the lessons Cortex has learned from _this repo's_ correction history.
+`forge cortex status` reports project lessons, confirmed and contradicted outcomes, and the number of private proposals. `forge cortex review --json` lists this checkout's pending proposals and their observed source signals. Use `forge cortex confirm LESSON_ID` to accept one and `forge cortex why <symbol-or-file>` to inspect what a host would receive.
 
-```console
-$ forge cortex
-Forge cortex — self-correcting project memory
-
-  lessons: 0  (active 0 · candidate 0 · quarantined 0 · retired 0)
-
-  (no active lessons yet — Cortex learns from corrections as you work)
-
-  stored in the .forge/ ledger (content-addressed, git-mergeable)
-```
-
-`forge cortex why <symbol>` shows the lessons that would be injected when you touch it.
+A repeated edit plus recovery of the same command can create a private proposal. A second independent episode can publish the observed correction. Model-reworded proposals require operator confirmation. Receipts and lifecycle details are documented in the [memory guide](MEMORY.md).
 
 ### `forge deja "<task>"` — have you done this before?
 
@@ -1470,15 +1363,9 @@ fails open: offline, a missing remote, or a corrupt remote blob all return an ho
 reason instead of throwing. With `--personal` the transport runs over the per-user ledger
 the recall store shadows into, so recall facts become portable across machines.
 
-**Retiring the legacy stores.** Since P1 the ledger has been the convergent WRITE store
-(every lesson/fact dual-writes into it) and reads are the merged view (legacy ∪ ledger).
-The ledger is now the **default and only store**: the legacy files (`.forge/lessons/*.md`,
-recall/brain fact files) are no longer written, and every read — cortex injection, routing,
-`recall`/`brain` — comes from the ledger alone (materialized from its content-addressed,
-conflict-free claims). Upgrading from an older version? Run `forge ledger import` once
-(idempotent) so any pre-ledger local history lands in the ledger. Set **`FORGE_LEDGER_ONLY=0`**
-(the one-release escape hatch) to temporarily restore the legacy file store while external
-tooling migrates.
+**Upgrading file-based memory.** `forge ledger migrate --json` imports older repository lessons and facts. Add `--personal` to migrate the user’s recall store. `forge ledger import` is an alias. The command keeps the original files, saves a private SHA-256-addressed backup, and verifies the ledger. Current writes always go to the ledger. A stale file cannot replace a current claim or revive an archived or retracted one.
+
+`forge ledger restore-legacy <new-directory>` restores the latest backup for this checkout. Supply `--snapshot <id>` for an earlier backup, or `--personal` for personal facts. The destination must be new. See the memory guide for recovery and scope details. [Memory storage and recovery](MEMORY.md)
 
 ### `forge claim export` — claims as open JSON
 
@@ -1608,7 +1495,7 @@ difference — not a feeling.
 $ forge context "change verifyToken in src/auth.js to reject short tokens"
 Forge context — budgeted assembly + completeness gate
 
-  budget: 1840/12000 tokens (chars/3.6 estimate of the rendered block) · required 4 · COMPLETE
+  budget: 1840/12000 units (UTF-8 bytes of the rendered block) · required 4 · COMPLETE
     + def:src/auth.js [full] 620t
     + deps:verifyToken [head] 410t
     + tests:test/auth.test.js [full] 480t
@@ -1680,12 +1567,7 @@ Below the threshold it just records and says keep going. Advisory — halting th
 loop is the agent's move, not an exit code. Because the claim rides the team ledger, the
 same loop becomes a one-per-team event, not one-per-session.
 
-Pass `--task "<the task text>"` — the same text you gave `forge route` — and the directive
-names the tier instead of "ONE model tier", when routing recorded an advisory `escalateTo`
-for that task (a proposer voted for a higher band and was, correctly, not obeyed). This is
-the only place that target is ever consumed: three recurrences of one failure signature is
-an external check failing, which is the only thing that may buy a bigger model (§5.1). With
-no `--task`, or no routing record for it, the wording is unchanged.
+Historical routing records that include an advisory escalation target can supply its name to `forge diagnose --task "<the same text>"`. Current routes record only the selected model and the task hash.
 
 ### `forge imagine "<task>"` — consequence simulation
 
@@ -2008,6 +1890,8 @@ full rule: [substrate-v2 plan 05 §3](plans/substrate-v2/05-cost-model.md#3-acce
 | `forge vet <pkg…>`               | Vet a package before it is added (dep-gate), in nine ecosystems (`ecosystem:name[@version]`): on its registry? listed malicious? how new and thin? `--cmd "<install command>"` vets a whole command line; `--json` prints the evidence. |
 | `forge hooks [on\|off\|status]`   | Run the guards by themselves in every agent: `on` writes project-level hook files for Claude Code, Codex, Gemini CLI, Cursor, Copilot and OpenCode (a generated JavaScript plugin; `--hosts a,b` narrows, `--bootstrap` installs forge at session start on a machine without it); `off` removes exactly what forge wrote; `run <host> <event>` is what the agents call. |
 | `forge harden`                   | Wire the pre-commit gate (gitleaks-if-present + `forge precommit`) + sandbox settings; never clobbers a user-authored hook.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `forge impact --review <id>` | Inspect the current static dependents and test scope requested by a named edit hook. Retry the edit after review. `FORGE_GATE=advisory` skips the pre-edit review. |
+| `forge precommit --require-verified` | Verify that a signed passing suite ran against this staged checkout. A setup such as `forge init --tools aider` installs this mode for hosts without pre-edit callbacks. Use `hooks.commitVerification: "advisory"` in the project config for an advisory fallback, or `forge harden --require-verified` to enroll explicitly. |
 | `forge precommit`                | Commit-level gate rung: staged code with no doc/state artifact → finding (same classifier as the Stop gate) + built-in secret scan over staged added lines (binary files get the credential-format grammars only, not the entropy leg). `FORGE_COMMIT_GATE=block` refuses the commit, `warn` (default) prints and allows, `0` disables; a detected secret blocks in every mode.                                                                                                                                                                                                                                                                                                     |
 | `forge spec [init\|lock\|check]` | Spec-as-contract drift check.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `forge brand`                    | Print the active brand token map.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -2046,17 +1930,7 @@ The point of Forge is that you don't have to _remember_ to run these checks.
 
 ### Claude Code — fully ambient
 
-Install the plugin and the substrate runs on **every prompt** via a `UserPromptSubmit`
-hook. It adds a short advisory only when something needs attention and never blocks:
-
-```text
-Forge substrate — pre-action advisory (advisory, never blocks):
-- Under-specified (high risk). Ask before editing:
-    • What constraints must be respected: performance, dependencies, style, compatibility?
-- Suggested model: Haiku 5.5 (simple); escalate only on a verifier failure.
-- Predicted blast radius (2: 2 reverse): auth.js (reverse), login.js (reverse). Review these before editing.
-- Verify with: review impacted files before editing · run the narrowest affected test first
-```
+The plugin receives prompt submissions and extracts observed evidence. For example, a reference to an existing file can surface its known dependents. An empty route history leaves technique and model choice with the developer. A declared missing prerequisite yields a question naming that file. The native pre-edit callback has its own review and enforcement contract.
 
 Nothing to wire — the plugin's [`hooks/hooks.json`](../hooks/hooks.json) installs the
 `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop` guards for you.
@@ -2109,15 +1983,7 @@ the handoff snapshot (`.forge/state.md`), the last 10 commits, and any uncommitt
 and every session start records the session's git baseline (`HEAD`) that the
 completion gate and `forge docs sync` diff against. A `--resume` never moves the baseline.
 
-**Intent protocol cards (UserPromptSubmit).** The prompt is classified by the same
-exemplar k-NN math as model routing (labeled examples + overlap similarity — extended by
-adding rows, including Hinglish ones, never by editing regexes). A work intent
-(bugfix / feature / refactor / release) injects a ~6-line protocol card once per run of
-that intent; questions get no ceremony, and below-confidence prompts get nothing.
-Each card ends with the skills to load and the crew agent to hand work to for that kind
-of work. A message the agent host submits by itself (a subagent's hand-back, a
-background-task notice) is a report, not a request, so it gets no card and no advisory.
-`FORGE_INTENT=0` disables.
+**Intent protocol cards (UserPromptSubmit).** A host can supply an explicit turn intent. Users can request a card with `/forge bugfix`, `/forge feature`, `/forge refactor` or `/forge release`. An exact previous task can also supply its protocol when verified outcomes have one consistent, operator-specified workload label. Other free text has no inferred protocol. Cards name the skills and agents for the selected workflow and appear once per run of that intent. A host can identify a conversational turn as `question`, `acknowledgement` or `continuation`. Set `FORGE_INTENT=0` to disable cards.
 
 **The completion gate (Stop).** The deterministic floor under "done": when the session
 tries to finish, everything it changed since the baseline (committed ∪ working tree) is
@@ -2288,7 +2154,7 @@ The stdio server starts with `forge cortex-mcp`. In ordinary mode it advertises 
 | `forge_mirror_sql`      | Run a bounded read-only SQL SELECT on items and chunks in one authorized local source snapshot.                                                                                                                                                                                     |
 | `forge_develop`         | Plan a change from existing code and live research through implementation, security review and verification.                                                                                                                                                                        |
 | `forge_tool_install`    | Install a selected, reviewed MCP tool and record its exact version for this workspace.                                                                                                                                                                                              |
-| `forge_team_plan`       | Plan independent read-only specialist assignments for a complex task.                                                                                                                                                                                                               |
+| `forge_team_plan`       | Plan explicitly scoped read-only work and its dependencies.                                                                                                                                                                                                                         |
 | `forge_tool_find`       | Resolve current compatible tool candidates for this task from the reviewed local catalog.                                                                                                                                                                                           |
 | `forge_evidence`        | Find relevant code, private source excerpts and research leads for a coding task or failure.                                                                                                                                                                                        |
 | `forge_source_search`   | Search authorized snapshots across configured projects, team folders, and document sources.                                                                                                                                                                                         |
@@ -2300,7 +2166,7 @@ The stdio server starts with `forge cortex-mcp`. In ordinary mode it advertises 
 | `preflight_check`       | BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME.                                                                                                                                                                       |
 | `forge_models`          | Read the local provider model inventory, listing freshness, model control and measured workload bands.                                                                                                                                                                              |
 | `route_task`            | Recommend a model for a task.                                                                                                                                                                                                                                                       |
-| `assumption_gate`       | Score specification completeness before work starts.                                                                                                                                                                                                                                |
+| `assumption_gate`       | Check explicitly required workspace files.                                                                                                                                                                                                                                          |
 | `predict_impact`        | Predict blast radius for a symbol or file using Forge atlas reverse-dependency traversal.                                                                                                                                                                                           |
 | `substrate_check`       | Full Forge cognitive-substrate pre-action check: assumption gate, route, impact, scope, memory, minimality, and verification checklist.                                                                                                                                             |
 | `scope_files`           | Decompose files into INDEPENDENT clusters (run as separate sessions) vs coupled, and surface coupled files you didn't name (the 'forgot the related module' guard).                                                                                                                 |
@@ -2461,9 +2327,9 @@ so add it there too.
 
 | To change…                                      | Edit                                                                                                                                  |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| how often it asks                               | `source/substrate.json` → `defaults.askThreshold` (0.6)                                                                               |
+| preflight prerequisites | Supply a workspace path with each `--require-file`. Use `FORGE_PREFLIGHT_MIN_CONFIDENCE` only for a configured provider. |
 | blast-radius sensitivity                        | `source/substrate.json` → `defaults.impactThreshold` (0.1)                                                                            |
-| a routing outcome                               | `src/route.js` → add a labeled row to `EXEMPLARS` (data, not weights); constants in `RUBRIC`                                          |
+| a routing outcome                               | `forge route outcome --verify-run RUN_ID` with the attempted model, task and cost                                          |
 | model tiers / prices                            | `src/model_tiers.json` (tier → family, plus the snapshot of last resort); runtime resolution in `src/model_catalog.js` — `forge models` shows it |
 | an assumption question                          | `src/preflight.js` → `DIMENSIONS[]`                                                                                                   |
 | the verify checklist                            | `src/substrate.js` → `verificationChecklist()`                                                                                        |
@@ -2475,44 +2341,9 @@ so add it there too.
 
 ### Opt into LLM-assisted judgments
 
-By default every judgment is a deterministic rubric. `FORGE_LLM=1` adds a thin **proposer**
-layer (`src/adjudicate.js`) — one shared `claude -p` primitive used by M2/M1/impact/M4. The
-model never decides: each proposal is verified against the rubric, the code graph, or a grep
-before it can move a verdict. The reconcile is **bidirectional but rail-guarded** by default —
-a verified reading can _clear_ a false ask or route a task _down_ a tier, not only add caution,
-but never past a hard floor (no concrete anchor, unresolved repo entities, or a strong-signal
-routing floor); the gate's floors only ever block a _clear_ — they never raise an ask the
-rubric didn't. The gate compares **verdicts, not scales**: the rubric's completeness and the
-proposer's are judged against their own thresholds, and the proposer flips the rubric's
-ask/proceed only when it holds its own verdict with p ≥ `llm.minConfidence`. Routing compares
-**bands, not points**: a vote for the band the deterministic
-score already sits in leaves it alone; a vote for a lower band moves the score to that band's
-ceiling only when the vote's p(band) reaches `llm.minConfidence` (an a-priori 0.8 — choose it on
-fresh labelled data; a text-model vote reports no probability and so cannot move the tier unless
-you set it to 0); a vote for a **higher** band is never applied, because the tier may escalate
-only when a verifier fails, never on the model's own assessment (whitepaper §5.1). The tier it
-would have picked is reported in `--json` as `llm.escalateTo` — an **advisory recommendation
-only**: nothing acts on it at routing time. It is recorded against the task, and the doom-loop
-diagnosis consumes it: `forge diagnose --task "<the same task text>"` names that tier once the
-same failure signature has recurred `THRASH_K` times, instead of saying "escalate one tier".
-Deciding to escalate is still a real failure's job, never the model's vote. Impact edges must be real + grep-confirmed; goal-drift moves
-off→on only. Any failure falls back to the deterministic path, so the flag is safe to leave off
-or on. `--json` exposes `llm.provenance` per faculty (`llm-cleared` / `llm-tightened` /
-`llm-lowered` / `llm-raise-deferred` / `llm-overruled` / …). Set `llm.bidirectional: false` in
-`source/substrate.json` for the conservative mode (the gate can only tighten, the tier never
-moves). Each faculty pairs a pure `*LLM` proposer with a
-`reconcile` step — extend by adding both, never by trusting the model's answer directly.
+`FORGE_LLM=1` enables proposal generation for faculties such as preflight and impact. Ambient hooks require their own opt-in. Configure a provider deployment explicitly or record the verified outcomes and scoped model listing needed for a measured route. The default model dispatcher makes no inference request when model selection lacks evidence.
 
-**TypeSafe System One (Jev) is the preferred proposer when configured.** Where the judgment
-is already a classification or a yes/no — `route`'s complexity band (a `choice` over
-cheap/mid/premium) and preflight's assumption gate (one batched `noul` per rubric dimension) —
-`src/jev.js` asks Jev instead of a text model: typed answers with real probability
-distributions and confidence in ~150ms, rather than seconds of generation followed by JSON
-parsing. Set `TYPESAFE_API_KEY` (plus the same `FORGE_LLM=1` opt-in) and the two proposers
-prefer it automatically; the text-LLM runner remains the fallback on any failure, and the
-deterministic rubrics still judge. Free-text clarifying questions stay with the rubric — a
-System One model judges, it does not author prose. `forge route --json` shows which proposer
-answered under `llm.provider` (`jev` / `text`) with Jev's confidence.
+An impact proposal must reference a real file and be corroborated by the repository. Preflight reports explicit unmet requirements. The model-selection path does not call another model to score the prompt. [Model and component controls](MODELS-AND-COMPONENTS.md)
 
 ### Support a new tool
 
@@ -2546,14 +2377,13 @@ code reads but this table misses fails CI on the forge repo):
 | `OPENROUTER_API_KEY`                                           | OpenRouter provider                                                                                                                                                                                                                     |
 | `OPENAI_API_KEY`                                               | OpenAI provider (OpenAI-compatible chat/completions); low-configuration auto-detect fallback after Anthropic                                                                                                                            |
 | `GEMINI_API_KEY` / `GOOGLE_API_KEY`                            | Google Gemini provider via its OpenAI-compatible endpoint; low-configuration auto-detect fallback after Anthropic                                                                                                                       |
-| `TYPESAFE_API_KEY`                                             | TypeSafe System One (Jev) — with `FORGE_LLM=1`, the route/assumption proposers prefer typed ~150ms judgments over a text round-trip; unset = text-LLM proposer only                                                                     |
+| `TYPESAFE_API_KEY`                                             | TypeSafe System One (Jev) — with `FORGE_LLM=1`, optional assumption proposals can use typed judgments over a text round-trip; unset = text-LLM proposer only                                                                     |
 | `TYPESAFE_BASE_URL`                                            | override the Jev endpoint (default `https://api.typesafe.ai`) — staging/self-hosted                                                                                                                                                   |
 | `FORGE_LLM`                                                    | `1` enables the LLM proposer layer (off = fully deterministic)                                                                                                                                                                          |
 | `FORGE_LLM_AMBIENT`                                            | `1` lets the ambient hook use the proposer too                                                                                                                                                                                          |
 | `FORGE_LLM_HTTP`                                               | `1` forces direct HTTP (Anthropic Messages or OpenAI-compatible, per the resolved provider) instead of the `claude` CLI; automatic when the CLI is absent                                                                               |
 | `FORGE_ENFORCE`                                                | `1` turns the substrate advisory into a hard block on the strongest signals                                                                                                                                                             |
 | `FORGE_AUTOSYNC`                                               | `0` disables the Stop-hook auto-repair of forge's block in AGENTS.md                                                                                                                                                                    |
-| `FORGE_LEDGER_ONLY`                                            | Ledger-only is the DEFAULT (the ledger is the sole store). `0` is the escape hatch — restores the legacy `lessons/*.md` + recall/brain file store while external tooling migrates                                                       |
 | `FORGE_EMBED` / `FORGE_EMBED_MODEL` / `FORGE_EMBED_TIMEOUT_MS` | optional embeddings tier (ADR-0005)                                                                                                                                                                                                     |
 | `FORGE_HOME`                                                   | override `~/.forge` (recall store location)                                                                                                                                                                                             |
 | `FORGE_BASH`                                                   | explicit bash for the hook guards (the `global/guards/run.mjs` launcher). Resolution order: this, `CLAUDE_CODE_GIT_BASH_PATH`, then on Windows the Git for Windows install that owns `git` on `PATH`, the standard install dirs, a non-WSL `bash.exe` on `PATH`; POSIX uses `bash` from `PATH` |

@@ -14,6 +14,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Model inventory and call records use installation-specific, keyed cache identifiers. The offline route monitor accepts equivalent directory paths on macOS and Windows.
 - Added opt-in full-workspace sync with a self-hosted dashboard, browser journey receipts and an offline paired-cost evaluation workflow.
 
+- Model recommendations use attributed workload outcomes. The default model inventory covers every configured profile. Use `forge models --schema 1 --json` for historical tier output.
+- Preflight measures declared prerequisites. Test selection requires checkout-bound dependency evidence. Context counts UTF-8 bytes or a named external tokenizer and accounts for partial source coverage.
+- Added dependency-scheduled worker briefs, grant-controlled organization memory, recoverable legacy migration, encrypted relay sync and exact-index verification. Stable v1 CLI envelopes and authenticated run-history triage support automation.
+
 ## [1.19.2] - 2026-11-22
 
 ### Fixed

@@ -52,7 +52,7 @@ function maybeFirstRunHint(cmd) {
 function printHelp() {
   printVersion();
   console.log(`\n${BRAND.tagline}\n`);
-  console.log(`Usage: ${BRAND.cli} <command> [options]\n`);
+  console.log(`Usage: ${BRAND.cli} [--output=json-v1|jsonl-v1] <command> [options]\n`);
   for (const [group, cmds] of Object.entries(GROUPS)) {
     console.log(`${group}:`);
     for (const name of cmds) {
@@ -68,6 +68,7 @@ function printHelp() {
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
+  relay: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.relay(argv),
   cloud: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.cloud(argv),
   agents: async (argv) =>
     (await import("./cli/components.js")).runComponentCli("agents", argv.slice(1)),
@@ -86,6 +87,11 @@ const HANDLERS = {
 
 async function run(argv) {
   const [cmd] = argv;
+  if (cmd?.startsWith("--output="))
+    return (await import("./cli_output.js")).runWithOutput(
+      cmd.slice("--output=".length),
+      argv.slice(1),
+    );
   // Top-level help/version — flag AND word forms (`forge help`, `forge version`).
   if (!cmd || cmd === "-h" || cmd === "--help" || (cmd === "help" && !argv[1])) return printHelp();
   if (cmd === "-v" || cmd === "--version" || cmd === "version") return printVersion();
@@ -221,6 +227,7 @@ HANDLERS.init = async (argv) => {
     warnings,
     profile: profileResult,
     tools: toolsResult,
+    gitVerification,
     warmed,
   } = /** @type {any} */ (
     init({
@@ -260,6 +267,13 @@ HANDLERS.init = async (argv) => {
   console.log(
     `  tools:    ${toolsResult.tools === null ? "all" : toolsResult.tools.join(", ")} (${toolOrigin}) — change with \`${BRAND.cli} init --tools <list|all>\``,
   );
+  if (gitVerification) {
+    console.log(
+      `  Git verification for ${gitVerification.hosts.join(", ")}: ${gitVerification.message}`,
+    );
+    if (gitVerification.active && gitVerification.requested === "required")
+      console.log(`  Stage the changes and run ${BRAND.cli} verify before committing.`);
+  }
   console.log(
     `  source:   AGENTS.md (${bytes} B) — forge owns only the block between <!-- forge:begin --> and <!-- forge:end -->; edit rules in source/, re-run \`${BRAND.cli} sync\``,
   );
@@ -775,26 +789,10 @@ HANDLERS.recall = async (argv) => {
       return;
     }
     const res = r.add(store, name, body);
-    if (res.ok) {
-      const { shadowFact } = await import("./ledger_bridge.js");
-      const written = shadowFact(r.ledgerForStore(store), name, body);
-      if (!written.ok) {
-        console.error(written.reason ?? "Could not record the fact in the personal ledger");
-        process.exitCode = 1;
-        return;
-      }
-      r.reindex(store);
-    }
     console.log(res.ok ? `  saved: ${res.slug}` : `  ${res.reason}`);
     if (!res.ok) process.exitCode = 1;
   } else if (sub === "consolidate") {
     const { removed, kept } = r.consolidate(store);
-    try {
-      // Deleted duplicates must not survive as live claims in the shadow ledger.
-      const { join } = await import("node:path");
-      const { reconcileFacts } = await import("./ledger_bridge.js");
-      reconcileFacts(store, join(store, "ledger"));
-    } catch {}
     console.log(`  consolidated: ${removed} duplicate(s) removed, ${kept} kept`);
   } else {
     console.error(`recall: unknown subcommand "${sub}" (list | add | consolidate)`);
@@ -1180,6 +1178,10 @@ HANDLERS.hooks = async (argv) => {
       `  stale entries: run \`${BRAND.cli} sync\` (or \`${BRAND.cli} hooks on\`) to refresh them.`,
     );
   if (!status.enabled) console.log(`  turn them on: ${BRAND.cli} hooks on`);
+  console.log(`  Hosts without edit callbacks: ${status.edits.withoutCallbacks.join(", ")}.`);
+  console.log(
+    `  For opaque writes or missing callbacks, use ${status.edits.commit} locally and ${status.edits.ci} in CI.`,
+  );
 };
 HANDLERS.remember = async (argv) => {
   const b = await import("./brain.js");
@@ -1270,9 +1272,12 @@ HANDLERS.spec = async (argv) => {
   if (!r.ok) process.exitCode = 1;
   return;
 };
-HANDLERS.harden = async () => {
+HANDLERS.harden = async (argv) => {
   const { harden } = await import("./harden.js");
-  const r = harden({ targetRoot: process.cwd() });
+  const r = harden({
+    targetRoot: process.cwd(),
+    requireVerified: argv.includes("--require-verified"),
+  });
   heading(`${BRAND.brand} harden\n`);
   console.log(`  gitleaks:            ${r.gitleaks}`);
   console.log(`  pre-commit gate:     ${r.precommit}`);
@@ -1286,7 +1291,7 @@ HANDLERS.precommit = async (argv) => {
   // pre-commit hook execs this, and it can be run by hand before committing. Exit code
   // carries the decision (1 = refuse the commit); fail-open inside commitGate.
   const { commitGate, renderCommitGate } = await import("./commit_gate.js");
-  const r = commitGate(process.cwd());
+  const r = commitGate(process.cwd(), { requireVerified: argv.includes("--require-verified") });
   if (argv.includes("--json")) {
     console.log(JSON.stringify(r, null, 2));
     if (!r.allow) process.exitCode = 1;
@@ -1302,6 +1307,24 @@ HANDLERS.cortex = async (argv) => {
   const root = process.cwd();
   const nowDay = Math.floor(Date.now() / 86400000);
   const sub = argv[1] || "status";
+  if (sub === "review") {
+    const proposals = c.pendingCorrections(root);
+    if (argv.includes("--json")) return console.log(JSON.stringify(proposals, null, 2));
+    if (!proposals.length) return console.log("No pending corrections in this checkout.");
+    for (const p of proposals) {
+      console.log(`
+${p.id} (${p.review.episodes} observed episodes)`);
+      console.log(p.whatWentWrong);
+      console.log(p.correctedBehavior);
+    }
+    return;
+  }
+  if (sub === "confirm") {
+    const result = c.confirmCorrection(root, argv[2], nowDay);
+    if (!result.ok) process.exitCode = 1;
+    if (argv.includes("--json")) return console.log(JSON.stringify(result));
+    return console.log(result.ok ? `${result.action} ${result.id}` : result.reason);
+  }
   if (sub === "why") {
     const key = argv[2];
     if (!key) {
@@ -1317,19 +1340,24 @@ HANDLERS.cortex = async (argv) => {
     console.log(selected.length ? block : `  no lessons for ${key} yet`);
     return;
   }
-  const s = c.summary(root, nowDay);
+  const s = c.summary(root, nowDay, { includePrivate: true });
   heading(`${BRAND.brand} cortex — self-correcting project memory\n`);
   console.log(
     `  lessons: ${s.total}  (active ${s.active} · candidate ${s.candidate} · quarantined ${s.quarantined} · retired ${s.retired})`,
   );
   if (s.topActive.length) {
-    console.log("\n  top active (by confidence):");
+    console.log("\n  top active lessons");
     for (const t of s.topActive)
-      console.log(`    ${bar(t.confidence, 8)} ${t.confidence.toFixed(2)}  ${t.id}`);
+      console.log(`    ${t.id}  ${t.confirmed} confirmed, ${t.contradicted} contradicted`);
   } else {
     console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
   }
-  console.log(paint("\n  stored in .forge/lessons/ (git-committable, auditable)", "dim"));
+  console.log(
+    paint(
+      `\n  ${s.provisional} pending locally · forge cortex review\n  Published lessons are stored in the project ledger.`,
+      "dim",
+    ),
+  );
   return;
 };
 HANDLERS.deja = async (argv) => {
@@ -1376,31 +1404,63 @@ HANDLERS.deja = async (argv) => {
 HANDLERS.preflight = async (argv) => {
   const { preflightRepo, clarifyBlock } = await import("./preflight.js");
   const json = argv.includes("--json");
-  const task = argv
-    .slice(1)
-    .filter((a) => a !== "--json")
-    .join(" ");
+  const words = [],
+    requiredFiles = [];
+  for (let i = 1; i < argv.length; i++) {
+    if (argv[i] === "--json") continue;
+    if (argv[i] === "--require-file") {
+      const path = argv[++i];
+      if (!path || path.startsWith("--"))
+        throw new Error("--require-file needs a checkout-relative path");
+      requiredFiles.push(path);
+    } else words.push(argv[i]);
+  }
+  const task = words.join(" ");
   if (!task) {
     console.error('usage: forge preflight "<task description>" [--json]');
     process.exitCode = 1;
     return;
   }
-  const r = preflightRepo(process.cwd(), task);
+  const r = preflightRepo(process.cwd(), task, { requiredFiles });
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     return;
   }
   heading(`${BRAND.brand} preflight — assumption check\n`);
   console.log(
-    `  info-gap: ${r.gap.toFixed(2)}  · completeness ${r.assumption.completeness.toFixed(2)}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
+    `  info-gap: ${r.gap?.toFixed(2) ?? "unknown"}  · prerequisite coverage ${r.assumption.completeness?.toFixed(2) ?? "unknown"}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
   );
   const block = clarifyBlock(r);
-  console.log(
-    block ? `\n${block}` : "\n  ✓ everything this task names is grounded in the codebase.",
-  );
+  console.log(block ? `\n${block}` : `\n  ${r.assumption.reasons.join("; ")}`);
   return;
 };
 HANDLERS.impact = async (argv) => {
+  if (argv[1] === "--review") {
+    const args = argv.slice(2).filter((a) => a !== "--json");
+    if (args.length !== 1) throw new Error("Usage: forge impact --review <edit-id> [--json]");
+    const { reviewPreEdit } = await import("./pre_edit.js");
+    const review = await reviewPreEdit(process.cwd(), args[0]);
+    if (argv.includes("--json")) console.log(JSON.stringify(review, null, 2));
+    else {
+      const quoted = (files) => files.map((file) => JSON.stringify(file)).join(", ");
+      console.log(`Edit targets: ${quoted(review.files)}`);
+      const scope = review.plan.impact;
+      console.log(
+        scope.scope === "whole-workspace"
+          ? "Code impact: whole workspace"
+          : `Observed static dependents (${scope.dependents.length}): ${quoted(scope.dependents)}`,
+      );
+      if (scope.unindexedTargets?.length)
+        console.log(`Unindexed edit targets: ${quoted(scope.unindexedTargets)}`);
+      if (scope.omittedFiles)
+        console.log(`Static inventory omitted ${scope.omittedFiles} file(s).`);
+      console.log(
+        `Verification scope: ${review.plan.fullSuite ? "full suite" : quoted(review.plan.tests)}`,
+      );
+      console.log(review.plan.reason);
+    }
+    return;
+  }
   const { predictImpact } = await import("./substrate.js");
   const json = argv.includes("--json");
   const basic = argv.includes("--basic");

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { pendingCorrections } from "../src/cortex.js";
 import {
   appendSessionEvent,
   classifyEvent,
@@ -13,15 +15,12 @@ import {
   isE2eRun,
   processSession,
   readSession,
+  sessionFile,
   sessionPath,
   summaryEvents,
 } from "../src/cortex_hook.js";
-import { load } from "../src/lessons_store.js";
+import { mergedLessons as load } from "../src/ledger_read.js";
 import { fakeGithubPat } from "./_fixtures.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-hook-"));
 
@@ -79,50 +78,107 @@ test("a lone edit or a single 'no' produces no firing lesson (false-positive gua
   assert.equal(load(root2).length, 0, "'no problem' is not a correction");
 });
 
-test("git revert emits a contradiction episode against recently-edited files", () => {
-  const events = [
-    { type: "edit", file: "src/auth.ts" },
-    { type: "bash", command: "git revert HEAD", exitCode: 0 },
-  ];
-  const eps = detectEpisodes(events, { nowDay: 1 });
-  const c = eps.find((e) => e.kind === "contradiction");
-  assert.ok(c, "revert detected");
-  assert.deepEqual(c.context.files, ["src/auth.ts"]);
-});
-
-test("end-to-end (strong pattern): recurring mistake → candidate then active in 2 sessions", () => {
+test("only a successful revert with a matching reported Git object can contradict, on its real files", () => {
   const root = fixture();
-  // 3 edits (S2+S3) + test fail→pass (S1) → p≈0.71, clears the distill bar on its own
-  const session = () => [
-    { type: "bash", command: "npm test", exitCode: 1 },
-    { type: "edit", file: "src/tax.ts" },
-    { type: "edit", file: "src/tax.ts" },
-    { type: "edit", file: "src/tax.ts" },
-    { type: "bash", command: "npm test", exitCode: 0 },
+  const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  git("init", "-q");
+  git("config", "user.name", "Test");
+  git("config", "user.email", "test@example.org");
+  writeFileSync(join(root, "real.js"), "one");
+  git("add", "real.js");
+  git("commit", "-qm", "one");
+  writeFileSync(join(root, "real.js"), "two");
+  git("commit", "-qam", "two");
+  const performed = classifyEvent({
+    tool_name: "Edit",
+    cwd: root,
+    tool_input: { file_path: "real.js" },
+  });
+  const actual = [
+    { type: "bash", command: "check observed", exitCode: 1 },
+    performed,
+    performed,
+    { type: "bash", command: "check observed", exitCode: 0 },
   ];
-  processSession(root, session(), 1);
-  assert.equal(load(root)[0].status, "candidate", "first strong occurrence → candidate");
-  processSession(root, session(), 2);
-  assert.equal(load(root)[0].status, "active", "recurrence → active");
-});
-
-test("end-to-end (weak pattern): a 0.4–0.7 episode is ignored once, earns a lesson on recurrence", () => {
-  const root = fixture();
-  // 2 edits (S2) + test fail→pass (S1) → p≈0.59, below the distill bar
-  const session = () => [
-    { type: "bash", command: "npm test", exitCode: 1 },
-    { type: "edit", file: "src/util.ts" },
-    { type: "edit", file: "src/util.ts" },
-    { type: "bash", command: "npm test", exitCode: 0 },
-  ];
-  processSession(root, session(), 1);
-  assert.equal(load(root).length, 0, "one weak occurrence is not yet a lesson");
-  processSession(root, session(), 2);
+  for (const sessionId of ["one", "two"]) {
+    processSession(root, actual, 1, { sessionId });
+    processSession(
+      root,
+      actual.map((e) =>
+        e.file ? { ...e, versions: [] } : { ...e, command: "an unrelated check" },
+      ),
+      1,
+      { sessionId },
+    );
+  }
+  const run = {
+    tool_name: "Bash",
+    cwd: root,
+    tool_input: { command: "git revert --no-edit HEAD" },
+    exitCode: 0,
+    tool_response: git("revert", "--no-edit", "HEAD"),
+  };
+  const events = [{ type: "edit", file: "irrelevant.js" }, classifyEvent(run)];
+  assert.deepEqual(detectEpisodes(events)[0]?.context.files, ["real.js"]);
+  const [result] = processSession(root, events, 2, { sessionId: "revert" });
   assert.equal(
-    load(root)[0]?.status,
-    "candidate",
-    "recurrence promotes the weak episode to a candidate",
+    result.results.length,
+    1,
+    "only the lesson whose observed file version was undone is contradicted",
   );
+  assert.equal(load(root, 2).filter((l) => l.status === "quarantined").length, 1);
+  assert.equal(load(root, 2).filter((l) => l.status === "active").length, 1);
+  for (const changed of [
+    { exitCode: 1 },
+    { tool_response: "" },
+    { tool_response: "[main 0000000] Revert demo" },
+  ]) {
+    assert.equal(detectEpisodes([classifyEvent({ ...run, ...changed })]).length, 0);
+  }
+});
+
+const recovery = (command = "npm test") => [
+  { type: "bash", command, exitCode: 1 },
+  { type: "edit", file: "src/tax.ts" },
+  { type: "edit", file: "src/tax.ts" },
+  { type: "bash", command, exitCode: 0 },
+];
+
+test("same-command recovery proposes privately; only independent sessions or tool receipts promote", () => {
+  const root = fixture(),
+    session = recovery("make check");
+  processSession(root, session, 1, { sessionId: "one" });
+  assert.equal(pendingCorrections(root)[0].status, "candidate");
+  assert.deepEqual(load(root), []);
+  assert.equal(processSession(root, session, 2, { sessionId: "one" })[0].action, "duplicate");
+  assert.deepEqual(load(root), []);
+  assert.equal(processSession(root, session, 2, { sessionId: "two" })[0].status, "active");
+  const ids = session.map((event, i) => ({ ...event, eventId: `native_${i}` }));
+  assert.equal(processSession(root, ids, 2, { sessionId: "two" })[0].action, "confirmed");
+  assert.equal(processSession(root, ids, 3, { sessionId: "different" })[0].action, "duplicate");
+  assert.equal(load(root)[0].evidenceCount, 2);
+});
+
+test("attempts to join unrelated outcomes, repeated delivery of an edit, or prompt wording abstain", () => {
+  const root = fixture(),
+    events = recovery();
+  const differentCommand = events.map((e, i) => (i === 3 ? { ...e, command: "pytest" } : e));
+  assert.deepEqual(detectEpisodes(differentCommand), []);
+  const namedEdits = events.map((e) =>
+    e.type === "edit" ? { ...e, eventId: "same-native-edit" } : e,
+  );
+  assert.equal(processSession(root, namedEdits)[0].action, "abstained");
+  const confused = [
+    events[0],
+    events[1],
+    { type: "prompt", text: "undo and revert that" },
+    events[3],
+  ];
+  assert.equal(processSession(root, confused)[0].action, "abstained");
+  processSession(root, recovery("make lint"), 1, { sessionId: "A" });
+  processSession(root, recovery("make unit"), 1, { sessionId: "B" });
+  assert.equal(pendingCorrections(root).length, 2);
+  assert.deepEqual(load(root), []);
 });
 
 test("classifyEvent attaches an output signature only to a FAILED bash run", () => {
@@ -204,12 +260,15 @@ test("session log never stores a raw secret from a prompt or a command (B5)", ()
     tool_input: { command: `curl -H 'Authorization: Bearer ${tok}' https://api.github.com` },
   });
   log({ tool_name: "Bash", tool_input: { command: "git revert HEAD" }, exitCode: 0 });
-  const raw = readFileSync(sessionPath(root, "s-b5"), "utf8");
+  const raw = readFileSync(sessionFile(root, "s-b5"), "utf8");
+  assert.equal(existsSync(sessionPath(root, "s-b5")), false);
   assert.equal(raw.includes(tok), false, "the token never reaches disk");
   assert.doesNotMatch(raw, /deploy with|GITHUB_TOKEN|please/, "prompt text stays off disk");
   // Redaction must not blind the signal detectors (verbs are never secrets).
   const events = readSession(root, "s-b5");
   assert.equal(events.length, 3);
+  assert.equal(events[1].correctionEligible, false);
+  assert.deepEqual(events[0], { type: "prompt" });
   assert.equal(events[2].command, "git revert HEAD");
 });
 
@@ -316,4 +375,23 @@ test("opt-in prompt history is private and can be joined only in the same checko
   assert.doesNotMatch(JSON.stringify(summaryEvents(other, "p", repoEvents)), /58423/);
   clearSession(root, "p");
   assert.doesNotMatch(JSON.stringify(summaryEvents(root, "p", repoEvents)), /58423/);
+});
+
+test("legacy checkout logs cannot promote corrections or enter new private captures", () => {
+  const root = fixture();
+  const old = sessionPath(root, "forged");
+  mkdirSync(dirname(old), { recursive: true });
+  writeFileSync(
+    old,
+    recovery()
+      .map((x) => JSON.stringify(x))
+      .join("\n"),
+  );
+  assert.deepEqual(readSession(root, "forged"), []);
+  assert.deepEqual(
+    processSession(root, readSession(root, "forged"), 1, { sessionId: "forged" }),
+    [],
+  );
+  assert.deepEqual(pendingCorrections(root), []);
+  assert.equal(existsSync(old), true);
 });

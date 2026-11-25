@@ -143,7 +143,7 @@ forge harness memory history CLAIM_ID
 forge harness memory graph CLAIM_ID 2
 ```
 
-An operator can correct or contradict an item and inspect its history. For explicit sharing use `forge harness memory share CLAIM_ID team --team platform` or `forge harness memory share CLAIM_ID personal --personal`. These are scopes of the local memory database. Team replication, corporate identities and multi-user ACLs need a separate deployment. Existing Jira, Confluence, GitLab and document mirrors have their own identity scopes and refresh behavior. [Source configuration](AGENT-EVIDENCE.md)
+An operator can correct or contradict an item and inspect its history. For explicit sharing use `forge harness memory share CLAIM_ID team --team platform` or `forge harness memory share CLAIM_ID personal --personal`. These are scopes of the local memory database. For organization memory, grant this checkout `read` or `write` access with `forge harness memory org-grant NAME read|write`. Select `--organization NAME` on recall, history or explicit sharing. `forge harness memory org-revoke NAME` removes the grant. Local authorization and cloud export have separate scopes. [Memory storage and recovery](MEMORY.md) Existing Jira, Confluence, GitLab and document mirrors have their own identity scopes and refresh behavior. [Source configuration](AGENT-EVIDENCE.md)
 
 ## Skills and extensions
 
@@ -192,6 +192,10 @@ forge harness council trial parallel frozen.json observed.json retry
 forge harness council run workers.json
 ```
 
+A `workflow` shape accepts a directed acyclic graph. Each worker may name `dependsOn` IDs and an optional positive `estimatedMinutes`. The run takes `maxWorkers` as an optional concurrency limit within the workspace ceiling. Ready workers run in longest-remaining-path order using previous successful harness durations plus measured handoff preparation time, or the supplied estimates. Incomplete timing uses dependency depth. An independent branch can finish even if another branch fails. A worker receives the group evidence pack, its named predecessors’ findings, its own run history and verifier feedback. The worker channel omits workspace search results, memory recall, ambient extension hooks and application tools. An author–reviewer pair supplies the author report to the reviewer. A council retains its four independent rounds under the same concurrency limit. Parent and worker resource budgets still apply.
+
+A partial workflow returns the failed or blocked worker IDs alongside the available findings. Reuse the same group ID and immutable specification when retrying. Harness child run IDs are stable, so completed runs can be read again. Resolve a paused child using the normal harness recovery or resume operation before rerunning the group. Native `forge team --run` workers have no durable child-run resume protocol.
+
 Create the frozen suite and observation worksheet with `forge team evaluate`, as described in the [paired pilot](V2-IMPLEMENTATION.md). Only measured, paired observations can enable a shape for routine use in that class. `trial:true` explicitly allows an experimental run before adoption. See the [council fixtures](../test/harness_council.test.js) for complete worker contracts, trial data and the dissent record. Local fixtures exercise all branches. They do not establish a team’s productivity improvement.
 
 ## Coverage of the 38-page plan
@@ -200,7 +204,7 @@ Create the frozen suite and observation worksheet with `forge team evaluate`, as
 | --- | --- |
 | 1–8 | Common run shape, gateway, executor, permission gate, router, verifier, memory, events, audit and queue. CLI and MCP are process entry points. Deployments can connect signed webhook traffic through their own authenticated listener. |
 | 9–12 | Model–tool loop, context and compaction, per-step routing and bounded fallback. Missing usage and ambiguous execution are charged conservatively. The router currently accepts Chat Completions-compatible providers. |
-| 13–18 | Five permission levels, seven stages, scoped proof, memory layers, ledger history and graph recall. Ranking combines lexical results, graph neighbors and recency with reciprocal ranks, certainty and layer-specific time decay. Deduplication uses normalized content and MinHash. Source deltas compare a revision and update a hash tree. |
+| 13–18 | Five permission levels, seven stages, scoped proof, memory layers, ledger history and graph recall. Recall ranks measured FTS relevance, shared observations, verification level, time and recorded use outcomes by empirical midrank. Deduplication uses normalized content and MinHash. Source deltas compare a revision and update a hash tree. |
 | 19–24 | All 13 separately named interception points from the catalogue, bounded event history, private scoped tool execution, declarative skills/plugins, digest review, removal and quarantine. Trust for critical hooks is explicit. |
 | 25–28 | Single-agent default, bounded workers, council synthesis, per-shape trial records, leased SQLite job queue, UTC cron, triggers and signed webhook intake. |
 | 29–33 | Budget thresholds, checkpoints, repairs, cancellation, receipts, hashed phase trace, recovery and retention. Cost is attributed to runs, with UTC-day and project reservation ceilings. Choice of pricing, cache break-even and rollout thresholds requires workload measurements. |

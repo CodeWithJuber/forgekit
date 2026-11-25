@@ -133,6 +133,7 @@ const toPosix = (p) => String(p).replaceAll("\\", "/");
  */
 export const GUARD_POLICY = {
   "secret-redact.sh": { node: "secret-redact.mjs" },
+  "pre-edit-impact.sh": { node: "pre-edit-impact.mjs", failClosed: true },
   "protect-paths.sh": { node: "protect-paths.mjs", failClosed: true },
   // dep-gate does network I/O, so it fails OPEN: an install must keep working offline. Only a
   // verdict from the twin (exit 2) blocks.

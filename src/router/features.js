@@ -1,52 +1,22 @@
-// Task features for the universal router: countable properties of the task text and, when a
-// repository is available, of the code it touches. The router learns how each feature shifts
-// difficulty; nothing here decides a model.
-import { routeTask, rubricComplexity, rubricSignals } from "../route.js";
+// Observable properties of the input, identical during fitting and prediction. Their
+// coefficients are estimated from task outcomes. These counts require no repository I/O.
+export const FEATURE_NAMES = ["log_chars", "log_lines", "code_fences"];
 
-export const FEATURE_NAMES = [
-  "log_chars",
-  "log_lines",
-  "code_fences",
-  "log_constraints",
-  "log_steps",
-  "rubric_knn",
-  "rubric_score",
-  "log_files",
-  "log_fanout",
-  "log_churn",
-  "past_mistakes",
-  "ambiguity",
-];
-
-/**
- * Raw (unstandardised) features. `root` may be null for text-only use (no repo signals).
- * @param {string|null} root
- * @param {string} task
- */
-export function rawFeatures(root, task) {
+export function rawFeatures(_root, task) {
   const text = String(task ?? "");
-  const sig = rubricSignals(text);
-  const rub = rubricComplexity(text);
-  let repo = { files: 0, fanout: 0, churn: 0, pastMistakes: 0, ambiguity: 0 };
-  if (root) {
-    try {
-      repo = routeTask(root, text, { llm: false }).signals ?? repo;
-    } catch {}
-  }
   return [
     Math.log1p(text.length),
-    Math.log1p((text.match(/\n/g) || []).length),
-    (text.match(/```/g) || []).length / 2,
-    Math.log1p(sig.nConstraints),
-    Math.log1p(sig.nSteps),
-    Number(rub.knn) || 0,
-    Number(rub.score) || 0,
-    Math.log1p(repo.files || 0),
-    Math.log1p(repo.fanout || 0),
-    Math.log1p(repo.churn || 0),
-    Number(repo.pastMistakes) || 0,
-    Number(repo.ambiguity) || 0,
+    Math.log1p(text.split("\n").length - 1),
+    (text.split("```").length - 1) / 2,
   ];
+}
+
+// Historical outcome records store these same three measurements first. Other axes
+// included authored prompt labels and cannot be inputs to the current fit.
+export function currentFeatures(stored) {
+  return Array.isArray(stored) && stored.length === 12
+    ? stored.slice(0, FEATURE_NAMES.length)
+    : stored;
 }
 
 /** Standardisation fitted on training data (a zero-variance feature keeps scale 1). */

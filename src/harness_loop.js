@@ -60,7 +60,8 @@ const plain = (value) => value !== null && typeof value === "object" && !Array.i
 function limits(input) {
   const b = { ...DEFAULT_BUDGET, ...input };
   for (const k of ["turns", "tokens", "milliseconds", "toolCalls", "contextTokens"]) {
-    if (!Number.isSafeInteger(b[k]) || b[k] < 1) throw new Error(`Invalid harness budget: ${k}`);
+    if (!Number.isSafeInteger(b[k]) || b[k] < (k === "toolCalls" ? 0 : 1))
+      throw new Error(`Invalid harness budget: ${k}`);
   }
   if (
     !Number.isSafeInteger(b.repairs) ||
@@ -154,16 +155,7 @@ function initialState(id, request) {
  * are total limits for the run; all prior usage still counts.
  * @param {any} options */
 export async function runHarness(options) {
-  const {
-    root,
-    model,
-    verify,
-    policy,
-    tools = [],
-    memory,
-    hooks = createHarnessHooks(),
-    signal,
-  } = options;
+  const { root, model, verify, policy, signal } = options;
   if (!root || typeof model !== "function" || typeof verify !== "function" || !policy?.profiles)
     throw new Error("Harness requires a workspace, model, verifier and policy");
   const id =
@@ -197,6 +189,12 @@ export async function runHarness(options) {
       return record.view(state);
     const s = state,
       request = s.request;
+    // A delegated worker sees its evidence packet, its own history and verifier feedback.
+    // Apply the boundary after restoring the durable channel as well as on a fresh run.
+    const worker = request.channel === "worker";
+    const memory = worker ? null : options.memory;
+    const tools = worker ? [] : (options.tools ?? []);
+    const hooks = worker ? createHarnessHooks() : (options.hooks ?? createHarnessHooks());
     const profile = request.profile ?? "coder";
     const apiChannel = ["api", "mcp", "webhook"].includes(request.channel);
     const initial = policy.profiles[profile];
@@ -353,7 +351,8 @@ export async function runHarness(options) {
       if (s.usage.tokens >= budget.tokens) throw statusError("budget_exhausted", "tokens");
       if (budget.costUsd > 0 && s.usage.costUsd >= budget.costUsd)
         throw statusError("budget_exhausted", "costUsd");
-      if (s.usage.toolCalls >= budget.toolCalls) throw statusError("budget_exhausted", "toolCalls");
+      if (budget.toolCalls > 0 && s.usage.toolCalls >= budget.toolCalls)
+        throw statusError("budget_exhausted", "toolCalls");
       const maxTokens = budget.tokens - s.usage.tokens,
         maxCostUsd = Math.max(0, budget.costUsd - s.usage.costUsd);
       const transformed = await hook("provider.before_call", { messages, step });
@@ -367,7 +366,7 @@ export async function runHarness(options) {
           model({
             messages: transformed.messages,
             tools:
-              step === "code"
+              step === "code" && budget.toolCalls > 0
                 ? visibleHarnessTools(activePolicy, profile, activeTools()).map(
                     ({ name, description, inputSchema }) => ({ name, description, inputSchema }),
                   )
@@ -533,7 +532,9 @@ export async function runHarness(options) {
           if (s.usage.repairs > budget.repairs)
             return close("verification_failed", s.evidence?.output ?? "Repair budget exhausted");
           const fraction = sumFraction(s, budget);
-          const slices = await bounded(() => harnessRepoSlices(root, request.task));
+          const slices = worker
+            ? { working: [], warnings: [] }
+            : await bounded(() => harnessRepoSlices(root, request.task));
           log("recall", "workspace.context", {
             sources: slices.working.map((x) => x.id),
             warnings: slices.warnings,
@@ -543,20 +544,24 @@ export async function runHarness(options) {
             acceptance: request.acceptance ?? [],
             rules: [
               DEFAULT_RULES,
-              typeof options.rules === "function" ? options.rules() : options.rules,
+              worker ? null : typeof options.rules === "function" ? options.rules() : options.rules,
             ]
               .filter(Boolean)
               .join("\n"),
             plan: request.plan ?? [],
-            diff:
-              typeof options.diff === "function"
+            diff: worker
+              ? ""
+              : typeof options.diff === "function"
                 ? options.diff()
                 : (options.diff ?? Object.values(s.changes ?? {}).join("\n")),
-            working: [
-              ...((typeof options.working === "function" ? options.working() : options.working) ??
-                []),
-              ...slices.working,
-            ],
+            working: worker
+              ? []
+              : [
+                  ...((typeof options.working === "function"
+                    ? options.working()
+                    : options.working) ?? []),
+                  ...slices.working,
+                ],
             history: s.history,
             recall: recalled,
             windowTokens: budget.contextTokens,

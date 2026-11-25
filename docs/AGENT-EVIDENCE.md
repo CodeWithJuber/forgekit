@@ -59,7 +59,7 @@ For a host that can call ForgeKit's MCP server, the available tool names map dir
 | MCP tool | Arguments for an example request |
 | --- | --- |
 | `forge_develop` | `{"task":"Fix duplicate retries in the payment client"}` |
-| `forge_team_plan` | `{"task":"Diagnose a payment timeout across repositories and identify regression tests","maxWorkers":2}` |
+| `forge_team_plan` | `{"task":"Diagnose a payment timeout across repositories and identify regression tests","decomposition":{"mode":"review"}}` |
 | `forge_tool_install` | `{"id":"playwright"}` installs a reviewed release. An optional `version` selects an exact release. |
 | `forge_tool_find` | `{"task":"Browser regression tests for a web application"}` |
 | `forge_evidence` | `{"task":"Investigate retries before changing the HTTP client"}` |
@@ -128,16 +128,17 @@ Inspect the acceptance test before paying to expand a search. A library can be p
 
 ## When to use multiple agents
 
-The lead can handle a focused task end to end. A task spanning independent questions can benefit from read-only specialists. For example, while investigating a cross-repo retry failure, one specialist can trace the failure path, another can check the ticket's contract, and the lead can compare their evidence before editing. A task suggesting only one useful specialty stays with its lead.
+The lead owns edits and verifies the combined result. Select `--review` for one independent reviewer or use a JSON brief to name each read-only assignment, its file scope, acceptance criterion and dependencies. Without a selection the plan keeps the work with the lead. Prompt wording cannot authorize additional workers.
 
 ```sh
-forge team "Diagnose the Jira payment timeout and identify regression tests" --json
-forge team "Diagnose the Jira payment timeout and identify regression tests" --run claude --budget-usd 0.20 --max-workers 2 --json
+forge team "Review the retry change" --review --handoff generic --json
+forge team "Trace the retry change" --brief streams.json --json
+forge team "Trace the retry change" --brief streams.json --run claude --budget-usd 0.20 --max-workers 2 --json
 ```
 
-The first command builds a plan locally. Each assignment states its deliverable, candidate references and dependencies. The lead is the sole editor, and depends on the independent reports. The default concurrency ceiling is the existing orchestration pack's two workers. Adjust it using `forge orchestration set parallelCap 3`. `--max-workers` can lower the effective cap. Use the host's read-only role, such as Claude's Explore or Codex's explorer, when the active host exposes it. A generated plan is visible independently of whether that host accepts a delegation. [ForgeKit orchestration](ORCHESTRATION.md) · [Claude subagents](https://code.claude.com/docs/en/sub-agents) · [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+The first two commands generate local handoffs or plans. The scheduler releases ready work up to the configured concurrency ceiling. It uses previous durations or explicit estimates to prioritize the longest dependency chain. If durations are incomplete, the longest chain of remaining tasks gets priority. A failure blocks dependent work and leaves independent findings available. Scoped briefs include the selected paths and bounded, redacted source excerpts from ordinary workspace files. A directory scope can supply indexed symbol locations within that directory. [Breakdown example and scheduling details](DEVELOPMENT-GATES.md#decide-when-to-split-a-task) · [ForgeKit orchestration](ORCHESTRATION.md)
 
-The second command explicitly launches read-only Claude Code processes on PATH for the current worktree and sends each role's task and references to its configured model provider. Use it only with data that provider can process. Use `--model MODEL_ID` to request a native Claude model explicitly. A compatible provider override or trusted profile selection is used when present. Otherwise the native CLI chooses its model. Worker receipts distinguish the requested ID and any model IDs reported by the host. Workers use bare and restricted modes, read-only built-in tools, strict MCP configuration and no session persistence. Bare mode supports the API/provider credentials documented by Claude. The executor verifies required host options before launch, splits the total dollar estimate across workers and reports each outcome separately. Claude's budget check uses a client estimate and can overshoot. The hook and MCP planner do not launch these processes or incur model-worker fees. In a real CLI fixture, both worker processes completed against a loopback Messages endpoint. Only the Read tool was advertised in the two captured model requests. [Claude CLI options](https://code.claude.com/docs/en/cli-reference)
+The third command sends the scoped briefs to the configured provider using Claude Code. The executor checks host capabilities before launching. Scoped workers run in temporary directories with built-in tools disabled. The explicitly selected project-wide `--review` role runs in the worktree with Read, Grep and Glob. The host runs in bare, restricted mode with strict MCP configuration and session persistence disabled. Choose `--model MODEL_ID` for an explicit native model or let the selected provider or CLI supply its default. Each receipt distinguishes the requested model and the model IDs the provider reported. To preview timing for a particular route, pass `--handoff claude --model MODEL_ID` or supply `host` and `model` to the MCP planner. A host-neutral plan uses operator estimates when it lacks host-specific observations. The executor divides the total dollar cap across all assignments in whole cents. The host enforces its own estimate and its actual charge can exceed it. A missing cost stays unknown. Kimi and Codex launches require `--host-billing` and support a time limit. [Claude CLI options](https://code.claude.com/docs/en/cli-reference)
 
 ## Jira, Confluence and GitLab
 

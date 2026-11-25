@@ -33,10 +33,14 @@
 // turned any leak + one big file into a silent pass).
 
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { CLASSES, classifyPath } from "./gate.js";
+import { readBounded } from "./private_paths.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import { IGNORE_DIRS } from "./util.js";
+import { checkoutId, hasPassingReceipt, matchingIndex, verifyClaim } from "./verify.js";
 
 // A BLOCKING detector needs redaction-grade precision, not store-refusal breadth:
 // hasSecret's ASSIGNED branch deliberately refuses ANY key-assigned value (cheap and
@@ -358,15 +362,44 @@ export function commitGateDecision({
   };
 }
 
+function missingVerification(root) {
+  let prov;
+  try {
+    const file = join(realpathSync.native(root), ".forge", "provenance.json");
+    prov = JSON.parse(readBounded(file, 8 * 1024 * 1024).bytes.toString("utf8"));
+  } catch {}
+
+  if (
+    typeof prov?.indexDigest === "string" &&
+    prov.codeState?.dirtyHash &&
+    prov.event?.checkout === checkoutId(root) &&
+    prov.tests?.status === "PASS" &&
+    hasPassingReceipt(prov) &&
+    prov.indexDigest === matchingIndex(root) &&
+    verifyClaim({ provenance: prov }, { cwd: root }).verdict === "CONFIRMED"
+  )
+    return null;
+  return {
+    kind: "verification",
+    severity: "block",
+    detail:
+      "Stage the intended changes, bring tracked files into agreement with the index, then run forge verify. A signed, counted PASS must match this index and checkout.",
+    files: [],
+  };
+}
+
 /**
  * The impure orchestrator the CLI (and the harden-installed pre-commit hook) calls.
  * Every step guarded; ANY internal error resolves to allow (fail-open, like stopGate).
  * @param {string} root
- * @param {{env?: NodeJS.ProcessEnv}} [opts]
+ * @param {{env?: NodeJS.ProcessEnv, requireVerified?:boolean}} [opts]
  */
-export function commitGate(root, { env = process.env } = {}) {
+export function commitGate(root, { env = process.env, requireVerified = false } = {}) {
   try {
     const mode = gateMode(env.FORGE_COMMIT_GATE);
+    const verification = requireVerified ? missingVerification(root) : null;
+    if (verification)
+      return { allow: false, mode, row: "blocked", findings: [verification], staged: [] };
     if (mode === "off")
       return {
         allow: true,
@@ -377,7 +410,7 @@ export function commitGate(root, { env = process.env } = {}) {
       };
     if (gitRaw(root, ["rev-parse", "--is-inside-work-tree"]).trim() !== "true")
       return { allow: true, mode, row: "not-a-repo", findings: [], staged: [] };
-    const staged = stagedFiles(root);
+    const staged = requireVerified ? stagedPaths(root, true) : stagedFiles(root);
     if (!staged.length)
       return {
         allow: true,
@@ -409,6 +442,21 @@ export function commitGate(root, { env = process.env } = {}) {
       staged,
     };
   } catch {
+    if (requireVerified)
+      return {
+        allow: false,
+        mode: "block",
+        row: "blocked",
+        findings: [
+          {
+            kind: "verification",
+            severity: "block",
+            detail: "Could not verify the staged checkout.",
+            files: [],
+          },
+        ],
+        staged: [],
+      };
     return {
       allow: true,
       mode: "warn",
@@ -457,7 +505,7 @@ export function renderCommitGate(r) {
   lines.push(
     r.allow
       ? `  → allowed (${r.mode} mode). FORGE_COMMIT_GATE=block makes completeness findings refuse the commit.`
-      : "  → commit refused. Kill switch: FORGE_COMMIT_GATE=0 (or `git commit --no-verify`).",
+      : "  → commit refused. Address the blocking findings and retry.",
   );
   return lines.join("\n");
 }

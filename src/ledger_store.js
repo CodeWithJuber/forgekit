@@ -4,7 +4,9 @@
 // claim — evidence, provenance, tombstones — that git union-merges without conflicts
 // (`forge init` emits the .gitattributes rule). Everything author- or time-varying is
 // a log line; nothing on disk is ever edited in place.
+
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   appendFileSync,
   closeSync,
@@ -159,7 +161,7 @@ function readLog(dir, log, id, { verifyHashes = true } = {}) {
  *  tombstone reason, or provenance metadata is refused BEFORE it can touch disk, exactly
  *  as putClaim refuses secret-bearing claim content. This is the single append choke point
  *  for every metadata log, so no channel can smuggle a secret onto disk (or into a merge). */
-function appendRecord(dir, log, id, record) {
+function appendRecord(dir, log, id, record, previous = undefined) {
   if (!record?.h) return { ok: false, reason: "record missing content hash" };
   const { h, ...rest } = record;
   if (sealRecord(rest).h !== h)
@@ -175,7 +177,10 @@ function appendRecord(dir, log, id, record) {
   const live = existsSync(claimPath(dir, id));
   const archived = !live && inAttic(dir, id);
   if (!live && !archived) return { ok: false, reason: `no such claim in ledger: ${id}` };
-  if (readLog(dir, log, id).some((e) => e.h === record.h)) return { ok: true, deduped: true };
+  const exists = previous
+    ? previous.has(record.h)
+    : readLog(dir, log, id).some((e) => e.h === record.h);
+  if (exists) return { ok: true, deduped: true };
   // NEW evidence on a pruned claim brings it back out of the attic — review restores weight
   // (01-pcm-protocol.md §3). Any other record (a tombstone, another author's mint) is
   // appended without un-archiving it.
@@ -185,6 +190,7 @@ function appendRecord(dir, log, id, record) {
   }
   mkdirSync(join(dir, log), { recursive: true });
   appendLine(logPath(dir, log, id), canonicalize(record));
+  previous?.add(record.h);
   return { ok: true, deduped: false };
 }
 
@@ -263,7 +269,13 @@ export function putClaim(dir, claim) {
   const healthy = already && readJsonSafe(path) !== null && readFileSync(path, "utf8") === text;
   if (!healthy) {
     mkdirSync(join(dir, "claims", claim.id.slice(0, 2)), { recursive: true });
-    writeFileSync(path, text);
+    const tmp = `${path}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(tmp, text, { flag: "wx" });
+      renameSync(tmp, path);
+    } finally {
+      rmSync(tmp, { force: true });
+    }
   }
   if (!healthy) indexClaim(dir, claim);
   if (claim.provenance?.h) appendRecord(dir, "provenance", claim.id, claim.provenance);
@@ -291,6 +303,23 @@ const gitFullId = (root, sha) => {
  *  object id (re-sealed), so one commit has one spelling in the log (review F06; val() also
  *  dedupes aliases already on disk). */
 export function appendEvidence(dir, id, outcome) {
+  return appendCheckedOutcome(dir, id, outcome);
+}
+
+/** Scan one claim's existing hashes once when restoring aggregate history. Every
+ * record still takes the same ref validation, seal validation and append path. */
+export function appendEvidenceBatch(dir, id, outcomes) {
+  const previous = new Set(readEvidence(dir, id).map((e) => e.h));
+  let added = 0;
+  for (const outcome of outcomes) {
+    const result = appendCheckedOutcome(dir, id, outcome, previous);
+    if (!result.ok) throw new Error(result.reason);
+    if (!result.deduped) added++;
+  }
+  return added;
+}
+
+function appendCheckedOutcome(dir, id, outcome, previous = undefined) {
   if (!validOutcome(outcome)) return { ok: false, reason: "invalid outcome (use outcomeRecord)" };
   const root = repoRootOf(dir);
   const v = validateRef(outcome.ref, {
@@ -302,9 +331,9 @@ export function appendEvidence(dir, id, outcome) {
   const full = m ? gitFullId(root, m[1]) : null;
   if (full) {
     const { h: _h, ...rest } = outcome;
-    return appendRecord(dir, "evidence", id, sealRecord({ ...rest, ref: `git:${full}` }));
+    return appendRecord(dir, "evidence", id, sealRecord({ ...rest, ref: `git:${full}` }), previous);
   }
-  return appendRecord(dir, "evidence", id, outcome);
+  return appendRecord(dir, "evidence", id, outcome, previous);
 }
 
 /** All evidence outcomes for a claim (corrupt lines skipped, duplicates dropped). */
@@ -617,9 +646,13 @@ export function getClaimByPrefix(dir, prefix, { attic = false } = {}) {
   const atticDir = join(dir, "attic");
   const archived =
     attic && !live.length && existsSync(atticDir)
-      ? readdirSync(atticDir)
-          .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
-          .map((f) => join(atticDir, f))
+      ? exact
+        ? existsSync(atticPath(dir, prefix))
+          ? [atticPath(dir, prefix)]
+          : []
+        : readdirSync(atticDir)
+            .filter((f) => f.endsWith(".json") && f.startsWith(prefix))
+            .map((f) => join(atticDir, f))
       : [];
   const matches = live.length ? live : archived;
   if (matches.length !== 1) return null;

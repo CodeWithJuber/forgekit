@@ -2,23 +2,28 @@
 // runs, user prompts) into the correction episodes the orchestrator consumes, with zero
 // commands from the developer. Signal detection is PURE (over a normalized event log) so
 // it's unit-testable; the shell hooks just append events and call processSession on Stop.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { recordContradiction, recordMistake } from "./cortex.js";
 import { privateMemoryDir } from "./private_memory.js";
+import { readBounded } from "./private_paths.js";
 import { redactSecrets } from "./secrets.js";
-import { contentHash, slug } from "./util.js";
+import { sourceWorkspaceRoot } from "./sources.js";
+import { contentHash, git } from "./util.js";
+import { privateWorkspaceFile } from "./workspace_preference.js";
 
-// One naming rule for every per-session artifact (event log, git baseline, gate marker,
-// last-intent) — the sanitized sid plus an extension, all under .forge/sessions/ so one
-// prune sweep ages them together.
+// Checkout markers include the git baseline, completion gate and last declared intent.
+// Private event captures have a separate per-checkout location.
 export const sessionPath = (root, sid, ext = "jsonl") =>
   join(root, ".forge", "sessions", `${String(sid).replace(/[^A-Za-z0-9_-]/g, "_")}.${ext}`);
 
-const sessionFile = (root, sid) => sessionPath(root, sid);
+export const sessionEventsDir = (root) =>
+  privateWorkspaceFile(root, "cortex-session-events-v2").replace(/\.json$/, "");
+export const sessionFile = (root, sid) =>
+  join(sessionEventsDir(root), `${contentHash(String(sid))}.jsonl`);
 const promptFile = (root, sid) =>
-  join(privateMemoryDir(root, "prompts"), basename(sessionFile(root, sid)));
+  join(privateMemoryDir(root, "prompts"), basename(sessionPath(root, sid)));
 
 /** Every string leaf of an event, secret-redacted; structure and non-strings untouched. */
 const redactEvent = (v) =>
@@ -40,8 +45,9 @@ export function appendSessionEvent(root, sid, event) {
   const path = sessionFile(root, sid);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   let stored = redactEvent(event);
+  if (event.type === "bash" && event.command !== stored.command) stored.correctionEligible = false;
   if (event.type === "prompt") {
-    stored = { type: "prompt", negative: NEG_RE.test(event.text ?? "") };
+    stored = { type: "prompt" };
     if (process.env.FORGE_DEJA === "1") {
       const privatePath = promptFile(root, sid);
       mkdirSync(dirname(privatePath), { recursive: true, mode: 0o700 });
@@ -87,14 +93,7 @@ export function clearSession(root, sid) {
   }
 }
 
-const REVERT_RE = /\bgit\s+(revert|reset\s+--hard|checkout\s+--|restore)\b/;
-// One grammar with deja.js: the command must BE a test run (start of the command or after a
-// shell separator — `echo "run npm test later"` is not one) and keep its exit code (`npm test
-// || true` proves nothing).
-const TEST_RE =
-  /(^|[\n;&|]\s*)(npx\s+|pnpm\s+|yarn\s+)?(npm\s+(run\s+)?test|node\s+--test|jest|vitest|pytest|go\s+test|cargo\s+test)\b/;
 const MASKED_RE = /\|\|\s*(true|:)\b|;\s*(true|exit\s+0)\b/;
-const isTestRun = (command) => TEST_RE.test(String(command ?? "")) && !MASKED_RE.test(command);
 // An end-to-end suite run (`npm run e2e`, `pnpm test:e2e`, `npx playwright test`, `cypress
 // run`), same position rule as TEST_RE, env assignments allowed in front. The completion
 // gate takes a passing one as test evidence, and all it sees is the WHOLE command's exit
@@ -125,9 +124,6 @@ export const isE2eRun = (command) => {
   const tail = c.slice((last.index ?? 0) + last[0].length).replace(REDIRECT_RE, " ");
   return !/[;&|\n()`]/.test(tail) && !NO_RUN_FLAG_RE.test(tail);
 };
-// Negation must be corrective, not incidental ("no problem"); require a corrective verb.
-const NEG_RE = /\b(undo|revert|that'?s\s+wrong|not\s+what|you\s+broke|regression|wrong\s+again)\b/i;
-
 // A cheap signature of a failing run's output. Line numbers, hex addresses, timings, and
 // temp paths are normalized out so "the same failure" hashes the same across runs even as
 // surrounding noise shifts — this is what lets us catch a same-error doom loop.
@@ -161,13 +157,39 @@ function outputSignature(text) {
 
 /** Normalize a raw hook payload into a compact event, or null if it carries no signal. */
 export function classifyEvent(hook) {
+  const eventId =
+    typeof hook.tool_use_id === "string" && hook.tool_use_id
+      ? { eventId: contentHash(hook.tool_use_id) }
+      : {};
   const tool = hook.tool_name;
   const inp = hook.tool_input ?? {};
   if (tool === "Edit" || tool === "Write" || tool === "MultiEdit") {
-    return { type: "edit", file: inp.file_path ?? "" };
+    if (typeof inp.file_path !== "string" || !inp.file_path) return null;
+    let file = inp.file_path;
+    let versions;
+    if (hook.cwd) {
+      const target = resolve(hook.cwd, file);
+      file = relative(sourceWorkspaceRoot(hook.cwd), target);
+      if (!file || isAbsolute(file) || file === ".." || file.startsWith(`..${sep}`)) return null;
+      file = file.split(sep).join("/");
+      // Capture only Git blob identities. If bounded or no-follow reading fails,
+      // a later reversal cannot be attributed to this version of the file.
+      try {
+        const { bytes } = readBounded(target, 1024 * 1024);
+        versions = ["sha1", "sha256"].map((algorithm) =>
+          createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest("hex"),
+        );
+      } catch {}
+    }
+    return { type: "edit", file, ...(versions ? { versions } : {}), ...eventId };
   }
   if (tool === "Bash") {
-    const exitCode = hook.exitCode;
+    if (inp.run_in_background === true || hook.tool_response?.interrupted === true) return null;
+    const exitCode =
+      hook.exitCode ??
+      hook.exit_code ??
+      hook.tool_response?.exitCode ??
+      hook.tool_response?.exit_code;
     const failed = typeof exitCode === "number" && exitCode !== 0;
     // BOTH streams: jest, mocha and tsc print their failures on stderr, so a stdout-only
     // signature never saw them and those loops were invisible (review C10).
@@ -177,6 +199,8 @@ export function classifyEvent(hook) {
       .join("\n");
     return {
       type: "bash",
+      ...eventId,
+      ...(exitCode === 0 && hook.cwd ? verifiedRevert(hook.cwd, inp.command, out) : {}),
       command: inp.command ?? "",
       exitCode,
       // Only carry a signature for FAILED runs — that's all the doom-loop check needs.
@@ -189,67 +213,118 @@ export function classifyEvent(hook) {
   return null;
 }
 
-/**
- * Scan a session's normalized events and emit correction episodes. Signals are grouped
- * PER FILE so the cross-family gate works (a lone thrash never fires; test-fail-then-pass
- * on a file that was also edited does). Reverts become contradiction episodes.
- * @returns {{kind:string, context:object, signals?:{signal:string}[], episodeId:string, nowDay:number}[]}
- */
-export function detectEpisodes(events, { nowDay = 0 } = {}) {
-  const sig = new Map(); // file -> Set(signal)
-  const editCount = new Map();
-  const recentEdits = [];
-  const contradictions = [];
-  let sawTestFail = false;
-  let failFiles = new Set();
-  const add = (file, s) => {
-    if (!file) return;
-    if (!sig.has(file)) sig.set(file, new Set());
-    sig.get(file).add(s);
-  };
-
-  for (const e of events) {
-    if (e.type === "edit" && e.file) {
-      const n = (editCount.get(e.file) ?? 0) + 1;
-      editCount.set(e.file, n);
-      if (n >= 2) add(e.file, "S2"); // edited again this session = self-correction
-      if (n >= 3) add(e.file, "S3"); // thrash
-      recentEdits.push(e.file);
-      if (sawTestFail) failFiles.add(e.file);
-    } else if (e.type === "bash") {
-      if (isTestRun(e.command)) {
-        if (typeof e.exitCode === "number" && e.exitCode !== 0) sawTestFail = true;
-        else if (e.exitCode === 0 && sawTestFail) {
-          for (const f of failFiles) add(f, "S1"); // fail → edit → pass, same files
-          sawTestFail = false;
-          failFiles = new Set();
-        }
-      }
-      if (REVERT_RE.test(e.command)) contradictions.push({ files: recentEdits.slice(-3) });
-    } else if (e.type === "prompt" && (e.negative === true || NEG_RE.test(e.text ?? ""))) {
-      const f = recentEdits.at(-1);
-      if (f) add(f, "S5"); // weak; never fires alone (gate), needs a co-occurring signal
+// Attribute a reversal only when Git reported a newly-created commit and the
+// current object confirms it names a reverted commit. File names come from that tree.
+function verifiedRevert(root, command, output) {
+  if (!/^git\s+revert(?:\s|$)/.test(command) || /[;&|`$\n]/.test(command)) return {};
+  const reported = /^\[[^\]\n]+ ([0-9a-f]{7,64})\]/im.exec(output)?.[1];
+  if (!reported) return {};
+  const head = git(root, ["rev-parse", "HEAD"]);
+  if (!head.startsWith(reported)) return {};
+  const reversed = /^This reverts commit ([0-9a-f]{40,64})[. ,]/im.exec(
+    git(root, ["show", "-s", "--format=%B", head]),
+  )?.[1];
+  if (!reversed) return {};
+  function changedBlobs(commit) {
+    const fields = git(root, [
+      "diff-tree",
+      "--root",
+      "--no-commit-id",
+      "--no-renames",
+      "--no-abbrev",
+      "-r",
+      "-z",
+      "--raw",
+      commit,
+    ]).split("\0");
+    const paths = new Map();
+    for (let i = 0; i + 1 < fields.length; i += 2) {
+      const fieldsForFile = /^:[0-7]{6} [0-7]{6} ([0-9a-f]+) ([0-9a-f]+) [ADM]$/.exec(fields[i]);
+      if (fieldsForFile)
+        paths.set(fields[i + 1], { before: fieldsForFile[1], after: fieldsForFile[2] });
     }
+    return paths;
   }
+  const original = changedBlobs(reversed);
+  const reversedVersions = Object.fromEntries(
+    [...changedBlobs(head)]
+      .filter(([file, change]) => {
+        const prior = original.get(file);
+        return prior && prior.before === change.after && prior.after === change.before;
+      })
+      .map(([file, change]) => [file, change.before]),
+  );
+  return Object.keys(reversedVersions).length ? { reversedVersions, revertCommit: head } : {};
+}
 
-  let seq = 0;
+/** Pair an observed command failure with the same command's success. Each receipt
+ * identifies the underlying recovery. A replay and a different passing command
+ * cannot independently confirm the first recovery. */
+export function detectEpisodes(events, { nowDay = 0, sessionId = "" } = {}) {
+  const failures = new Map();
+  const seen = new Set();
   const episodes = [];
-  for (const [file, signals] of sig) {
-    episodes.push({
-      kind: "mistake",
-      context: { files: [file], symbols: [] },
-      signals: [...signals].map((s) => ({ signal: s })),
-      episodeId: `ep_m${seq++}_${slug(file)}`,
-      nowDay,
-    });
-  }
-  for (const c of contradictions) {
-    episodes.push({
-      kind: "contradiction",
-      context: { files: c.files, symbols: [] },
-      episodeId: `ep_c${seq++}`,
-      nowDay,
-    });
+  const digest = (parts) => contentHash(JSON.stringify(parts));
+  for (const event of events) {
+    if (event.eventId) {
+      const receipt = JSON.stringify([event.eventId, event.type, event.file]);
+      if (seen.has(receipt)) continue;
+      seen.add(receipt);
+    }
+    if (event.type === "edit" && event.file) {
+      for (const failure of failures.values()) {
+        const previous = failure.edits.get(event.file);
+        failure.edits.set(event.file, {
+          count: (previous?.count ?? 0) + 1,
+          versions: event.versions,
+        });
+      }
+      continue;
+    }
+    if (
+      event.type !== "bash" ||
+      event.correctionEligible === false ||
+      !Number.isInteger(event.exitCode) ||
+      !event.command
+    )
+      continue;
+    const check = digest([event.command]);
+    if (event.exitCode !== 0) {
+      failures.set(check, { id: event.eventId ?? null, edits: new Map() });
+      continue;
+    }
+    if (event.revertCommit && event.reversedVersions) {
+      episodes.push({
+        kind: "contradiction",
+        context: {
+          files: Object.keys(event.reversedVersions),
+          symbols: [],
+          reversedVersions: event.reversedVersions,
+        },
+        episodeId: `rev_${event.revertCommit}`,
+        nowDay,
+      });
+    }
+    const failure = failures.get(check);
+    if (!failure) continue;
+    failures.delete(check);
+    // Without host action IDs, a session can attest to one recovery of this command per file.
+    // Without even a session identity, a repeated anonymous trace cannot promote itself.
+    const identity = failure.id && event.eventId ? [failure.id, event.eventId] : [sessionId, check];
+    for (const [file, edits] of failure.edits) {
+      episodes.push({
+        kind: "mistake",
+        context: {
+          files: [file],
+          symbols: [],
+          check,
+          ...(edits.versions ? { versions: edits.versions } : {}),
+        },
+        signals: edits.count > 1 ? [{ signal: "S1" }, { signal: "S2" }] : [{ signal: "S1" }],
+        episodeId: `ep_${digest([identity, file])}`,
+        nowDay,
+      });
+    }
   }
   return episodes;
 }
@@ -303,8 +378,8 @@ export function doomLoopAdvisory(events, opts = {}) {
 }
 
 /** Drive the orchestrator from a session's events (called by the Stop hook). */
-export function processSession(root, events, nowDay = 0) {
-  return detectEpisodes(events, { nowDay }).map((ep) =>
+export function processSession(root, events, nowDay = 0, { sessionId = "" } = {}) {
+  return detectEpisodes(events, { nowDay, sessionId }).map((ep) =>
     ep.kind === "contradiction"
       ? recordContradiction(root, ep)
       : recordMistake(root, { ...ep, signals: ep.signals ?? [] }),

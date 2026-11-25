@@ -6,10 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { processSession } from "../src/cortex_hook.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
+import { epochDay } from "../src/util.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 const preEdit = (root, file) =>
@@ -27,8 +24,8 @@ const seedLesson = (root) => {
     { type: "edit", file: "src/tax.ts" },
     { type: "bash", command: "npm test", exitCode: 0 },
   ];
-  processSession(root, s(), 1);
-  processSession(root, s(), 2); // → active lesson on src/tax.ts
+  processSession(root, s(), epochDay() - 1, { sessionId: "first-session" });
+  processSession(root, s(), epochDay(), { sessionId: "second-session" }); // → active lesson on src/tax.ts
 };
 
 test("pre-edit surfaces a learned lesson for the file being edited", () => {

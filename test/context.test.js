@@ -148,9 +148,9 @@ test("assemble: a tight budget downgrades before dropping — and says what it n
   const tight = assemble(root, "update computeTax in src/tax.js", {
     atlas,
     nowDay: 0,
-    budget: 60,
+    budget: 190,
   });
-  assert.ok(tight.tokens <= 60, "the rendered block fits the budget");
+  assert.ok(tight.tokens <= 190, "the rendered block fits the budget");
   assert.ok(tight.tokens < roomy.tokens);
   assert.ok(
     tight.selection.some((s) => s.gran !== "full"),
@@ -172,7 +172,7 @@ test("F02: when even pointers cannot fit, the result is OVERFLOW, never ok", () 
     assert.equal(r.overflow, true);
     assert.ok(r.dropped.length > 0);
     assert.ok(r.missing.length > 0, "what was dropped is reported missing");
-    assert.match(r.tokenEstimate, /estimate/);
+    assert.match(r.tokenEstimate, /UTF-8/);
   }
 });
 
@@ -223,11 +223,19 @@ test("N04: a long function shown only in part is never delivered — it stays pe
       assert.ok(!r.covered.includes("def:computeTax"), `budget ${budget}`);
     }
   }
-  const r = assemble(root, "update computeTax", { atlas, budget: 400, claims: [] });
-  assert.deepEqual(r.partial, [{ key: "def:computeTax", shown: [1, 41], definition: [1, 103] }]);
-  assert.match(renderContext(r), /only lines 1-41 shown of a definition spanning 1-103/);
+  const r = assemble(root, "update computeTax", { atlas, budget: 1440, claims: [] });
+  const [partial] = r.partial;
+  assert.equal(partial.key, "def:computeTax");
+  assert.deepEqual(partial.definition, [1, 103]);
+  assert.equal(partial.shown[0], 1);
+  assert.ok(partial.shown[1] > 1 && partial.shown[1] < partial.definition[1]);
+  assert.ok(
+    renderContext(r).includes(
+      `only lines 1-${partial.shown[1]} shown of a definition spanning 1-103`,
+    ),
+  );
   // Given room for the whole body, it is delivered.
-  const roomy = assemble(root, "update computeTax", { atlas, budget: 2000, claims: [] });
+  const roomy = assemble(root, "update computeTax", { atlas, budget: 7200, claims: [] });
   assert.equal(roomy.ok, true);
   assert.ok(roomy.block.includes("return x *"));
 });
@@ -263,13 +271,13 @@ test("N04: a small definition deep in a big file is still delivered whole within
     `${padding}\nexport function calcTotal(items) {\n  return items.length;\n}\n${padding}\n`,
   );
   const atlas = buildAtlas({ root });
-  const r = assemble(root, "change calcTotal", { atlas, budget: 120, claims: [] });
+  const r = assemble(root, "change calcTotal", { atlas, budget: 420, claims: [] });
   assert.equal(r.ok, true, JSON.stringify({ pending: r.pending, sel: r.selection }));
   assert.deepEqual(r.partial, []);
   assert.ok(r.block.includes("return items.length"));
 });
 
-test("N04: the first-25-lines head covers a definition only when it holds the whole of it", () => {
+test("N04: a budget-sized source window reports the actual slice of a partial definition", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-context-"));
   mkdirSync(join(root, "src"), { recursive: true });
   const body = Array.from({ length: 30 }, (_, i) => `  const v${i} = ${i};`).join("\n");
@@ -281,11 +289,13 @@ test("N04: the first-25-lines head covers a definition only when it holds the wh
   const atlas = buildAtlas({ root });
   // A budget that fits the head (~132 tokens) but not the whole function: the head cuts it at
   // line 25.
-  const head = assemble(root, "change setupState", { atlas, budget: 200, claims: [] });
+  const head = assemble(root, "change setupState", { atlas, budget: 700, claims: [] });
   const sel = head.selection.find((s) => s.id === "def:src/calc.js");
-  assert.equal(sel?.gran, "head", JSON.stringify(head.selection));
+  assert.equal(sel?.gran, "span", JSON.stringify(head.selection));
   assert.ok(!head.covered.includes("def:setupState"));
-  assert.deepEqual(head.partial, [{ key: "def:setupState", shown: [1, 25], definition: [2, 34] }]);
+  assert.equal(head.partial[0].key, "def:setupState");
+  assert.deepEqual(head.partial[0].definition, [2, 34]);
+  assert.ok(head.partial[0].shown[0] <= 2 && head.partial[0].shown[1] < 34);
 });
 
 test("N04: without a known extent, only the whole file delivers a definition", () => {
@@ -305,7 +315,7 @@ test("N04: without a known extent, only the whole file delivers a definition", (
   };
   // Room for a 41-line span, not the 104-line file: the span shows all of fooBar, but with no
   // recorded end it cannot claim to.
-  const r = assemble(root, "change fooBar", { atlas, budget: 400, claims: [] });
+  const r = assemble(root, "change fooBar", { atlas, budget: 1440, claims: [] });
   assert.ok(!r.covered.includes("def:fooBar"), JSON.stringify(r.selection));
   assert.ok(r.pending.includes("def:fooBar"));
   assert.deepEqual(
@@ -315,7 +325,7 @@ test("N04: without a known extent, only the whole file delivers a definition", (
   );
 });
 
-test("F03: dependents beyond the listed twelve stay visible as omitted", () => {
+test("F03: all dependents can fit, and a smaller budget accounts for the omitted dependents", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-context-"));
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "core.js"), "export function coreFn(x) {\n  return x;\n}\n");
@@ -326,11 +336,17 @@ test("F03: dependents beyond the listed twelve stay visible as omitted", () => {
     );
   const atlas = buildAtlas({ root });
   const r = assemble(root, "change coreFn", { atlas, nowDay: 0 });
-  const t = r.truncated.find((x) => x.id === "deps:coreFn");
-  assert.ok(t, JSON.stringify(r.truncated));
-  assert.equal(t.shown, 12);
-  assert.equal(t.omitted.length, t.total - 12);
-  assert.match(r.block, /more, omitted here/);
+  assert.ok(r.covered.includes("deps:coreFn"));
+  assert.match(r.block, /user14\.js/);
+  assert.equal(
+    r.truncated.some((x) => x.id === "deps:coreFn"),
+    false,
+  );
+  const tight = assemble(root, "change coreFn", { atlas, nowDay: 0, budget: 500 });
+  const t = tight.truncated.find((x) => x.id === "deps:coreFn");
+  assert.ok(t && t.shown > 0 && t.shown < t.total, JSON.stringify(tight.selection));
+  assert.equal(t.omitted.length, t.total - t.shown);
+  assert.ok(tight.pending.includes("deps:coreFn"));
 });
 
 test("assemble: an unknown symbol becomes a DERIVED question, and the gate can block on it", () => {
@@ -366,12 +382,10 @@ test("renderContext + tokensOf: sane output surface", () => {
   const out = renderContext(r);
   assert.match(out, /COMPLETE/);
   assert.match(out, /\+ deps:computeTax/);
-  assert.equal(tokensOf("x".repeat(36)), 10);
+  assert.equal(tokensOf("x".repeat(36)), 36);
 });
 
-test("assemble regression (E5): a source's 4th+ optional item is dropped — not its 7th", () => {
-  // The per-source discount is δ^(j−1), δ = 0.7: the 4th item is worth 0.34 and "has decayed
-  // away" per the code's own comment, but the old loop only broke AFTER taking a 6th item.
+test("assemble regression (E5): distinct optional evidence may fill the available budget from one source", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-context-"));
   const facts = Array.from(
     { length: 10 },
@@ -383,9 +397,14 @@ test("assemble regression (E5): a source's 4th+ optional item is dropped — not
         t: 0,
       }).claim,
   );
-  const r = assemble(root, "do something", { claims: facts, budget: 6000 });
+  const r = assemble(root, "fact number", { claims: facts, budget: 6000 });
   const taken = r.selection.filter((s) => s.source === "fact");
-  assert.equal(taken.length, 3, "three optional facts, then the source is spent");
+  assert.equal(taken.length, facts.length);
+  assert.ok(
+    !assemble(root, "photosynthesis", { claims: facts, budget: 6000 }).selection.some(
+      (s) => s.source === "fact",
+    ),
+  );
   assert.ok(r.tokens <= 6000);
 });
 
@@ -414,11 +433,11 @@ test("the token budget admits distinct evidence ahead of duplicate optional fact
     scope: { level: "repo" },
     t: 0,
   }));
-  const report = assemble(root, "read ledger", { claims, budget: 100 });
+  const report = assemble(root, "parser ledger", { claims, budget: 180 });
   assert.equal(report.selection.length, 2);
   assert.match(report.block, /signed integer/);
   assert.match(report.block, /immutable transaction/);
-  assert.ok(report.tokens <= 100);
+  assert.ok(report.tokens <= 180);
 });
 
 test("context CLI honors zero tokens and rejects an invalid explicit budget", () => {

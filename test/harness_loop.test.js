@@ -350,3 +350,30 @@ test("read pages and continuation cursors survive compaction and reach the provi
     assert.ok(count > 2, "fixture spans multiple pages");
   }
 });
+
+test("delegated worker context is limited to its supplied packet, history and verification", async (t) => {
+  const options = fixture(t);
+  let prompts = 0;
+  const unavailable = () => assert.fail("ambient workspace capability reached a delegated worker");
+  const result = await runHarness({
+    ...options,
+    budget: { toolCalls: 0 },
+    request: { ...options.request, channel: "worker", task: "Record the PACKET_OBSERVATION" },
+    hooks: { apply: unavailable },
+    memory: { recall: unavailable, observe: unavailable, finish: unavailable },
+    rules: unavailable,
+    diff: unavailable,
+    working: unavailable,
+    tools: unavailable,
+    model: async (input) => {
+      prompts++;
+      assert.deepEqual(input.tools, []);
+      assert.match(JSON.stringify(input.messages), /PACKET_OBSERVATION/);
+      return final();
+    },
+  });
+  assert.equal(result.status, "done", result.reason);
+  assert.ok(prompts > 0);
+  assert.deepEqual(result.events.find((e) => e.type === "workspace.context").data.sources, []);
+  assert.equal(result.events.find((e) => e.type === "memory.recalled").data.count, 0);
+});

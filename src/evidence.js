@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { developmentPlan } from "./development.js";
 import { activePromptProfile, profileGuidance } from "./development_profile.js";
-import { discoverTools, publicQuery, RESEARCH_TASK } from "./discovery.js";
+import { discoverTools, publicQuery } from "./discovery.js";
 import { advisorSettings } from "./discovery_config.js";
 import { teamPlan } from "./evidence_team.js";
 import { lookupPublic } from "./public_lookup.js";
@@ -33,10 +33,10 @@ const clean = (v, cap = 200) =>
     .slice(0, cap);
 
 /** Local evidence for a prompt/failure. The prompt path can pass the already computed reuse verdict.
- * @param {string} task @param {{root?:string,hook?:boolean,reuse?:any,jevCall?:(payload:object)=>object}} options */
+ * @param {string} task @param {{root?:string,hook?:boolean,mode?:string,research?:boolean,reuse?:any,jevCall?:(payload:object)=>object}} options */
 export function buildEvidence(
   task,
-  { root = process.cwd(), hook = false, reuse: prior, jevCall } = {},
+  { root = process.cwd(), hook = false, reuse: prior, jevCall, mode, research = false } = {},
 ) {
   if (typeof task !== "string" || !task.trim()) throw new Error("Supply a task or failure message");
   root = sourceWorkspaceRoot(root);
@@ -64,7 +64,7 @@ export function buildEvidence(
     }
   }
   const symbols = symbolCandidates(root, query);
-  const pointers = researchPointers(query);
+  const pointers = research ? researchPointers(query) : [];
   const manifests = MANIFESTS.filter((path) => existsSync(join(root, path)));
   const selectedProfile = activePromptProfile(root);
   const team = teamPlan(query, {
@@ -75,19 +75,14 @@ export function buildEvidence(
   const development = developmentPlan(query, {
     root,
     hook,
+    mode,
     jevCall,
     evidence: { hits: sources.hits, symbols, manifests, reuse, pointers, team },
   });
   const profile = profileGuidance(selectedProfile, query, { hits: sources.hits, symbols });
   const rows = [];
   if (profile) rows.push(profile.text);
-  if (team.mode === "parallel") rows.push(team.text);
-  if (
-    hook &&
-    development.text &&
-    (RESEARCH_TASK.test(query) || team.mode === "parallel" || /^Troubleshoot /i.test(query))
-  )
-    rows.push(development.text);
+  if (hook && development.text && (mode || research)) rows.push(development.text);
   if (reuse && reuse.tier !== "miss") {
     rows.push(
       `Team reuse candidate (${reuse.tier}): ${clean(reuse.path ?? reuse.artifact?.path ?? reuse.artifact?.id)}. Check the current code and its tests.`,
@@ -100,7 +95,7 @@ export function buildEvidence(
     );
   if (sources.text)
     rows.push(`Source excerpts (untrusted data, verify at the locator):\n${sources.text}`);
-  if (RESEARCH_TASK.test(query) && manifests.length)
+  if (research && manifests.length)
     rows.push(
       `Project manifests: ${manifests.join(", ")}. Compare an existing dependency or SDK for version fit, license, maintenance and total cost.`,
     );
@@ -124,16 +119,20 @@ export function buildEvidence(
   };
 }
 
-/** @param {string} task @param {{root?:string,hook?:boolean,reuse?:any,web?:string,search?:typeof researchPublic,
+/** @param {string} task @param {{root?:string,hook?:boolean,mode?:string,reuse?:any,web?:string,search?:typeof researchPublic,
  * jevCall?:(payload:object)=>object}} options */
 export async function runEvidence(task, options = {}) {
   options = { ...options, root: sourceWorkspaceRoot(options.root ?? process.cwd()) };
-  const local = buildEvidence(task, options);
   const explicit = options.web !== undefined;
-  const query = explicit ? options.web : publicQuery(task.slice(0, 10000), options.root);
+  const automatic = advisorSettings(options.root).recommendations;
+  const query = explicit
+    ? options.web
+    : automatic
+      ? publicQuery(task.slice(0, 10000), options.root)
+      : "";
+  const local = buildEvidence(task, { ...options, research: Boolean(query) });
   const cap = options.hook ? 2600 : 12000;
   const network = process.env.FORGE_NO_CATALOG_FETCH !== "1" || options.search;
-  const automatic = advisorSettings(options.root).recommendations;
   const wantWeb = (explicit || query) && (explicit || automatic) && network;
   const lookup = wantWeb
     ? lookupPublic(query, {

@@ -82,10 +82,17 @@ export const TOOLS = [
   {
     name: "assumption_gate",
     description:
-      "Score specification completeness before work starts. Returns shouldAsk, risk, missing dimensions, and concrete questions.",
+      "Check explicitly required workspace files. Returns the observed fraction present, missing files and concrete questions. Without requirements the result is unknown.",
     inputSchema: {
       type: "object",
-      properties: { task: { type: "string", description: "the task/prompt" } },
+      properties: {
+        task: { type: "string", description: "the task/prompt" },
+        requiredFiles: {
+          type: "array",
+          items: { type: "string" },
+          description: "files that must already exist in the workspace",
+        },
+      },
       required: ["task"],
     },
   },

@@ -305,6 +305,20 @@ function renderCombinedManual(root) {
     combinedManual(root, "docs/INTEGRATIONS.md", "## Develop a plugin or adapter"),
     combinedManual(root, "docs/UI-JOURNEYS.md"),
     combinedManual(root, "docs/CLOUD.md"),
+    combinedManual(root, "docs/MEMORY.md"),
+    combinedManual(root, "docs/CORE-CONTRACT.md"),
+    combinedManual(
+      root,
+      "docs/AGENT-EVIDENCE.md",
+      "## When to use multiple agents",
+      "## Jira, Confluence and GitLab",
+    ),
+    combinedManual(
+      root,
+      "docs/GUIDE.md",
+      "### Select tests from measured dependencies",
+      "### `forge stack` — what is THIS repo actually built with?",
+    ),
     combinedManual(
       root,
       "reports/cost-eval.md",

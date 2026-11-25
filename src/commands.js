@@ -9,6 +9,12 @@
 // so migrating a value from string to object never affects the docs reconciler.
 
 export const COMMANDS = {
+  relay: {
+    summary: "synchronize encrypted workspace evidence through a private relay",
+    usage:
+      "forge relay <configure|preview|push|watch|status|list|read|logout|delete|serve> [options]",
+    examples: ["forge relay status", "forge relay list"],
+  },
   cloud: {
     summary: "synchronize an enrolled workspace with its private dashboard",
     usage: "forge cloud <configure|preview|push|watch|status|logout|delete|serve> [options]",
@@ -146,12 +152,19 @@ export const COMMANDS = {
       'forge harness run "Review the change" --route reviewed --model MODEL_ID --model-profile NAME',
       'forge harness run "Check the release" --route review --model-profile openai --model YOUR_MODEL',
       "forge harness jobs tick",
+      "forge harness memory org-grant engineering write",
+      "forge harness memory org-grants",
+      "forge harness memory share <item> organization --organization engineering",
+      "forge harness memory recall <query> --organization engineering",
+      "forge harness memory history <item> --organization engineering",
+      "forge harness memory org-revoke engineering",
     ],
   },
   develop: {
     summary:
       "assemble a development plan, search prior solutions, assess security and select verification for the current change",
-    usage: 'forge develop "<task>" [--web "<public search terms>"] [--verify] [--json]',
+    usage:
+      'forge develop "<task>" [--mode standard|focused|repair] [--web "<public search terms>"] [--verify] [--json]',
     examples: [
       'forge develop "Fix a PostgreSQL deadlock" --web "postgres application retry deadlock"',
       'forge develop "Verify the retry fix" --verify --json',
@@ -172,7 +185,7 @@ export const COMMANDS = {
     summary:
       "plan independent read-only agents for complex work and optionally run them with a shared budget",
     usage:
-      'forge team "<task>" [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N [--model ID]]',
+      'forge team "<task>" [--brief FILE | --review] [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N [--model ID]]',
     examples: [
       'forge team "Investigate a GitLab regression and compare retry libraries" --max-workers 2',
     ],
@@ -282,7 +295,7 @@ export const COMMANDS = {
     summary:
       "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
     usage:
-      "forge verify [--base <revision>] [--deep [--llm]] [--json] | forge verify --claim <receipt.json> [--json]",
+      "forge verify [--base <revision>] [--deep [--llm]] [--json] | forge verify --claim <receipt.json> [--json] | forge verify triage [--json]",
     examples: ["forge verify --base HEAD --json", "forge verify --claim receipt.json"],
   },
   demo: {
@@ -294,13 +307,13 @@ export const COMMANDS = {
   precommit: {
     summary:
       "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
-    usage: "forge precommit [--json]",
+    usage: "forge precommit [--require-verified] [--json]",
     examples: ["forge precommit --json"],
   },
   "test-select": {
     summary:
       "smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)",
-    usage: `forge test-select [--changed <a,b>] [--base <ref> --head <ref>] [--json]`,
+    usage: `forge test-select [--changed <a,b> | --base <ref> --head <ref>] [--evidence <absolute-path>] [--json] | forge test-select --state [--json] | forge test-select --register <absolute-path>`,
     flags: [
       {
         flag: "--changed <a,b>",
@@ -310,6 +323,9 @@ export const COMMANDS = {
         flag: "--base <ref> --head <ref>",
         desc: "select for a ref range (git diff base...head) instead of the working tree",
       },
+      { flag: "--evidence <path>", desc: "use an external dependency-evidence manifest" },
+      { flag: "--register <path>", desc: "register dependency evidence for this workspace" },
+      { flag: "--state", desc: "show the inputs used to identify this verification state" },
       { flag: "--json", desc: "machine-readable plan" },
     ],
     examples: [
@@ -320,7 +336,7 @@ export const COMMANDS = {
   },
   harden: {
     summary: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
-    usage: "forge harden",
+    usage: "forge harden [--require-verified]",
     examples: ["forge harden"],
   },
   remember: {
@@ -411,9 +427,9 @@ export const COMMANDS = {
     examples: ["forge spec check"],
   },
   cortex: {
-    summary: "self-correcting project memory — status / why <symbol>",
-    usage: "forge cortex status | why <symbol-or-file>",
-    examples: ["forge cortex why src/ledger.js"],
+    summary: "inspect project memory and review privately observed corrections",
+    usage: "forge cortex status | why <symbol-or-file> | review [--json] | confirm <id> [--json]",
+    examples: ["forge cortex why src/ledger.js", "forge cortex review --json"],
   },
   deja: {
     summary:
@@ -425,11 +441,13 @@ export const COMMANDS = {
     summary:
       "evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import",
     usage:
-      "forge ledger <stats|verify|show|blame|query|compact|at|diff|root|ratify|retract|merge|sync|import|index> [arguments] [--personal] [--json]",
+      "forge ledger <stats|verify|show|blame|query|compact|at|diff|root|ratify|retract|merge|sync|import|index|migrate|restore-legacy> [arguments] [--personal] [--json]",
     examples: [
       "forge ledger stats --json",
       'forge ledger query "release checklist"',
       "forge ledger compact --dry-run",
+      "forge ledger migrate --json",
+      "forge ledger restore-legacy /tmp/recovered-forge-memory",
     ],
   },
   claim: {
@@ -458,9 +476,16 @@ export const COMMANDS = {
     summary:
       "budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed",
     usage:
-      'forge context "<task>" [--budget <tokens>] [--block] [--json] [--packet [--ack <revision>]]',
+      'forge context "<task>" [--budget <units>] [--encoding <name>] [--block] [--json] [--packet [--ack <revision>]]',
     flags: [
-      { flag: "--budget <tokens>", desc: "assembly budget (chars/3.6 estimate; default 6000)" },
+      {
+        flag: "--budget <units>",
+        desc: "budget for the rendered context in the selected counting units (default 6000)",
+      },
+      {
+        flag: "--encoding <name>",
+        desc: "count UTF-8 bytes (default) or use a named encoding from an independently installed js-tiktoken",
+      },
       { flag: "--block", desc: "print the assembled context block itself (what gets delivered)" },
       {
         flag: "--packet",
@@ -476,7 +501,7 @@ export const COMMANDS = {
   },
   preflight: {
     summary: "assumption check — what a task names that the repo doesn't define",
-    usage: 'forge preflight "<task>" [--json]',
+    usage: 'forge preflight "<task>" [--require-file <path>]... [--json]',
     examples: ['forge preflight "Review freezeSuite in src/rollout_eval.js" --json'],
   },
   config: {
@@ -487,47 +512,28 @@ export const COMMANDS = {
   },
   route: {
     summary:
-      "recommend the cheapest capable model for a task (+ gateway config); `route universal`: any provider's models, lowest expected cost for the success asked for, learned from outcomes",
+      "choose a currently listed deployment from verified results on a comparable workload, or explain what is missing",
     usage:
-      'forge route "<task>" [--mode conservative|unattended] [--read-only] [--allow-top] [--apply] [--provider <name>] [--json]   |   forge route gateway | calibrate | monitor <observations.json> | universal …',
+      'forge route "<task>" [--provider NAME] [--workload NAME] [--objective SPEC] [--band low|medium|high] [--apply] [--json] | forge route calibrate [--workload NAME] | forge route gateway | forge route monitor <observations.json> | forge route universal …',
     flags: [
+      { flag: "--provider <name>", desc: "provider profile whose inventory to consider" },
+      { flag: "--workload <name>", desc: "workload with attributed verified outcomes" },
+      { flag: "--objective <spec>", desc: "requested success, cost and latency objectives" },
       {
         flag: "--band <low|medium|high>",
-        desc: "universal routing only: require a measured model from the selected --provider",
+        desc: "restrict to a band supported by workload measurements",
       },
-      {
-        flag: "--workload <name>",
-        desc: "measured workload for band routing or outcome recording",
-      },
-      {
-        flag: "--mode <conservative|unattended>",
-        desc: "conservative (default) never raises the tier on a model's vote; unattended applies the vote raise, the writes-code and risk floors and the top-tier gate. Default from `route.mode` in the config (forge orchestration set route.mode …)",
-      },
-      {
-        flag: "--read-only",
-        desc: "unattended: the task only reads/explores, so it may stay on the cheapest tier (otherwise a code-writing task starts at mid)",
-      },
-      {
-        flag: "--allow-top",
-        desc: "unattended: allow the top tier — still only when the deterministic score reaches its cutoff, never from a vote (route.topTier: explicit)",
-      },
-      { flag: "--apply", desc: "write the recommended model into the active tool's settings" },
-      { flag: "--provider <name>", desc: "switch the active provider first" },
-      {
-        flag: "--json",
-        desc: "machine-readable: `key` is the generic tier key (haiku/sonnet/opus/fable); `policy` lists mode, steps, risk matches and the top-tier gate",
-      },
+      { flag: "--apply", desc: "apply the recommended provider and model to the active tool" },
+      { flag: "--json", desc: "include the inventory, decision status, evidence and reasons" },
     ],
     examples: [
-      'forge route "fix a typo in the readme"',
-      'forge route "add a refund endpoint" --mode unattended --json',
-      'forge route "map the auth module" --mode unattended --read-only',
-      "forge route gateway",
+      'forge route "Review the change" --provider openai --workload review --json',
+      "forge route calibrate --workload review",
     ],
   },
   orchestration: {
     summary:
-      "agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global",
+      "agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and model authorization — list or switch rules, set the parallel limit or top deployment policy per repo or --global",
     usage:
       "forge orchestration [list] [--json]   |   forge orchestration on|off <rule-id|all|pack> [--global]   |   forge orchestration set <key> <value> [--global]",
     flags: [
@@ -541,7 +547,7 @@ export const COMMANDS = {
       "forge orchestration",
       "forge orchestration off orch.parallel-cap",
       "forge orchestration set parallelCap 3",
-      "forge orchestration set route.mode unattended --global",
+      "forge orchestration set route.topTier explicit --global",
       "forge orchestration set route.topTier never",
     ],
   },
@@ -576,7 +582,7 @@ export const COMMANDS = {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
     usage:
-      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json]",
+      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json] | forge impact --review <receipt-id> [--json]",
     flags: [
       { flag: "--json", desc: "machine-readable report" },
       {
@@ -857,6 +863,7 @@ export const GROUPS = {
     "diagnose",
     "dash",
     "cloud",
+    "relay",
     "report",
     "deja",
     "reuse",

@@ -1,6 +1,6 @@
 // OpenCode carries ForgeKit's guards in a generated JavaScript plugin. These tests hold the
 // host row, the payload translation, the marker-owned file, and the adapter itself: a stub
-// `forge` proves the plugin blocks, injects context and fails open without the CLI.
+// `forge` exercises context delivery and verifies the availability of pre-tool verdicts.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -230,4 +230,22 @@ test("OpenCode adapter: a missing forge CLI denies the tool call", async () => {
   await hooks["chat.message"]({ sessionID: "s1" }, { parts: [{ type: "text", text: "hi" }] });
   await hooks["experimental.chat.system.transform"]({ sessionID: "s1" }, system);
   assert.deepEqual(system.system, []);
+});
+
+test("OpenCode requires a recognized decision from the negotiated guard protocol", async () => {
+  const root = tmp();
+  applyPlugin(root);
+  const path = join(root, "hooks");
+  const hooks = await loadPlugin(root, { cli: process.execPath });
+  const before = () =>
+    hooks["tool.execute.before"](
+      { tool: "write", sessionID: "opencode-session", callID: "ordinary" },
+      { args: { filePath: "note.md", content: "hello" } },
+    );
+  for (const output of ["", "{}", '{"context":"advice"}']) {
+    writeFileSync(path, `process.stdout.write(${JSON.stringify(output)})`);
+    await assert.rejects(before(), /could not check/);
+  }
+  writeFileSync(path, 'process.stdout.write(JSON.stringify({decision:"allow"}))');
+  await before();
 });

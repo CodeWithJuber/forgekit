@@ -102,16 +102,26 @@ export function harnessRepoSlices(root, task) {
   }
 }
 
-/** Optional personal and named team scopes must be enabled by the trusted operator. */
-export function createHarnessMemory(root, { personal = false, team = "" } = {}) {
+function organizationName(value) {
+  if (typeof value !== "string" || !/^[a-z0-9][a-z0-9_.-]{0,79}$/i.test(value))
+    throw new Error(
+      "Supply an organization name of 1–80 letters, digits, dots, dashes or underscores",
+    );
+  return value.toLowerCase();
+}
+
+/** Organization access is checked against the private grant for this checkout on each call. */
+export function createHarnessMemory(root, { personal = false, team = "", organization = "" } = {}) {
   if (team && !/^[a-z0-9][a-z0-9_.-]{0,79}$/i.test(team)) throw new Error("Invalid team scope");
   const scopes = {
     repo: repoScope(root),
     ...(personal ? { personal: "personal" } : {}),
     ...(team ? { team: `team-${digest(team)}` } : {}),
   };
+  const selectedOrganization = organization ? organizationName(organization) : undefined;
   const db = stateFile(root);
-  const send = (op, args = {}) => storage(root, db, op, { scopes, ...args });
+  const send = (op, args = {}) =>
+    storage(root, db, op, { scopes, organization: selectedOrganization, ...args });
   function proposal(raw, runId, evidenceId) {
     const text = raw?.text;
     const validText = typeof text === "string" && text.trim() && text.length <= 8192;
@@ -228,6 +238,15 @@ export function createHarnessMemory(root, { personal = false, team = "" } = {}) 
       )
         throw new Error("Supply a non-secret corrected claim, reason and operator identity");
       return send("correct", { id, runId: runKey(runId), text: text.trim(), reason, actor });
+    },
+    grantOrganization(name, access) {
+      return send("org_grant", { name: organizationName(name), access });
+    },
+    revokeOrganization(name) {
+      return send("org_revoke", { name: organizationName(name) });
+    },
+    organizationGrants() {
+      return send("org_grants");
     },
     share(id, scope) {
       return send("share", { id, target: scope });

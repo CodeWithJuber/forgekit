@@ -22,8 +22,10 @@ import {
   trustedModelProfile,
 } from "./providers.js";
 import { detectTools } from "./repo_config.js";
-import { readOutcomes, routeUniversal } from "./router/index.js";
-import { loadRegistry } from "./router/registry.js";
+import { restrictedModel } from "./route_policy.js";
+import { readConfigObjective, readOutcomes, taskRef } from "./router/index.js";
+import { firstAttempts, measuredRoute, wilson } from "./router/measured.js";
+import { loadRegistry, outcomeBinding } from "./router/registry.js";
 import { userStateDir } from "./util.js";
 
 export const INVENTORY_SCHEMA_VERSION = 2;
@@ -143,13 +145,7 @@ function decodePage(body, dialect) {
 // three groups are separated by nonoverlapping Wilson intervals. Model attribution in
 // legacy outcome rows is the operator's report, even when the verifier signs the verdict.
 export function workloadRatings(rows, workload = "repo-verified") {
-  const attempts = new Map();
-  for (const r of rows) {
-    if (r.provenance !== "verify-event" || (r.workload ?? "repo-verified") !== workload) continue;
-    if (!attempts.has(r.model)) attempts.set(r.model, new Map());
-    const tasks = attempts.get(r.model);
-    if (!tasks.has(r.task)) tasks.set(r.task, r.passed);
-  }
+  const attempts = firstAttempts(rows, workload);
   const ratings = new Map();
   if (!attempts.size) return ratings;
   const paired = [...attempts.values().next().value.keys()].filter((t) =>
@@ -157,19 +153,9 @@ export function workloadRatings(rows, workload = "repo-verified") {
   );
   const n = paired.length;
   if (!n) return ratings;
-  const z = 1.959963984540054;
   for (const [id, tasks] of attempts) {
-    const score = paired.reduce((p, t) => p + Number(tasks.get(t)), 0) / n;
-    const denom = 1 + (z * z) / n;
-    const center = (score + (z * z) / (2 * n)) / denom;
-    const error = (z * Math.sqrt((score * (1 - score)) / n + (z * z) / (4 * n * n))) / denom;
-    ratings.set(id, {
-      score,
-      n,
-      low: Math.max(0, center - error),
-      high: Math.min(1, center + error),
-      band: "unrated",
-    });
+    const passed = paired.filter((t) => tasks.get(t).passed).length;
+    ratings.set(id, { ...wilson(passed, n), band: "unrated" });
   }
   const sorted = [...ratings.values()].sort((a, b) => a.score - b.score);
   const gaps = sorted
@@ -334,14 +320,19 @@ export function nativeModelControls(root) {
   }));
 }
 
+function boundOutcomes(rows, profile, registry) {
+  const stamps = new Map(
+    registry.models.map((m) => [m.id, outcomeBinding(profile, m.providers?.[profile.name])]),
+  );
+  return rows.filter((row) => row.binding && row.binding === stamps.get(row.model));
+}
+
 function workloadCosts(rows, workload) {
   const byModel = new Map();
-  for (const row of rows) {
-    if ((row.workload ?? "repo-verified") !== workload || !Number.isFinite(row.cost)) continue;
-    const stat = byModel.get(row.model) ?? { total: 0, n: 0 };
-    stat.total += row.cost;
-    stat.n++;
-    byModel.set(row.model, stat);
+  for (const [id, tasks] of firstAttempts(rows, workload)) {
+    const costs = [...tasks.values()].filter((row) => Number.isFinite(row.cost));
+    if (costs.length)
+      byModel.set(id, { total: costs.reduce((sum, row) => sum + row.cost, 0), n: costs.length });
   }
   return byModel;
 }
@@ -381,7 +372,12 @@ function inventoryPrice(p, m, binding, checkedAt) {
 }
 
 /** @param {string} root @param {{profile?:string,workload?:string,refresh?:boolean,now?:number,fetchImpl?:Function,capability?:string,availability?:string,maxAge?:string|number}} options */
-export function modelInventory(
+export function modelInventory(root, options = {}) {
+  return inventoryFromRows(root, options, readOutcomes(root));
+}
+
+/** @param {string} root @param {{profile?:string,workload?:string,refresh?:boolean,now?:number,fetchImpl?:Function,capability?:string,availability?:string,maxAge?:string|number}} options @param {any[]} outcomes */
+function inventoryFromRows(
   root,
   {
     profile,
@@ -392,7 +388,8 @@ export function modelInventory(
     refresh = undefined,
     now = Date.now(),
     fetchImpl = httpGet,
-  } = {},
+  },
+  outcomes,
 ) {
   const seconds = maxAgeSeconds(maxAge);
   if (capability !== undefined && !safeCapability(capability))
@@ -407,11 +404,11 @@ export function modelInventory(
     profiles = profiles.filter((p) => p.name === profile);
     if (!profiles.length) throw new Error(`Unknown or inactive model profile: ${profile}`);
   }
-  const outcomes = readOutcomes(root);
-  const ratings = workloadRatings(outcomes, workload);
-  const costs = workloadCosts(outcomes, workload);
   const registry = loadRegistry(root);
   const results = profiles.map((p) => {
+    const scoped = boundOutcomes(outcomes, p, registry);
+    const ratings = workloadRatings(scoped, workload);
+    const costs = workloadCosts(scoped, workload);
     let r;
     try {
       r = profileInventory(root, p, { refresh, now, fetchImpl });
@@ -470,6 +467,7 @@ export function modelInventory(
       const at = Number.isFinite(callAt) ? new Date(callAt).toISOString() : null;
       models.push({
         ...m,
+        registryId: binding?.id ?? null,
         availability: available,
         catalogAvailability: m.availability,
         operations: m.operations ?? null,
@@ -526,13 +524,18 @@ export function modelInventory(
     },
     nativeHosts,
     ratingBasis:
-      "relative to common repo tasks, first attempt, verified verdict, operator-reported model",
+      "relative to common repo tasks, first attempt, verified verdict, operator-reported bound model",
     profiles: results,
   };
 }
 
 /** Match fresh, account-listed wire IDs to exact registry bindings before evaluating the cost/quality objective. */
-export function inventoryRoute(
+export function inventoryRoute(root, task, options) {
+  if (typeof task !== "string" || !task.trim() || task.length > 16384)
+    throw new Error("Supply a task of at most 16384 characters");
+  return inventoryRouteForRef(root, taskRef(task), options);
+}
+export function inventoryRouteForRef(
   root,
   task,
   {
@@ -542,34 +545,42 @@ export function inventoryRoute(
     refresh = false,
     objective = undefined,
     maxDepth = undefined,
+    allowTop = false,
   },
 ) {
-  if (typeof task !== "string" || !task.trim() || task.length > 16384)
-    throw new Error("Supply a task of at most 16384 characters");
   if (!profile || profile === "any") throw new Error("Choose an exact provider profile");
   if (band !== undefined && !["low", "medium", "high"].includes(band))
     throw new Error("Choose low, medium or high");
-  const inventory = modelInventory(root, { profile, workload, refresh });
+  const outcomes = readOutcomes(root);
+  const inventory = inventoryFromRows(root, { profile, workload, refresh }, outcomes);
   const listing = inventory.profiles[0];
-  const registry = loadRegistry(root);
-  const eligible = new Set(
+  const eligible = new Map(
     listing.models
       .filter((m) => m.availability === "listed" && (!band || m.rating.band === band))
-      .map((m) => m.id),
+      .map((m) => [m.id, m]),
   );
-  const candidates = registry.models
-    .filter((m) => eligible.has(m.providers?.[profile]))
-    .map((m) => m.id);
-  if (!candidates.length)
-    return {
-      ok: false,
-      profile,
-      listing: listing.status,
-      reason:
-        "No matching current account listing and registry binding for the requested workload and band",
-    };
+  const profileRecord = inventoryProfiles(root).find((p) => p.name === profile);
+  const registry = loadRegistry(root);
+  const scoped = boundOutcomes(outcomes, profileRecord, registry);
+  const restricted = restrictedModel(root, profileRecord, allowTop);
+  const bindings = new Map();
+  for (const listed of eligible.values()) {
+    if (listed.registryId && listed.id !== restricted) bindings.set(listed.registryId, listed);
+  }
+  const result = bindings.size
+    ? measuredRoute(firstAttempts(scoped, inventory.workload), bindings, task, {
+        objective: objective ?? readConfigObjective(root),
+        maxDepth,
+        profile,
+      })
+    : {
+        ok: false,
+        reason:
+          "No matching current account listing and registry binding for the requested workload and band",
+      };
+
   return {
-    ...routeUniversal(root, task, { provider: profile, registry, candidates, objective, maxDepth }),
+    ...result,
     profile,
     listing: listing.status,
     checkedAt: listing.checkedAt,

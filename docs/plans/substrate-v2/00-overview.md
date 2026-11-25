@@ -9,11 +9,11 @@
 > _Corrected 2026-09-26._ This block said "shipped — all phases P0–P8 landed in v0.5.0" and listed
 > as deferred "the ledger read-path flip (legacy stores still serve reads), the optional embeddings
 > tier (ADR-0005), and a Playwright-driven browser loop for the UI gate". All three have since
-> shipped: reads are a merged legacy ∪ ledger view (`src/ledger_read.js`) and the write default is
-> ledger-only (`FORGE_LEDGER_ONLY`, on by default); the optional embeddings tier is `src/embed.js`
-> (`FORGE_EMBED`); the browser loop is `forge uicheck visual` and `forge uicheck interact`. What
-> remains is deleting the dormant legacy read/write code ([ROADMAP.md](../../../ROADMAP.md)) and
-> the two partial phases below.
+> shipped. Reads and writes use the ledger. The file-store upgrade and recovery commands are
+> `forge ledger migrate` and `forge ledger restore-legacy`. The optional embeddings tier is
+> `src/embed.js` (`FORGE_EMBED`). The browser loop is `forge uicheck visual` and
+> `forge uicheck interact`. See the two partial phases below.
+
 
 ForgeKit v0.4 implements roughly half of the committed whitepaper — the two prototyped
 mechanisms (M1 routing, M2 assumption gate), an approximate impact atlas, and an advisory
@@ -37,7 +37,7 @@ the storage, trust, and wire protocol for the whole substrate.
 | Paper capability (§10 map)                              | ForgeKit v0.4                                                           | Gap                                                          | Closed by                                                                |
 | ------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | M1 routing + M2 assumption gate (opp. #1)               | `src/route.js`, `src/preflight.js` — 62 % demo saving, refuted (−20.2 % held out) | ✅ shipped; residue: outcome-calibrated weights              | [06](./06-faculties-and-mechanisms.md) §7                                |
-| Impact oracle, mandatory gate (opp. #3)                 | `src/atlas.js` regex graph; gate opt-in (`FORGE_ENFORCE=1`)             | precision; gate not mandatory                                | [06](./06-faculties-and-mechanisms.md) §1                                |
+| Impact oracle, mandatory gate (opp. #3)                 | `src/atlas.js` portable/AST graph and default-on named-edit gate             | coverage of dynamic dispatch and opaque writes                                | [06](./06-faculties-and-mechanisms.md) §1                                |
 | Validity-anchored memory (opp. #2, Eq. 3)               | cortex confidence exists (`src/lessons.js` already keeps α/β evidence)  | no Eq. 3 retrieval, no forget/consolidate policy, flat store | [01](./01-pcm-protocol.md)                                               |
 | Outcome-validated learning (opp. #4, Eq. 2)             | outcomes update lessons, but not _the memories that informed an action_ | write-back band incomplete                                   | [01](./01-pcm-protocol.md) §6, [06](./06-faculties-and-mechanisms.md) §6 |
 | Team / shared memory                                    | single-repo file recall (`src/recall.js`, `src/brain.js`)               | no merge semantics, no attribution                           | [02](./02-team-memory.md)                                                |

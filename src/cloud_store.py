@@ -43,6 +43,8 @@ elif op == "events":
             rows = list(db.execute("SELECT id,parent,created,detail FROM changes WHERE scope=? AND rowid>? ORDER BY rowid LIMIT 51",(s,start[0])))
             result = {"events":[{"id":i,"parent":p,"at":t,**json.loads(d)} for i,p,t,d in rows[:50]],
                       "hasMore":len(rows)>50, "next":rows[min(50,len(rows))-1][0] if rows else q.get("after")}
+elif op == "artifact" and q.get("atRevision") and q["atRevision"] != revision:
+    result = {"error":409}
 elif op == "artifact":
     row = db.execute("SELECT data,kind,hash FROM files WHERE scope=? AND path=?",(s,q["path"])).fetchone()
     result = {"content":base64.b64encode(row[0]).decode(), "kind":row[1], "sha256":row[2]} if row else {"error":404}
@@ -71,7 +73,7 @@ elif op == "push":
                        (s,f["path"],f["sha256"],base64.b64decode(f["content"],validate=True),
                         f["kind"],int(f["redacted"])))
         count,size = db.execute("SELECT count(*),coalesce(sum(length(data)),0) FROM files WHERE scope=?",(s,)).fetchone()
-        if count > 20000 or size > 128*1024*1024:
+        if count > q["maxFiles"] or size > q["maxBytes"]:
             db.rollback()
             result = {"error":413}
         else:

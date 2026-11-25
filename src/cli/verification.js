@@ -9,6 +9,19 @@ const HANDLERS = {};
 
 HANDLERS.verify = async (argv) => {
   const json = argv.includes("--json");
+  if (argv[1] === "triage") {
+    const { readVerifyEvents } = await import("../verify.js");
+    const { triageVerifyEvents } = await import("../verify_triage.js");
+    const result = triageVerifyEvents(readVerifyEvents(process.cwd()));
+    if (json) console.log(JSON.stringify(result));
+    else if (!result.suites.length) console.log("No comparable counted suite observations.");
+    else
+      for (const suite of result.suites)
+        console.log(
+          `${suite.status}  ${suite.cwd}  ${suite.suite}  (${suite.passes.length} passed, ${suite.failures.length} failed)`,
+        );
+    return;
+  }
   // `forge verify --claim <receipt.json>` — check someone else's verification claim
   // (a `forge verify --json` receipt): CONFIRMED / STALE / REFUTED with evidence.
   const claimIdx = argv.indexOf("--claim");

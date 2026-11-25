@@ -1,18 +1,13 @@
-// Legacy-store retirement (FORGE_LEDGER_ONLY): ledger-only is now the DEFAULT — the
-// legacy files (lessons/*.md, recall/brain fact files) are not written and reads come
-// from the ledger alone. FORGE_LEDGER_ONLY=0 is the escape hatch that restores the file
-// store (covered by the legacy-pinned suites). These tests exercise the default path
-// end-to-end, from the store layer up through the cortex learning loop.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { recordMistake, summary } from "../src/cortex.js";
-import { reconcileFacts, recordLessonEvent, shadowFact } from "../src/ledger_bridge.js";
-import { ledgerFacts, ledgerLessons, mergedLessons } from "../src/ledger_read.js";
+import { recordLessonEvent } from "../src/ledger_bridge.js";
+import { mergedLessons } from "../src/ledger_read.js";
 import { newLesson } from "../src/lessons.js";
-import { lessonsDir, save } from "../src/lessons_store.js";
+import { lessonsDir } from "../src/lessons_store.js";
 import { add, list, readFact } from "../src/recall.js";
 
 const tmpRoot = () => mkdtempSync(join(tmpdir(), "forge-lonly-"));
@@ -52,49 +47,16 @@ const makeLesson = (id) =>
     0,
   );
 
-test("ledger-only: save() writes no .md file and reports ledgerOnly", () => {
-  withEnv({ FORGE_LEDGER_ONLY: "1" }, () => {
-    const root = tmpRoot();
-    const s = save(root, makeLesson("lsn_a"));
-    assert.equal(s.ok, true);
-    assert.equal(s.ledgerOnly, true);
-    assert.equal(existsSync(lessonsDir(root)), false, "no legacy lessons dir should be created");
-  });
-});
-
-test("ledger-only: a minted lesson is served from the ledger via ledgerLessons + mergedLessons", () => {
-  withEnv({ FORGE_LEDGER_ONLY: "1" }, () => {
-    const root = tmpRoot();
-    const lesson = makeLesson("lsn_b");
-    save(root, lesson); // no-op file write
-    recordLessonEvent(root, lesson, { t: 0 }); // the ledger is the store
-    assert.ok(ledgerLessons(root, 0).some((l) => l.id === "lsn_b"));
-    assert.ok(mergedLessons(root, 0).some((l) => l.id === "lsn_b"));
-  });
-});
-
-test("escape hatch (FORGE_LEDGER_ONLY=0): save() DOES write the legacy .md file", () => {
-  withEnv({ FORGE_LEDGER_ONLY: "0" }, () => {
-    const root = tmpRoot();
-    const s = save(root, makeLesson("lsn_c"));
-    assert.equal(s.ok, true);
-    assert.equal(s.ledgerOnly, undefined);
-    assert.equal(
-      existsSync(lessonsDir(root)),
-      true,
-      "legacy lessons dir written with the escape hatch",
-    );
-  });
-});
-
-test("default is ledger-only: save() writes no file even with FORGE_LEDGER_ONLY unset", () => {
-  withEnv({ FORGE_LEDGER_ONLY: undefined }, () => {
-    const root = tmpRoot();
-    const s = save(root, makeLesson("lsn_d"));
-    assert.equal(s.ok, true);
-    assert.equal(s.ledgerOnly, true, "ledger-only is the default now");
-    assert.equal(existsSync(lessonsDir(root)), false, "no legacy lessons dir by default");
-  });
+test("the retired store override cannot change live lesson storage", () => {
+  for (const flag of [undefined, "0", "false", "1"]) {
+    withEnv({ FORGE_LEDGER_ONLY: flag }, () => {
+      const root = tmpRoot();
+      const lesson = makeLesson("lsn_a");
+      assert.equal(recordLessonEvent(root, lesson, { t: 0 }).ok, true);
+      assert.ok(mergedLessons(root, 0).some((l) => l.id === "lsn_a"));
+      assert.equal(existsSync(lessonsDir(root)), false);
+    });
+  }
 });
 
 test("ledger-only: recall.add writes no fact file; readFact + list resolve from the ledger", () => {
@@ -103,29 +65,10 @@ test("ledger-only: recall.add writes no fact file; readFact + list resolve from 
     const res = add(store, "API base", "https://api.example.com");
     assert.equal(res.ok, true);
     assert.equal(existsSync(join(store, "facts")), false, "no legacy fact files under ledger-only");
-    // The caller shadows the fact into the ledger (what `forge recall add` does).
-    shadowFact(join(store, "ledger"), "API base", "https://api.example.com", 0);
     const f = readFact(store, res.slug);
     assert.ok(f, "fact resolves from the ledger");
     assert.equal(f.text, "https://api.example.com");
     assert.ok(list(store).includes(res.slug), "merged list includes the ledger fact");
-  });
-});
-
-test("ledger-only: reconcileFacts is a no-op and never tombstones ledger facts (no data loss)", () => {
-  withEnv({ FORGE_LEDGER_ONLY: "1", FORGE_AUTHOR: "Tester <t@example.com>" }, () => {
-    const store = tmpRoot();
-    const ledgerDir = join(store, "ledger");
-    // Two facts live only in the ledger (no fact files exist under ledger-only).
-    shadowFact(ledgerDir, "API base", "https://api.example.com", 0);
-    shadowFact(ledgerDir, "DB host", "db.example.com", 0);
-    assert.equal(ledgerFacts(ledgerDir).length, 2, "two live facts before reconcile");
-    // Under the file-store model this would tombstone BOTH (no backing file); under
-    // ledger-only it must leave them untouched.
-    const r = reconcileFacts(store, ledgerDir, 1);
-    assert.equal(r.ok, true);
-    assert.equal(r.removed, 0, "reconcile removes nothing under ledger-only");
-    assert.equal(ledgerFacts(ledgerDir).length, 2, "both facts survive — no memory wiped");
   });
 });
 

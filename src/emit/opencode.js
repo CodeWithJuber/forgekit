@@ -45,7 +45,7 @@ function promptText(parts) {
 
 function call(ctx, event, input) {
   const payload = {
-    session_id: input.sessionID || "default",
+    session_id: input.sessionID,
     cwd: ctx.directory || process.cwd(),
     hook_event_name: event,
   };
@@ -74,9 +74,11 @@ function call(ctx, event, input) {
   }
   if (!result || result.error || result.status !== 0) return unavailable;
   const text = (result.stdout || "").trim();
-  if (!text) return null;
+  if (!text) return event === "PreToolUse" ? unavailable : null;
   try {
-    return JSON.parse(text);
+    const reply = JSON.parse(text);
+    if (event === "PreToolUse" && !["allow", "ask", "deny"].includes(reply?.decision)) return unavailable;
+    return reply;
   } catch {
     return unavailable;
   }

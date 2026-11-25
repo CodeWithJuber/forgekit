@@ -9,7 +9,7 @@
 //      files touched). If the session's own tests passed, attach ONE `test.run` confirm
 //      outcome — so `val` (ledger.js) separates solved-AND-verified from merely-attempted.
 //   2. dejaLookup — rank prior summary/lesson/diagnosis claims for a new task with the
-//      SAME Eq.3 retrieve() the ledger query uses (rel × rec × val). A hit above the
+//      same retrieve() the ledger query uses (empirical midranks). A hit above the
 //      noise floor surfaces as a one-line preflight advisory. With `forge ledger sync`
 //      the summaries travel between machines, so anti-repetition works across surfaces.
 //
@@ -159,8 +159,8 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
 }
 
 /**
- * Rank prior task-shaped claims for a new task, via the SAME Eq.3 retrieve() the ledger
- * query uses (relevance × recency × validity). Pure over the supplied claim set — no fs,
+ * Rank prior task-shaped claims for a new task, via the same retrieve() the ledger
+ * query uses (relevance, scope matches, recency and validity). Pure over the supplied claim set — no fs,
  * unit-testable with in-memory claims.
  * @param {any[]} claims live claims (loadClaims output)
  * @param {string} task the task about to be started

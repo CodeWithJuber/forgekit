@@ -3,15 +3,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { applyDistillation } from "../src/cortex.js";
+import { applyDistillation, confirmCorrection, pendingCorrections } from "../src/cortex.js";
 import { buildPrompt, distill, parseDistilled } from "../src/cortex_distill.js";
 import { processSession } from "../src/cortex_hook.js";
-import { load } from "../src/lessons_store.js";
+import { mergedLessons as load } from "../src/ledger_read.js";
 import { fakeAnthropic } from "./_fixtures.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
 
 test("buildPrompt names the location and asks for strict JSON", () => {
   const p = buildPrompt({
@@ -72,13 +68,17 @@ test("applyDistillation rewrites a created lesson's body in place", () => {
     { type: "bash", command: "npm test", exitCode: 0 },
   ];
   const [res] = processSession(root, s(), 1); // creates a candidate with a template body
-  const before = load(root)[0].correctedBehavior;
+  const before = pendingCorrections(root)[0].correctedBehavior;
   const ok = applyDistillation(root, res.id, {
     whatWentWrong: "distilled cause",
     correctedBehavior: "distilled rule",
   });
   assert.equal(ok, true);
-  const after = load(root)[0].correctedBehavior;
+  const after = pendingCorrections(root)[0].correctedBehavior;
+  processSession(root, s(), 2, { sessionId: "another" });
+  assert.equal(load(root).length, 0);
+  assert.equal(confirmCorrection(root, res.id, 2).status, "active");
+  assert.equal(load(root)[0].correctedBehavior, after);
   assert.equal(after, "distilled rule");
   assert.notEqual(after, before, "the template was replaced");
 });

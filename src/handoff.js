@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
+import { sessionEventsDir } from "./cortex_hook.js";
 import { listDecisions } from "./decide.js";
 import { getGoal } from "./goal.js";
 import { workspaceFileDigest } from "./harness_tools.js";
@@ -65,15 +66,24 @@ export function gatherGitFacts(root, { statusCap = 20 } = {}) {
  *  Empty-safe when no session log exists. */
 export function gatherAssumptions(root, { cap = 5 } = {}) {
   try {
-    const dir = join(root, ".forge", "sessions");
-    const newest = readdirSync(dir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => ({ f, m: statSync(join(dir, f)).mtimeMs }))
-      .sort((a, b) => b.m - a.m)[0];
+    const dirs = [sessionEventsDir(root), join(root, ".forge", "sessions")];
+    // Pre-upgrade assumption markers remain readable for handoff. The correction
+    // learner reads only private captures and cannot promote an old checkout log.
+    const newest = dirs
+      .flatMap((dir) => {
+        if (!existsSync(dir)) return [];
+        return readdirSync(dir, { withFileTypes: true })
+          .filter((f) => f.isFile() && f.name.endsWith(".jsonl"))
+          .map((f) => {
+            const path = join(dir, f.name);
+            return { path, m: statSync(path).mtimeMs };
+          });
+      })
+      .sort((a, b) => b.m - a.m || a.path.localeCompare(b.path))[0];
     if (!newest) return [];
     const seen = new Set();
     const out = [];
-    for (const line of readFileSync(join(dir, newest.f), "utf8").split("\n")) {
+    for (const line of readFileSync(newest.path, "utf8").split("\n")) {
       if (!line.trim()) continue;
       try {
         const e = JSON.parse(line);

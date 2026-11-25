@@ -15,8 +15,8 @@ import { doctor } from "./doctor.js";
 import { EVIDENCE_TOOLS, evidenceTool } from "./evidence_tools.js";
 import { negotiateStdio } from "./mcp_protocol.js";
 import { mcpInstructions } from "./orient.js";
-import { assessTask, clarifyBlock, preflightRepo } from "./preflight.js";
-import { routeTask } from "./route.js";
+import { clarifyBlock, preflightRepo } from "./preflight.js";
+import { describeRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { predictImpact, substrateCheck } from "./substrate.js";
 import { epochDay } from "./util.js";
@@ -84,33 +84,26 @@ async function callTool(name, args = {}, host = undefined) {
     return clarifyBlock(r) || "All clear — everything this task names is grounded in the codebase.";
   }
   if (name === "route_task") {
-    if (args.profile !== undefined || args.band !== undefined || args.workload !== undefined) {
-      const { inventoryRoute } = await import("./model_inventory.js");
-      return JSON.stringify(
-        inventoryRoute(root, args.task, {
-          profile: args.profile,
-          band: args.band,
-          workload: args.workload,
-        }),
-      );
-    }
-    const rec = routeTask(root, String(args.task ?? ""));
-    // routeTask names a tier; the concrete id is resolved here, as `forge route` does, so an
-    // agent is told the model it would actually call rather than the shipped snapshot.
-    // Best-effort: the resolver falls back to the snapshot when no catalog answers.
-    let model = rec.model.name;
-    try {
-      const { describeResolution, resolveTierModel } = await import("./model_tiers.js");
-      const { activeProvider } = await import("./providers.js");
-      const resolved = resolveTierModel(rec.key, { root, provider: activeProvider(root) });
-      if (rec.modelOverride) model = rec.modelOverride;
-      else if (resolved) model = `${resolved.id} (${describeResolution(resolved)})`;
-    } catch {}
-    return `Recommended: ${model} (${rec.tier}). complexity ${rec.score.toFixed(2)}${rec.reasons.length ? ` — ${rec.reasons.join(", ")}` : ""}. Native agent model selection is host-managed.`;
+    const rec = routeTask(root, String(args.task ?? ""), {
+      profile: args.profile,
+      band: args.band,
+      workload: args.workload,
+    });
+    if (args.profile !== undefined || args.band !== undefined || args.workload !== undefined)
+      return JSON.stringify(rec.evidence ?? rec);
+    return `${describeRoute(rec)} Native agent model selection is host-managed.`;
   }
 
   if (name === "assumption_gate")
-    return JSON.stringify(assessTask(String(args.task ?? "")), null, 2);
+    return JSON.stringify(
+      preflightRepo(root, String(args.task ?? ""), {
+        allowBuild: false,
+        llm: false,
+        requiredFiles: Array.isArray(args.requiredFiles) ? args.requiredFiles.map(String) : [],
+      }).assumption,
+      null,
+      2,
+    );
   if (name === "predict_impact")
     return JSON.stringify(
       predictImpact(root, String(args.target ?? ""), {

@@ -536,3 +536,72 @@ test("missing optional compiler records a fallback and invalidates when the comp
   const fixed = build({ root });
   assert.equal(fixed.coverage.byFile["a.js"].backend, "typescript-ast");
 });
+
+test("the TypeScript checker resolves aliases, re-exports, method receivers and type references", () => {
+  const root = fixture();
+  const put = (name, body) => writeFileSync(join(root, name), body);
+  for (const side of ["north", "south"])
+    put(
+      `${side}.ts`,
+      "export interface Result { n:number }\nexport class Reader { read():Result {return {n:1}} }",
+    );
+  put("barrel.ts", 'export { Reader as Public, type Result } from "./north";');
+  put("tsconfig.json", '{"compilerOptions":{"paths":{"@entry":["./barrel"]}}}');
+  put(
+    "consumer.ts",
+    [
+      'import { Public as Reader, type Result } from "@entry";',
+      "export function collect(reader: Reader): Result {",
+      "  return reader.read();",
+      "}",
+    ].join("\n"),
+  );
+  const check = (atlas, side) => {
+    assert.equal(
+      atlas.coverage.compiler.status,
+      "available",
+      JSON.stringify(atlas.coverage.compiler),
+    );
+    const edges = atlas.edges.filter(
+      (e) => e.source.startsWith("consumer.ts:collect:") && e.evidence === "typescript-checker",
+    );
+    assert.ok(
+      edges.some((e) => e.kind === "references" && e.target === `${side}.ts:Result:1`),
+      JSON.stringify(edges),
+    );
+    assert.deepEqual(
+      edges.filter((e) => e.kind === "calls" && e.resolved).map((e) => e.target),
+      [`${side}.ts:read:2`],
+    );
+    assert.ok(edges.some((e) => e.target === `${side}.ts:Reader:2`));
+  };
+  const first = build({ root, parser: "ast" });
+  check(first, "north");
+  put("barrel.ts", 'export { Reader as Public, type Result } from "./south";');
+  const second = build({ root });
+  assert.equal(second.coverage.reusedFiles, Object.keys(first.fileHashes).length - 1);
+  check(second, "south");
+});
+
+test("a transient atlas ignores existing per-file caches and does not publish artifacts", () => {
+  const root = fixture();
+  const graph = build({ root, parser: "ast", persist: false });
+  assert.equal(graph.coverage.reusedFiles, 0);
+  assert.equal(existsSync(join(root, ".forge")), false);
+  build({ root, parser: "ast" });
+  assert.equal(build({ root, parser: "ast", persist: false }).coverage.reusedFiles, 0);
+});
+
+test("an unresolved shadowed call never resolves to an unrelated same-name declaration", () => {
+  const root = fixture();
+  writeFileSync(
+    join(root, "shadow.js"),
+    ["function send(){ return 1; }", "export function run(send){ return send(); }"].join("\n"),
+  );
+  const atlas = build({ root, parser: "ast", persist: false });
+  const calls = atlas.edges.filter((e) => e.kind === "calls" && e.source === "shadow.js:run:2");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].evidence, "typescript-checker");
+  assert.equal(calls[0].unresolved, true);
+  assert.equal(calls[0].target, "send");
+});

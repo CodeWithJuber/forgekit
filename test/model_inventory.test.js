@@ -10,6 +10,9 @@ import { buildHttpRunner } from "../src/llm.js";
 import { inventoryRoute, modelInventory, workloadRatings } from "../src/model_inventory.js";
 import { modelScope } from "../src/model_scope.js";
 import { activeProvider, addProvider, setProfileModel } from "../src/providers.js";
+import { calibrateRouting, routeTask } from "../src/route.js";
+import { recordOutcome } from "../src/router/index.js";
+import { verify } from "../src/verify.js";
 
 function repo(t) {
   const root = mkdtempSync(join(tmpdir(), "forge-inventory-"));
@@ -279,6 +282,70 @@ test("offline profile routing uses a fresh account listing and refuses stale or 
   const fetchImpl = () => response({ data: [{ id }, { id: "no-registry-binding" }] });
   const task = "Update the parser tests";
   modelInventory(root, { ...options, refresh: true, fetchImpl });
+  assert.equal(
+    inventoryRoute(root, task, options).ok,
+    false,
+    "a listing alone cannot predict success",
+  );
+  writeFileSync(join(root, ".gitignore"), ".forge/\n");
+  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  writeFileSync(join(root, "example.test.cjs"), 'require("node:test").test("passes", () => {});\n');
+  for (const args of [
+    ["init"],
+    ["add", "."],
+    [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      "fixture",
+    ],
+  ]) {
+    const g = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(g.status, 0, g.stderr);
+  }
+  let dispatches = 0;
+  const runner = buildHttpRunner({
+    root,
+    profile: "anthropic",
+    spawn: (_bin, _args, options) => {
+      dispatches++;
+      assert.equal(JSON.parse(options.input).model, id);
+      return { status: 0, stdout: JSON.stringify({ model: id, text: "ok" }) };
+    },
+  });
+  assert.throws(() => runner(task), /Configure an exact model/);
+  assert.equal(dispatches, 0);
+  const model = "claude-haiku-4.5";
+  recordOutcome(root, { task, model, passed: false, cost: 0.01 });
+  assert.equal(inventoryRoute(root, task, options).ok, false, "self-report cannot create a route");
+  for (const label of [task, "Another task"]) {
+    const checked = verify({ targetRoot: root });
+    assert.equal(checked.tests.status, "PASS", JSON.stringify(checked.tests));
+    const verified = recordOutcome(root, {
+      task: label,
+      model,
+      passed: true,
+      cost: 0.12,
+      verifyRunId: checked.provenance.event.runId,
+    });
+    assert.equal(verified.provenance, "verify-event");
+  }
+  const route = routeTask(root, task);
+  assert.equal(route.model.id, id);
+  assert.equal(runner(task), "ok");
+  assert.equal(dispatches, 1);
+  assert.equal(route.interval.n, 1);
+  assert.equal(route.score, 1);
+  assert.equal(route.expectedCost, 0.12);
+  assert.equal(routeTask(root, "new work").interval.n, 2);
+  const calibration = calibrateRouting(root);
+  assert.equal(calibration.models[0].interval.n, 2);
+  assert.equal(calibration.models[0].leaveOneTaskOutBrier, 0.0625);
   const result = inventoryRoute(root, task, options);
   assert.equal(result.ok, true);
   assert.equal(result.listing, "cached");
@@ -288,6 +355,17 @@ test("offline profile routing uses a fresh account listing and refuses stale or 
     ["claude-haiku-4.5"],
   );
   assert.equal(inventoryRoute(root, task, { ...options, band: "high" }).ok, false);
+  const registry = join(root, ".forge", "models.json");
+  writeFileSync(
+    registry,
+    JSON.stringify({ models: [{ id: model, providers: { anthropic: "no-registry-binding" } }] }),
+  );
+  assert.equal(
+    inventoryRoute(root, task, options).ok,
+    false,
+    "a changed wire binding cannot inherit the old model's outcomes",
+  );
+  writeFileSync(registry, JSON.stringify({ models: [] }));
   modelInventory(root, { ...options, now: 1000, refresh: true, fetchImpl });
   assert.equal(inventoryRoute(root, task, options).ok, false);
 });

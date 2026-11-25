@@ -8,11 +8,11 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   appendFileSync,
-  chmodSync,
   closeSync,
   constants,
   existsSync,
   fstatSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -21,6 +21,7 @@ import {
   readlinkSync,
   readSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { arch, availableParallelism, platform } from "node:os";
@@ -96,6 +97,42 @@ function git(args, cwd) {
   }
 }
 
+/** Observe the complete staged object inventory only when Git also reports that the
+ * checked-out tracked files match it. Sparse/assumed-unchanged entries cannot prove that
+ * equivalence. Local build dependencies ignored by Git remain part of the test environment.
+ */
+export function matchingIndex(cwd) {
+  try {
+    gitStrict(
+      ["diff", "--quiet", "--no-ext-diff", "--no-textconv", "--ignore-submodules=none", "--"],
+      cwd,
+    );
+    const other = gitStrict(["ls-files", "--others", "--exclude-standard", "-z"], cwd);
+    if (other.split("\0").some((file) => file && !file.startsWith(".forge/"))) return null;
+    const entries = execFileSync(
+      verificationGit.getStore()?.binary ?? "git",
+      [...GIT_SAFE, "ls-files", "-v", "--stage", "--full-name", "-z", "--", ":/"],
+      {
+        cwd,
+        env: verificationGit.getStore()?.env,
+        stdio: ["ignore", "pipe", "ignore"],
+        maxBuffer: GIT_MAX_BUFFER,
+      },
+    );
+    // Inspect only the ASCII metadata prefix. Hash the raw bytes, including non-UTF-8 paths.
+    for (let i = 0; i < entries.length; ) {
+      const end = entries.indexOf(0, i);
+      const tab = entries.indexOf(9, i);
+      if (end < 0 || tab < i || tab >= end || entries[i] !== 72 || entries[tab - 1] !== 48)
+        return null;
+      i = end + 1;
+    }
+    return createHash("sha256").update(entries).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 // ── Evidence authenticity (review B7). The provenance stamp and the Stop gate's
 // block-once marker are plain files under `.forge/`, which the agent can write: a
 // hand-written `{"tests":{"status":"PASS"}}` satisfied the gate's strong leg. They are now
@@ -124,16 +161,25 @@ export function evidenceKey() {
     const k = readFileSync(p, "utf8").trim();
     if (k) return k;
   } catch {}
+  const temp = `${p}.${randomUUID()}`;
   try {
-    mkdirSync(dirname(p), { recursive: true });
+    mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
     const k = randomBytes(32).toString("hex");
-    writeFileSync(p, `${k}\n`, { mode: 0o600 });
+    writeFileSync(temp, `${k}\n`, { flag: "wx", mode: 0o600 });
+    // Publish one complete key even when multiple first-time verification processes race.
     try {
-      chmodSync(p, 0o600);
-    } catch {}
-    return k;
+      linkSync(temp, p);
+      return k;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      return readFileSync(p, "utf8").trim() || null;
+    }
   } catch {
     return null;
+  } finally {
+    try {
+      rmSync(temp, { force: true });
+    } catch {}
   }
 }
 
@@ -161,6 +207,9 @@ export const provenanceMac = (prov) =>
     prov?.codeState?.dirtyHash,
     prov?.codeState?.head,
     prov?.event?.runId ?? "",
+    ...(prov?.indexDigest !== undefined
+      ? ["git-index/v1", prov.indexDigest, prov.event?.checkout]
+      : []),
     ...(prov?.receiptVersion === 2
       ? ["counted-suites/v1", JSON.stringify(prov.event?.suites ?? [])]
       : []),
@@ -1492,6 +1541,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   const startedAt = new Date().toISOString();
   const plan = planSuites(targetRoot);
   const pre = computeCodeState(targetRoot);
+  const preIndex = pre.gitAvailable ? matchingIndex(targetRoot) : null;
   const tests = runTests(targetRoot, { plan, onProgress });
   const duplicates = duplicateGate(targetRoot, base);
   if (duplicates.status === "FAIL" || duplicates.status === "INCOMPLETE") {
@@ -1590,6 +1640,7 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   };
   const provenance = {
     receiptVersion: 2,
+    ...(preIndex && preIndex === matchingIndex(targetRoot) ? { indexDigest: preIndex } : {}),
     base,
     changedFiles,
     untracked,

@@ -33,8 +33,8 @@ test("session-start, pre-edit, `ledger query` and the MCP query each log what th
   const root = mkdtempSync(join(tmpdir(), "forge-usage-"));
   // Recent days: the hooks judge a ledger lesson's status by its decayed val TODAY.
   const today = epochDay();
-  processSession(root, session(), today - 1);
-  processSession(root, session(), today); // → an active lesson on src/tax.ts, in the ledger
+  processSession(root, session(), today - 1, { sessionId: "first-session" });
+  processSession(root, session(), today, { sessionId: "second-session" }); // → an active lesson on src/tax.ts, in the ledger
   const dir = repoLedger(root);
   const lessons = loadClaims(dir)
     .filter((c) => c.kind === "lesson")

@@ -296,7 +296,7 @@ HANDLERS.ledger = async (argv) => {
       process.exitCode = 1;
       return;
     }
-    const { retrieve, claimText } = await import("../ledger.js");
+    const { retrieve, claimText, LEDGER_RANKING } = await import("../ledger.js");
     // The embeddings tier (ADR-0005) is assembled HERE, not in ledger.js — the pure
     // core stays provider-free. No FORGE_EMBED (or a failing provider) → sim is
     // null and retrieval is the stock MinHash path.
@@ -313,6 +313,7 @@ HANDLERS.ledger = async (argv) => {
       return console.log(
         JSON.stringify(
           {
+            ranking: LEDGER_RANKING,
             sim: simLabel(sim),
             results: ranked.map((r) => ({
               id: r.claim.id,
@@ -470,32 +471,35 @@ HANDLERS.ledger = async (argv) => {
       console.log(paint("\n  synced through a git ref — CRDT, converges in any order", "dim"));
     return;
   }
-  if (sub === "import") {
-    const b = await import("../ledger_bridge.js");
-    let r;
-    if (personal) {
-      // Personal import: facts from the global recall store into the personal ledger.
-      const { defaultStore } = await import("../recall.js");
-      r = {
-        lessons: 0,
-        outcomes: 0,
-        ...b.importFacts(defaultStore(), dir, nowDay),
-      };
-    } else {
-      const { brainStore } = await import("../brain.js");
-      r = b.importLegacy(root, {
-        recallStore: brainStore(root),
-        recallLedger: dir,
-        nowDay,
-      });
+  if (sub === "migrate" || sub === "import" || sub === "restore-legacy") {
+    const { migrateLegacy, restoreLegacy } = await import("../ledger_migration.js");
+    if (sub === "restore-legacy") {
+      const [, , destination, flag, snapshot] = args;
+      if (
+        !destination ||
+        destination.startsWith("--") ||
+        (args.length !== 3 && !(args.length === 5 && flag === "--snapshot" && snapshot))
+      )
+        throw new Error(
+          "Use forge ledger restore-legacy <new-directory> [--snapshot <id>] [--personal]",
+        );
+      const result = restoreLegacy(root, destination, { personal, snapshot });
+      return console.log(
+        json
+          ? JSON.stringify(result, null, 2)
+          : `Restored and verified ${result.files} file(s) in ${result.destination}`,
+      );
     }
-    if (json) return console.log(JSON.stringify(r, null, 2));
-    console.log(`  imported: ${r.lessons} lesson(s), ${r.facts} fact(s), ${r.outcomes} outcome(s)`);
-    for (const x of r.refused) console.log(`    refused: ${x}`);
-    return;
+    if (args.length !== 2) throw new Error("Use forge ledger migrate [--personal] [--json]");
+    const result = migrateLegacy(root, { personal });
+    return console.log(
+      json
+        ? JSON.stringify(result, null, 2)
+        : `Verified backup ${result.snapshot}: ${result.lessons} lesson(s), ${result.facts} fact(s), ${result.outcomes} outcome(s) imported. ${result.retained} already tracked.`,
+    );
   }
   console.error(
-    `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | at <date> | diff <since> [<until>] | root | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | import) [--personal] [--json]`,
+    `ledger: unknown subcommand "${sub}" (stats | verify | show <id> | blame <id> | query <text> | at <date> | diff <since> [<until>] | root | ratify <id> | retract <id> --reason "<why>" | merge <path> | sync [--dir <path>|--remote <name>|--ref <ref>] | migrate | import | restore-legacy <new-directory> [--snapshot <id>]) [--personal] [--json]`,
   );
   process.exitCode = 1;
   return;
@@ -638,6 +642,12 @@ HANDLERS.context = async (argv) => {
   const { build, isStale, load: loadAtlas } = await import("../atlas.js");
   const { epochDay } = await import("../util.js");
   const json = argv.includes("--json");
+  const ei = argv.indexOf("--encoding");
+  const encoding = ei >= 0 ? argv[ei + 1] : undefined;
+  if (ei >= 0 && (!encoding || encoding.startsWith("-")))
+    throw new Error("--encoding requires a tokenizer name");
+  const { contextCounter } = await import("../token_count.js");
+  const counter = contextCounter(encoding, process.cwd());
   const ai = argv.indexOf("--ack");
   const packet = argv.includes("--packet") || ai >= 0;
   const ack = ai < 0 ? undefined : argv[ai + 1];
@@ -655,7 +665,10 @@ HANDLERS.context = async (argv) => {
     return;
   }
   const task = argv
-    .filter((a, i) => i > 0 && !a.startsWith("--") && !["--budget", "--ack"].includes(argv[i - 1]))
+    .filter(
+      (a, i) =>
+        i > 0 && !a.startsWith("--") && !["--budget", "--ack", "--encoding"].includes(argv[i - 1]),
+    )
     .join(" ");
   if (!task) {
     console.error('usage: forge context "<task>" [--budget <tokens>] [--json]');
@@ -667,6 +680,7 @@ HANDLERS.context = async (argv) => {
   if (packet && (!atlas || isStale(root, atlas))) atlas = build({ root });
   const r = assemble(root, task, {
     atlas,
+    counter,
     includeSegments: packet,
     nowDay: epochDay(),
     ...(budget !== undefined ? { budget } : {}),
@@ -675,7 +689,7 @@ HANDLERS.context = async (argv) => {
   const withBlock = argv.includes("--block");
   if (packet) {
     const { createContextPacket } = await import("../context_packet.js");
-    console.log(JSON.stringify(createContextPacket(root, task, r, ack)));
+    console.log(JSON.stringify(createContextPacket(root, task, r, ack, counter)));
   } else if (json) {
     const { block, ...rest } = r;
     console.log(JSON.stringify(withBlock ? r : rest, null, 2));

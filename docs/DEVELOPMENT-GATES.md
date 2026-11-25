@@ -47,7 +47,7 @@ forge rank --task "Trace validatePayment in src/payments.js" --top 8 --json
 
 The equivalent MCP tool is `rank_code` with `task` and `top`. A symbol name or file in the task seeds the restart distribution of PageRank with damping 0.85. The ranked report includes the number of matching nodes. An unmatched task falls back to the project's global ranking and labels that result. File scores incorporate incident evidence when it exists.
 
-The context assembler keeps required definitions, tests and direct dependents ahead of optional evidence. For optional facts it selects the greatest marginal value per estimated token, subtracting 0.5 times maximum similarity with an already selected fact and discounting repeated sources. Identical normalized sketches produce one excerpt. The budget uses the existing character-based estimator. The final model input and any vendor prompt-cache behavior depend on the host.
+The context assembler gives required source spans and dependencies the first share of the budget. It considers optional ledger facts with query evidence. A fact's marginal value uses its retrieval rank, query overlap and novelty relative to previously included facts, divided by its encoded size. The rendered block includes its separators in the count. Missing and partial inputs travel with the context packet. [Automation contracts](CORE-CONTRACT.md)
 
 ## Evaluate a rollout on local team tasks
 
@@ -64,11 +64,11 @@ forge team evaluate compare frozen.json runs.json
 
 Each arm requires wall seconds, USD cost, token count, tool calls, new duplicate count, wrong-package count, a 0–100 quality grade under the same rubric, acceptance, and a distinct run/log locator. Record actual zero only when zero was measured. The evaluator checks the frozen suite digest, pairs by task ID and refuses missing arms or mismatched snapshots. The report gives total cost and time, average quality, how many individual tasks improved and which cases regressed.
 
-Use `purpose: "parallel"` to test the plan's 20% aggregate wall-time saving or 10-point mean quality gain. An acceptance regression or a wrong package prevents an eligible result. `routing` requires lower cost, and `context` requires fewer tokens, both at equal or better quality without acceptance regressions. Independent trials on realistic team tasks determine whether the result generalizes. The CLI reports the decision without changing any host settings. A `source: "simulation"` run always returns `simulation-only`. A caller's `observed` label identifies externally collected measurements. The evaluator cannot authenticate a remote log, establish the price charged or guarantee when someone froze the tasks. Commit the frozen suite to a private repository before the pilot to establish chronology.
+For `purpose: "parallel"` in a version 2 suite, declare `targets.speedGainPct` and `targets.qualityGainPoints` before freezing the suite. An acceptance regression or a wrong package prevents eligibility. The evaluator reports the paired wins, losses, ties and one-sided sign-test probability for both metrics. Version 1 keeps its original 20% and 10-point thresholds. A simulation receives its own verdict. The operator supplies distinct, observed evidence for each arm and retains the frozen suite and receipts. How suitable the comparisons are depends on sampling and the controls.
 
 ## Decide when to split a task
 
-With the Engineering or Quran profile selected, the lead works alone by default. A request for an independent review creates a single read-only reviewer. For parallel research, the lead supplies a decomposition. The planner uses the caller's estimates and stated scopes. It cannot measure how long a task will take or prove there are no hidden shared dependencies.
+The lead works alone until the caller supplies a breakdown or selects `--review` for one independent reviewer. This applies to the Engineering and Quran profiles and to the default setup. The same brief works in the CLI and the `forge_team_plan` MCP tool. A handoff is a local preview.
 
 ```sh
 forge team "Investigate the parser and its client" --brief streams.json --handoff codex
@@ -76,7 +76,7 @@ forge team "Investigate the parser and its client" --brief streams.json --handof
 
 ```json
 {
-  "mode": "parallel",
+  "mode": "workflow",
   "owner": "lead",
   "merge": "One table mapping the contract to the failing client case",
   "streams": [
@@ -90,7 +90,8 @@ forge team "Investigate the parser and its client" --brief streams.json --handof
     {
       "id": "client",
       "role": "debug",
-      "estimatedMinutes": 40,
+      "dependsOn": ["contract"],
+      "estimatedMinutes": 10,
       "paths": ["src/client"],
       "acceptance": "Return a reproducer and the file and line that handles the field"
     }
@@ -98,4 +99,8 @@ forge team "Investigate the parser and its client" --brief streams.json --handof
 }
 ```
 
-The total limit under the profile is a lead plus three workers. Each parallel stream has concrete, disjoint file or directory scopes, an estimate of at least 30 minutes and an acceptance check. A third stream requires `three-option-research` or `build-review-eval`. The repository's existing concurrency cap can lower the limit. `{"mode":"review"}` selects the independent reviewer exception. Workers return evidence to the named merge owner. Use the paired evaluator to see whether adding workers earned its cost on actual tasks.
+The client worker in this example waits for the contract report. Remove the dependency if the two investigations can proceed independently. Each stream names a deliverable and concrete file or directory paths. Concurrent scopes must be disjoint. A dependency permits the two workers to inspect the same scope in sequence. The planner rejects cycles, missing dependencies and duplicate IDs before launching workers.
+
+`estimatedMinutes` is optional. The scheduler uses the most recent successful duration from an equivalent local work contract when available. If every worker has a duration or an estimate, it computes the longest remaining dependency path using `priority(i) = duration(i) + max(priority(successors(i)))`, with zero for an empty successor set. If any duration is unknown, it uses dependency depth and leaves `criticalPathMs` empty. Among ready jobs it starts the highest priority first and breaks ties in brief order. This ordering estimates wall time. Shared hardware and provider latency can change actual results.
+
+The workspace concurrency setting and the optional `--max-workers` limit apply to active launches. Remaining work stays queued. A failed worker blocks its dependents. Independent workers can finish and return evidence to the merge owner. Each measured duration includes the time spent preparing that worker’s handoff, exposed separately as `coordinationMs`. Queue wait and human integration time are outside this measurement. The native planner stores the contract hash, these timings, any host-reported cost and a timestamp in private local state. Portable hosts leave cost unknown. Use the paired evaluator to measure the effect on accepted findings, elapsed time and spend for a representative set of tasks.

@@ -123,3 +123,38 @@ test("forge context CLI refreshes changed source, confirms removal and honors ze
   assert.equal(empty.context.ok, false);
   assert.equal(empty.context.tokens, 0);
 });
+
+test("a packet binds the chosen counter to the joined Unicode text and encoder version", (t) => {
+  const root = fixture(t);
+  const segments = ["résumé 🙂", "漢字 <|endoftext|>"];
+  const original = assembled(segments);
+  assert.equal(original.tokens, Buffer.byteLength(segments.join("\n\n")));
+  const counter = {
+    descriptor: { kind: "test-encoding", name: "joined", version: "1" },
+    label: "joined fixture units",
+    count: (text) => Array.from(text.replaceAll("\n\n", "\n")).length,
+  };
+  const result = {
+    ...original,
+    tokens: counter.count(original.block),
+    tokenizer: counter.descriptor,
+  };
+  const packet = createContextPacket(root, "unicode", result, undefined, counter);
+  assert.equal(applyContextPacket(packet, undefined, counter).block, original.block);
+  assert.throws(() => applyContextPacket(packet), /tokenizer/);
+  assert.throws(
+    () =>
+      applyContextPacket(packet, undefined, {
+        ...counter,
+        descriptor: { ...counter.descriptor, version: "2" },
+      }),
+    /version/,
+  );
+  const legacy = createContextPacket(root, "legacy", {
+    ...original,
+    tokenEstimate: "chars/3.6",
+    tokens: Math.ceil(original.block.length / 3.6),
+  });
+  assert.equal(legacy.context.tokenizer, undefined);
+  assert.equal(applyContextPacket(legacy).block, original.block);
+});

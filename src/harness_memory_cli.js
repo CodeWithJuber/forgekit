@@ -7,16 +7,24 @@ export function harnessMemoryCommand(root, argv) {
   const [action = "stats", ...args] = argv;
   const values = [];
   let personal = false,
-    team = "";
+    team = "",
+    organization = "";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--personal") personal = true;
     else if (args[i] === "--team") {
       team = args[++i];
       if (!team || team.startsWith("--")) throw new Error("--team requires a team name");
+    } else if (args[i] === "--organization") {
+      organization = args[++i];
+      if (!organization || organization.startsWith("--"))
+        throw new Error("--organization requires a name");
     } else values.push(args[i]);
   }
-  const store = createHarnessMemory(root, { personal, team });
+  const store = createHarnessMemory(root, { personal, team, organization });
   const [a, b, c] = values;
+  if (action === "org-grant" && values.length === 2) return store.grantOrganization(a, b);
+  if (action === "org-revoke" && values.length === 1) return store.revokeOrganization(a);
+  if (action === "org-grants" && !values.length) return store.organizationGrants();
   if (action === "stats" && !values.length) return store.stats();
   if (action === "review" && !values.length) return store.review();
   if (action === "recall" && values.length) return store.recall(values.join(" "));
@@ -33,6 +41,6 @@ export function harnessMemoryCommand(root, argv) {
   if (action === "source-delta" && values.length === 3)
     return store.refreshSource(a, readHarnessConfigData(c, { root }), Number(b));
   throw new Error(
-    "Use harness memory stats | recall <query> | review | history <id> | receipt <id> | graph <id> [1|2] | correct <file> | contradict <file> | share <id> personal|team [--personal|--team <name>] | source-state <source> | source-delta <source> <revision> <file>",
+    "Use harness memory stats | recall <query> | review | history <id> | receipt <id> | graph <id> [1|2] | correct <file> | contradict <file> | share <id> personal|team|organization [--personal|--team <name>|--organization <name>] | org-grant <name> read|write | org-revoke <name> | org-grants | source-state <source> | source-delta <source> <revision> <file>",
   );
 }

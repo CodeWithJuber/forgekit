@@ -442,3 +442,20 @@ test("docsCheck: description tool-count drift is caught (item 48)", () => {
   );
   assert.match(descriptionToolCountDrift("no count here", 12), /no tool count/);
 });
+
+test("Mintlify checks the current manual while preserving retired settings in release history", () => {
+  const root = fixtureRoot((f) => f);
+  const archive = join(root, "mintlify", "changelog");
+  mkdirSync(archive, { recursive: true });
+  writeFileSync(
+    join(archive, "overview.mdx"),
+    "At the time this feature used FORGE_RETIRED_FIXTURE.",
+  );
+  const phantom = () =>
+    docsCheck({ root }).issues.some(
+      (i) => i.check === "mintlify" && i.detail.includes("FORGE_RETIRED_FIXTURE"),
+    );
+  assert.equal(phantom(), false);
+  writeFileSync(join(root, "mintlify", "guide.mdx"), "Use FORGE_RETIRED_FIXTURE today.");
+  assert.equal(phantom(), true);
+});

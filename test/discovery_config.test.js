@@ -114,11 +114,11 @@ test("saved Jev setup reaches routing and preflight without enabling the text mo
   const run = () => assert.fail("saved Jev preference must not enable the text LLM");
   routeTask(root, "Implement a cache with tests", { jevCall, run });
   preflightRepo(root, "Implement a cache with tests", { jevCall, run, allowBuild: false });
-  assert.equal(payloads.length, 2);
+  assert.equal(payloads.length, 1);
   assert.ok(payloads.every((p) => p.model === "jev-test"));
   configureAdvisor(root, { decisions: false });
   routeTask(root, "Implement a cache with tests", { jevCall, run });
-  assert.equal(payloads.length, 2);
+  assert.equal(payloads.length, 1);
 });
 
 test("planning and diagnosis send only signals; model advice cannot pass checks or cancel thrash", (t) => {

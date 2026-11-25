@@ -66,44 +66,9 @@ See [In other AI tools](#in-other-ai-tools).
 forge substrate "<what you want to do>"
 ```
 
-It runs the whole check and gives a plain verdict. Two real examples:
+The report includes observed prerequisites, measured model routes, affected files and verification obligations. For example, `forge preflight "Update exports" --require-file fixtures/exports.csv --json` checks the file directly. Without declared requirements it reports unknown coverage. A proposed new filename can appear among unresolved references without becoming a blocking requirement.
 
-**Vague task → it tells you to ask first:**
-
-```console
-$ forge substrate "make the auth better"
-
-  proceed: ASK FIRST
-  assumption: high risk · completeness 0.23
-  clarify:
-    - What exactly should this produce, and how will we know it is correct?
-  impact: 0 file(s) predicted
-```
-
-**Clear task → it clears you and shows the blast radius:**
-
-```console
-$ forge substrate "Change verifyToken in src/auth.js to require length > 20; update tests"
-
-  proceed: yes
-  assumption: low risk · completeness 0.88
-  route: Haiku 4.5 (simple)
-  impact: 3 file(s) predicted — 3 reverse
-    - src/auth.js (reverse)
-    - src/login.js (reverse)      ← imports verifyToken; you didn't mention it
-    - src/session.js (reverse)    ← imports verifyToken; you didn't mention it
-  verify:
-    - run the narrowest affected test first, then the broader suite
-```
-
-The second run found the two files that import `verifyToken` but you never named — the
-"forgot the coupled file" bug, caught _before_ the edit. Each file is tagged with the
-relation that reached it: `reverse` (depends on the change), `sibling` (shares a dependency
-with it) or `forward` (the change depends on it). The check walks all three by default
-because the reverse-only walk missed the sibling files that were 94.7% of the empirical
-refutation's misses; siblings and forward files are co-change candidates, lower precision
-than dependents, and the enforce gate counts dependents only. Add `--json` for machine-readable
-output (see [Use it in a script](#use-it-in-a-script)).
+`forge impact <file>` shows known dependents. Additional co-change relations remain candidates for inspection. For the details of the evidence that permits a smaller test run, see the [test selection guide](../GUIDE.md#select-tests-from-measured-dependencies).
 
 ---
 
@@ -113,8 +78,8 @@ output (see [Use it in a script](#use-it-in-a-script)).
 
 | Command                       | Answers                                  | One-line example                                |
 | ----------------------------- | ---------------------------------------- | ----------------------------------------------- |
-| `forge preflight "<task>"`    | Is this task clear enough to start?      | flags names not in the repo + vague words       |
-| `forge route "<task>"`        | Which model is cheapest-but-capable?     | trivial → Haiku · hard → Opus/Fable             |
+| `forge preflight "<task>"`    | Is this task clear enough to start?      | checks named references and required inputs       |
+| `forge route "<task>"`        | Which model is cheapest-but-capable?     | compare deployments on shared measured workloads             |
 | `forge impact <symbol\|file>` | What will this edit break?               | reverse-dependency blast radius                 |
 | `forge scope <file…>`         | Can this be split into sessions?         | independent vs. coupled files                   |
 | `forge anchor "<goal>"`       | Are my changes still on the stated goal? | flags changed files that drifted off-goal       |
@@ -198,69 +163,13 @@ JSON default. Full JSON shape and the extension table:
 
 ## Optional: LLM-assisted judgments (`FORGE_LLM=1`)
 
-The substrate's default judgments are deterministic rubrics — no model call, no dependency.
-Set **`FORGE_LLM=1`** to add a **thin, opt-in semantic layer** on top: a cheap `claude -p`
-call proposes a completeness reading (M2), a complexity band (M1), the coupled edges the
-regex graph misses (impact), and whether an off-goal file actually serves the goal (M4).
+The pre-action check reads the current checkout and the configured provider inventory. `FORGE_LLM=1` enables a configured proposer. A provider reading and its provenance can accompany explicit prerequisite coverage. An operator may set `FORGE_PREFLIGHT_MIN_CONFIDENCE` to allow proposals to influence a suggestion. A model cannot waive a declared missing file. Model selection requires comparable verified outcomes. Permissions and spend limits follow the operator's configuration.
 
-[![Rubric first, LLM second: a task or edit goes to the deterministic rubric and, when FORGE_LLM=1, to an LLM proposer whose proposal is verified against a confidence of at least 0.8, the rubric band and its hard floors, and repository grounding (grep); the verdict moves (cleared, tightened, lowered or verified; raised only in unattended mode) only when the proposal passes those checks, and otherwise the deterministic verdict holds](../diagrams/llm-reconcile.svg)](https://jubershaikh.com/forgekit/diagrams/llm-reconcile.html)
+[![Observed prerequisites and optional model advice](../diagrams/llm-reconcile.svg)](https://jubershaikh.com/forgekit/diagrams/llm-reconcile.html)
 
-<sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/llm-reconcile.html): pan, zoom, search, and trace any node.</sub>
+## Limits
 
-The model **proposes**; the deterministic rubric, the code graph, and the tests **verify**.
-The verdict only moves when the proposal survives that check — otherwise it falls back, unchanged.
-
-The model is **never the judge — only a proposer.** Every proposal is _verified_ before it can
-move a verdict, in the direction of the paper's _tabayyun_ gate (49:6). By default the reconcile
-is **bidirectional but rail-guarded** — a verified reading can lower caution as well as raise it,
-but never past a hard floor:
-
-- **routing** — the proposer votes a band and the reconcile compares it with the band the
-  deterministic score is already in. A vote for a _lower_ band moves the score to that band's
-  ceiling only when the vote's p(band) reaches `llm.minConfidence`, and never below a
-  strong-signal (algorithmic/architectural) floor, so a "distributed rate-limiter" can't be
-  talked down to the cheap tier. A vote for a _higher_ band is **not applied** — escalation
-  follows a verifier failure, never the model's self-assessment (§5.1). The tier it would have
-  picked is reported as `llm.escalateTo`, an advisory recommendation that nothing acts on at
-  routing time: it is recorded against the task, and `forge diagnose --task "<task>"` names it
-  once the same failure signature has recurred `THRASH_K` times — a real external check
-  failing, which is the only thing that may buy a bigger model (§5.1). The one exception is
-  opt-in: with `route.mode: "unattended"` (or `forge route --mode unattended`) a vote with
-  p(premium) ≥ 0.9 raises to the premium tier and a mid-or-higher vote with p ≥ 0.5 to at least
-  mid, because an agent nobody watches has no cheap retry loop; that mode also adds a
-  writes-code floor, a keyword risk floor and a top-tier gate, each reported in
-  `policy.steps` (see [docs/ORCHESTRATION.md](../ORCHESTRATION.md));
-- **the assumption gate** — can _clear_ a false ask **or** _add_ one, but never clears a task
-  with no concrete anchor, or one naming symbols/files the repo doesn't define (those floors
-  guard clearing only — they never raise an ask the rubric didn't). The rubric's completeness
-  and the proposer's are on different scales, so only their ask/proceed verdicts are compared,
-  and the proposer flips the rubric only when it holds its verdict with p ≥ `llm.minConfidence`;
-- **impact edges** — kept only if the file is real _and_ a grep confirms the reference;
-- **goal-drift** — rescues an off-goal file only with a goal-referencing reason (off→on only).
-
-> **Note** — set `llm.bidirectional: false` in
-> [`source/substrate.json`](../../source/substrate.json) for the conservative mode (caution can
-> only ever increase: the gate can only tighten, the tier never moves).
-
-It is **fail-safe**: any error, timeout, or unparseable reply falls back to the deterministic
-path (behaviour is byte-identical with the flag off), and it **never blocks**. `--json` output
-carries an `llm.provenance` map (`deterministic` / `llm-cleared` / `llm-tightened` /
-`llm-lowered` / `llm-raise-deferred` / `llm-overruled` / `llm-verified`) per faculty so every model-touched decision is
-auditable. Off by default; the ambient Claude Code hook stays deterministic unless you also set
-`FORGE_LLM_AMBIENT=1`. Config lives in
-[`source/substrate.json`](../../source/substrate.json) → `llm`.
-
----
-
-## Honest limits
-
-Heuristic, not benchmarked; the graph is regex-approximate; assumption detection is
-lexical by default (`FORGE_LLM=1` adds the verified refinement above — proposals are
-checked against the repo/graph/tests before they count, never trusted blind); auto-run
-needs a hook surface. Tests and human corrections always win. The full, canonical list:
-[docs/GUIDE.md → Honest limits](../GUIDE.md#honest-limits).
-
----
+Static graph evidence covers the supported parser and compiler relationships. Dynamic behavior needs trusted runtime observations. The budgeted context packet accounts for the source content supplied to the agent. Human acceptance and independent tests are separate observations. [Operating manual](../ForgeKit-Full-Documentation.md)
 
 ## Learn more
 

@@ -14,7 +14,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { build as buildAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
+import { toolsWithoutEditCallbacks } from "./emit/hooks.js";
 import { ensureForgePrivateIgnored } from "./gitignore.js";
+import { installCommitHook } from "./harden.js";
 import { claimEmittedIntegrations } from "./integrations.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { autoDetectProvider } from "./providers.js";
@@ -928,6 +930,18 @@ export function init({
     selection.tools === null || selection.tools.includes("claude")
       ? mergeClaudeSettings()
       : { action: "skipped", reason: "Claude Code is outside this repo's tool selection" };
+  const fallbackHosts = toolsWithoutEditCallbacks(selection.tools);
+  let gitVerification;
+  if (fallbackHosts.length) {
+    const advisory =
+      process.env.FORGE_GATE === "advisory" ||
+      readForgeConfig(targetRoot).hooks?.commitVerification === "advisory";
+    gitVerification = {
+      hosts: fallbackHosts,
+      requested: advisory ? "advisory" : "required",
+      ...installCommitHook({ targetRoot, requireVerified: !advisory, fromInit: true }),
+    };
+  }
   const detected = autoDetectProvider();
   // Item 42: warm the atlas cache so the first `forge impact` is a warm query
   // (~1.7 ms) instead of a cold graph build (~9 s on the benchmark repo).
@@ -949,7 +963,15 @@ export function init({
       ? { warning: `tool selection not recorded (${unrecorded}); later syncs emit every tool` }
       : {}),
   };
-  return { ...r, settings, detected, profile: profileResult, tools: toolsResult, warmed };
+  return {
+    ...r,
+    settings,
+    detected,
+    profile: profileResult,
+    tools: toolsResult,
+    warmed,
+    ...(gitVerification ? { gitVerification } : {}),
+  };
 }
 
 function skillDescription(dir) {

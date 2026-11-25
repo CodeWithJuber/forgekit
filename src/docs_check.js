@@ -634,7 +634,9 @@ function checkCrosswalk(root, issues) {
 function checkMintlify(root, issues) {
   const base = join(root, "mintlify");
   if (!existsSync(base)) return;
-  const dirs = ["", "cli", "concepts", "guides", "changelog"];
+  // Generated release notes describe the interface that existed at each release.
+  // Current commands and environment settings must appear in the current manual.
+  const dirs = ["", "cli", "concepts", "guides"];
   let text = "";
   for (const d of dirs) {
     const dir = d ? join(base, d) : base;

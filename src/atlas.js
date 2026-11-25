@@ -38,7 +38,7 @@ import { contentHash, IGNORE_DIRS, toPosix } from "./util.js";
 // from an older version is rebuilt, never trusted (v2 stored unresolved import specifiers;
 // v3 filed every tsconfig path-alias import as an external package; v4 symbols carried no
 // definition extent, `endLine`).
-export const ATLAS_VERSION = 7;
+export const ATLAS_VERSION = 8;
 
 const JS_RULES = [
   {
@@ -1207,11 +1207,56 @@ function publishIndex(path, value) {
   }
 }
 
-export function build({ root = process.cwd(), cap = 20000, parser = undefined } = {}) {
+// A compiler site replaces only the syntax guess at the same source position.
+// Keep unresolved positions explicit. Duplicate declarations at the same line
+// remain ambiguous instead of being collapsed to the first matching node.
+function applyCompilerSites(nodes, raw, sites) {
+  if (!sites.length) return { raw, edges: [] };
+  const ids = new Map(),
+    modules = new Map(),
+    files = new Map();
+  const key = (d) => JSON.stringify([d.file, d.name, d.line]);
+  for (const n of nodes) {
+    files.set(n.id, n.file);
+    if (n.kind === "module") modules.set(n.file, n.id);
+    else ids.set(key(n), ids.has(key(n)) ? null : n.id);
+  }
+  const at = (f, p, k) => JSON.stringify([f, p, k]);
+  const positions = new Set();
+  const edges = [];
+  for (const s of sites) {
+    positions.add(at(s.from.file, s.position, s.kind));
+    const source = s.from.name ? ids.get(key(s.from)) : modules.get(s.from.file);
+    const target = s.to && ids.get(key(s.to));
+    if (!source) continue;
+    if (target || s.spelling)
+      edges.push({
+        source,
+        target: target ?? s.spelling,
+        kind: s.kind,
+        confidence: target ? 1 : 0,
+        line: s.line,
+        position: s.position,
+        evidence: "typescript-checker",
+        ...(target ? { resolved: true } : { unresolved: true }),
+      });
+  }
+  return {
+    raw: raw.filter((e) => !positions.has(at(files.get(e.source), e.position, e.kind))),
+    edges,
+  };
+}
+
+export function build({
+  root = process.cwd(),
+  cap = 20000,
+  parser = undefined,
+  persist = true,
+} = {}) {
   const inv = inventory(root, cap);
   // Incremental: reuse the prior per-file extraction when the content hash is unchanged, so a
   // rebuild only re-parses edited files instead of re-running every regex over the whole repo.
-  const prior = readCache(root);
+  const prior = persist ? readCache(root) : {};
   const parserMode = parser ?? prior.parserMode ?? "portable";
   if (!["ast", "portable"].includes(parserMode)) throw new Error("Unknown atlas parser mode");
   const parsers = parserMode === "ast" ? createAtlasParsers(root) : null;
@@ -1241,6 +1286,7 @@ export function build({ root = process.cwd(), cap = 20000, parser = undefined } 
     const text = input.text;
     const h = hash(text);
     const kind = syntaxLanguage(rel);
+    if (kind === "typescript") parsers?.observe(rel, text);
     const source = Boolean(RULES[extname(rel)]);
     const identity = signatures[kind] ?? "portable";
     fileHashes[rel] = h;
@@ -1290,13 +1336,33 @@ export function build({ root = process.cwd(), cap = 20000, parser = undefined } 
     for (const node of data.nodes) nodes.push(node);
     for (const edge of data.edges) rawEdges.push(edge);
   }
-  const { edges, stats } = resolveEdges(nodes, rawEdges, rels, loadPathAliases(root));
+  const aliases = loadPathAliases(root);
+  const compiler = parsers?.compiler(aliases);
+  const checked = applyCompilerSites(nodes, rawEdges, compiler?.sites ?? []);
+  const { edges, stats } = resolveEdges(nodes, checked.raw, rels, aliases);
+  let linked = 0;
+  for (const edge of checked.edges) {
+    edges.push(edge);
+    if ("resolved" in edge) linked++;
+  }
+  stats.names.resolved += linked;
+  stats.names.unresolved += checked.edges.length - linked;
   const atlas = {
     version: ATLAS_VERSION,
     files: inv.files.length,
     sourceFiles: inv.source,
     coverage: {
       mode: parserMode,
+      ...(compiler
+        ? {
+            compiler: {
+              status: compiler.status,
+              ...(compiler.reason ? { reason: compiler.reason } : {}),
+              ...compiler.stats,
+              linked,
+            },
+          }
+        : {}),
       backends,
       byFile,
       reusedFiles,
@@ -1315,9 +1381,11 @@ export function build({ root = process.cwd(), cap = 20000, parser = undefined } 
     omitted,
     stats,
   };
-  mkdirSync(join(root, ".forge"), { recursive: true });
-  publishIndex(cachePath(root), { version: ATLAS_VERSION, parserMode, entries: cache });
-  publishIndex(join(root, ".forge", "atlas.json"), atlas);
+  if (persist) {
+    mkdirSync(join(root, ".forge"), { recursive: true });
+    publishIndex(cachePath(root), { version: ATLAS_VERSION, parserMode, entries: cache });
+    publishIndex(join(root, ".forge", "atlas.json"), atlas);
+  }
   return atlas;
 }
 

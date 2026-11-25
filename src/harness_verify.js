@@ -4,14 +4,9 @@ import { execFile, execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
-  closeSync,
-  constants,
-  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
-  readSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -22,6 +17,10 @@ import { promisify } from "node:util";
 import { secretKind } from "../global/guards/protect-paths.mjs";
 import { harnessChildPath, installedHarnessProgram } from "./harness_python.js";
 import { createHarnessTools } from "./harness_tools.js";
+import { readBounded } from "./private_paths.js";
+
+export { readBounded } from "./private_paths.js";
+
 import { hasSecret, redactSecrets } from "./secrets.js";
 import { countVerdict, observedTestCounts, passingSuiteEvidence } from "./test_counts.js";
 import { contentHash } from "./util.js";
@@ -32,30 +31,6 @@ const MAX_FILES = 6000,
   MAX_BYTES = 64 * 1024 * 1024,
   MAX_FILE = 4 * 1024 * 1024;
 const commandText = (argv) => argv.map((s) => JSON.stringify(s)).join(" ");
-export function readBounded(path, limit) {
-  const fd = openSync(
-    path,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-  );
-  try {
-    const st = fstatSync(fd);
-    if (!st.isFile() || st.nlink !== 1 || st.size > limit || realpathSync.native(path) !== path)
-      throw new Error("Verification input must be a bounded regular file");
-    const bytes = Buffer.alloc(st.size);
-    let pos = 0;
-    while (pos < bytes.length) {
-      const n = readSync(fd, bytes, pos, bytes.length - pos, null);
-      if (!n) throw new Error("File changed during verification");
-      pos += n;
-    }
-    if (readSync(fd, Buffer.alloc(1), 0, 1, null))
-      throw new Error("File changed during verification");
-    return { bytes, mode: st.mode & 0o111 ? 0o555 : 0o444 };
-  } finally {
-    closeSync(fd);
-  }
-}
-
 function checkReceipt(root) {
   const dir = join(root, ".forge");
   for (const path of [dir, join(dir, "provenance.json"), join(dir, "verify-events.jsonl")])

@@ -299,3 +299,91 @@ test("read-only author and reviewer use distinct routes, budgeted calls and stab
     /immutable delegation/,
   );
 });
+
+test("workflow releases verified dependencies, protects unrelated reports, and reconciles stable child IDs", async (t) => {
+  const root = workspace(t);
+  const spec = {
+    ...input(),
+    id: "explicit-dag",
+    shape: "workflow",
+    maxWorkers: 1,
+    workers: [{ ...members[0], dependsOn: ["ops"] }, members[1], members[2]],
+  };
+  const plan = delegationPlan(root, spec);
+  assert.equal(plan.parallelCap, 1);
+  assert.equal(plan.schedule.priorityBasis, "dependency-depth");
+  assert.throws(
+    () =>
+      delegationPlan(root, {
+        ...spec,
+        workers: [spec.workers[0], { ...members[1], dependsOn: ["code"] }],
+      }),
+    /cycle/,
+  );
+  let rejectOps = true;
+  const fired = [];
+  const modelFor =
+    (member) =>
+    async ({ tools }) => {
+      assert.deepEqual(tools, []);
+      fired.push(member);
+      if (member === "ops" && rejectOps)
+        throw Object.assign(new Error("route_credential_missing"), {
+          code: "route_credential_missing",
+          routeAttempts: [{ status: "route_credential_missing" }],
+          usage: { tokens: 0, costUsd: 0 },
+        });
+      const answer = {
+        findings: [{ finding: `finding from ${member}`, source: "local check" }],
+        verdict: "inspected",
+        blocker: null,
+      };
+      return { finalText: JSON.stringify(answer), tokens: 5, costUsd: 0 };
+    };
+  const harness = {
+    root,
+    policy: defaultHarnessPolicy(),
+    budget: { ...child, toolCalls: 0 },
+    verify: async () => ({ ok: true, command: "fixture", output: "local check passed" }),
+  };
+  const run = (req, opts) => {
+    assert.deepEqual(opts.tools, []);
+    const packet = JSON.parse(req.task.split("\n").slice(1).join("\n"));
+    if (opts.member === "code") {
+      assert.deepEqual(
+        packet.predecessorFindings.map((r) => r.member),
+        ["ops"],
+      );
+      assert.doesNotMatch(JSON.stringify(packet.predecessorFindings), /finding from audit/);
+    } else assert.equal(packet.predecessorFindings, undefined);
+    return runHarness({ ...harness, request: req, model: modelFor(opts.member) });
+  };
+  const first = await runDelegation(root, spec, run);
+  assert.equal(first.ok, false);
+  assert.equal(first.workers[1].workerStatus, "provider_unavailable");
+  assert.match(first.workers[1].runId, /^delegated-/);
+  assert.deepEqual(
+    first.workers.map((w) => w.status),
+    ["blocked", "failed", "completed"],
+  );
+  assert.deepEqual(fired, ["ops", "audit"]);
+  rejectOps = false;
+  // Rereading a paused group is free. Its real child run resumes only on explicit request.
+  assert.equal((await runDelegation(root, spec, run)).ok, false);
+  assert.deepEqual(fired, ["ops", "audit"]);
+  const recovered = await runHarness({
+    ...harness,
+    resume: first.workers[1].runId,
+    model: modelFor("ops"),
+  });
+  assert.equal(recovered.status, "done", recovered.reason);
+  const second = await runDelegation(root, spec, run);
+  assert.equal(second.ok, true);
+  assert.deepEqual(fired, ["ops", "audit", "ops", "code"]);
+  assert.deepEqual(await runDelegation(root, spec, () => assert.fail()), second);
+  assert.ok(
+    delegationPlan(root, spec).workers.every(
+      (w) => w.timing.milliseconds > w.timing.coordinationMs && w.timing.reportedCostUsd === 0,
+    ),
+  );
+});

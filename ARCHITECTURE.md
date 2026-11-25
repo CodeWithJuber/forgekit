@@ -119,10 +119,11 @@ Mechanically: evidence and tombstones are append-only, hash-deduped logs; confid
 (`val`) is a decayed Beta posterior moved only by oracles; merge is a join-semilattice
 (property-tested: commutative, associative, idempotent), so ledgers converge in any
 order. `forge init` emits the union-merge `.gitattributes` rule; `forge ledger merge`
-folds in any other ledger tree. The ledger is now the default and only store — legacy
-files are no longer written or read (`FORGE_LEDGER_ONLY=0` is the one-release escape
-hatch back to them). Surface: `forge ledger stats | verify | show | blame |
-query | ratify | retract | merge | import` (`--personal` for the per-user ledger).
+folds in another ledger tree. Current lessons and facts use this ledger for reads and writes.
+`forge ledger migrate` captures legacy Markdown in a private, hashed backup and imports
+untracked entries. `forge ledger restore-legacy <new-directory>` restores original bytes.
+Both commands support `--personal` for the user's recall store. [Memory and recovery](docs/MEMORY.md)
+
 Decision recorded in
 [`docs/adr/0006-proof-carrying-memory.md`](docs/adr/0006-proof-carrying-memory.md).
 
@@ -166,7 +167,7 @@ synthesis §5.3, corrected 2026-09-21).
 
 Where those deterministic checks run in one Claude Code session:
 
-[![One Claude Code session with forgekit's hooks: SessionStart injects the orientation block, learned lessons and the last handoff; UserPromptSubmit runs cortex and preflight against the cached atlas and returns an advisory; PreToolUse runs protect-paths, cost-budget, doom-loop, dep-gate and cortex pre-edit and allows, asks about or denies the call; PostToolUse formats, redacts secrets and captures evidence; Stop runs the completion gate, lean guard and session learner and distills lessons into the ledger; forge hooks on runs the same chain in Codex, Gemini CLI, Cursor and Copilot](docs/diagrams/hook-sequence.svg)](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html)
+[![Claude Code hook sequence from session start through verification. Pre-edit guards review the requested operation. Tool completion records evidence and redacts supported output. At session end Cortex keeps proposals private and publishes corroborated lessons. The cross-host adapter runs supported callbacks in other clients.](docs/diagrams/hook-sequence.svg)](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html)
 
 <sub>[Open the interactive diagram](https://jubershaikh.com/forgekit/diagrams/hook-sequence.html): pan, zoom, search, and trace any node.</sub>
 
@@ -285,36 +286,9 @@ match. `forge doctor`'s **gateway models** row prints the resolved `tier→model
 verification. The `MODELS` export shape is unchanged: resolution is a layer over the table, not
 an edit of it.
 
-**Typed proposers via TypeSafe System One (`src/jev.js`).** Two of the substrate's proposer
-judgments are not text-generation tasks at all: `route`'s complexity band is a classification
-(cheap/mid/premium), and preflight's assumption gate is four independent yes/no readings (one
-per rubric dimension). When `TYPESAFE_API_KEY` is set (same `FORGE_LLM=1` opt-in), those two
-faculties ask Jev instead of a text model — one batched `POST /v1/systemone` returning typed
-`choice`/`noul` answers with probability distributions and confidence in ~150ms, versus seconds
-of text plus JSON parsing. The module reuses the adjudicate contract verbatim: opt-in, fail-safe
-(null → text-LLM fallback → deterministic rubric; a null never moves a verdict), zero-dependency
-(the `llm.js` spawned-child pattern, key in child env as `_FORGE_JEV_KEY`), and secret-refusing
-on the outgoing state. Jev answers are validated against the questions asked — a choice naming
-an option we never offered is garble and fails safe. The reconciles judge Jev like any proposer:
-`reconcileRoute` compares its band with the deterministic score's band and gates on p(band);
-`reconcileAssumption` compares Jev's ask/proceed verdict (mean noul vs 0.5) with the rubric's
-and lets it flip the gate only at p ≥ `minConfidence` — the two completeness scales are never
-blended; and clarifying free-text questions stay with the deterministic rubric, because a
-System One model judges but does not author prose.
-Provenance records which proposer answered
-(`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
+**Typed proposers via TypeSafe System One (`src/jev.js`).** With an explicit provider opt-in, preflight can request four typed readings from Jev. It validates the response and returns its provenance. An unknown prerequisite stays unknown. Only an explicitly configured confidence policy can let the provider affect an advisory. The actual checks on declared workspace files remain authoritative.
 
-**Routing policy and the orchestration pack (`src/route_policy.js`, `src/orchestration.js`).**
-`routeTask` keeps the conservative reconcile above as its default and only behaviour unless the
-policy's mode is `unattended`. Then a pure post-step (`applyRoutePolicy`) runs on the tier the
-reconcile picked: a confidence-gated vote raise (premium at p ≥ 0.9 → premium tier; mid-or-higher
-at p ≥ 0.5 → at least mid), a writes-code floor (mid), a keyword risk floor (premium tier for
-money/auth/secrets/migrations/security) and a top-tier gate (`never | explicit | auto`; the top
-tier needs the deterministic score at its cutoff, never a vote). Each step is returned in
-`policy.steps` and `provenance.policy`, and metered by name only. The same module resolves the
-orchestration rule pack (`source/orchestration.json`), which `sync` appends to the canonical
-rules; both read defaults < the user-level `forge.config.json` (in the per-user state dir) <
-the repo's `.forge/forge.config.json`. Rationale and evidence: [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md).
+**Routing and orchestration.** `src/router/measured.js` compares deployments with attributable verified results on the same workload. The ordinary recommendation joins that comparison to the provider inventory and enforces the configured top-model authorization. A task without sufficient observations is unrated. The team accepts an explicit dependency graph and a worker limit. [Model and component guide](docs/MODELS-AND-COMPONENTS.md) · [Team workflow](docs/AGENT-EVIDENCE.md#when-to-use-multiple-agents)
 
 **Advisor pairing (`src/advisor.js`, `source/advisor.json`).** Claude Code's advisor tool is a
 settings key (`advisorModel`) with a capability ranking behind it: an advisor must rank at or above
@@ -330,29 +304,7 @@ settings files; `sync` emits the choice as `advisorModel` into the repo's `.clau
 read the same resolution, so one configured advisor is named at exactly the moments the docs
 say to consult it.
 
-**Intent cards (`src/intent.js`).** Prompt → intent by the same exemplar k-NN math as
-model routing — a labeled bank (English + Hinglish rows) under overlap similarity with a
-confidence gate, NOT a keyword DFA. Note `intentGrams` ≠ `contentGrams`: route.js stops
-generic task verbs (`fix`/`add`/`build`) as complexity noise, but they are exactly the
-intent signal — same math, different stop-set data.
-
-**Graded goal-drift & completeness (`src/anchor.js`, `src/preflight.js`).** Two decisions that
-were the last hand-static holdouts are now formulas. Goal-drift no longer classifies a changed
-file by a binary path-substring match; `onGoalScore` is a **noisy-OR** (`1 − (1 − p)^hits`, the
-same estimator `lessons.js` uses) over how many distinct goal concepts the file exhibits in its
-path **and** its atlas-defined identifiers, thresholded at the single-hit floor — so a file that
-implements the goal without naming it in its path is still classed on-goal. `driftScore` stays the
-off-goal fraction (the `cusum` operating point is unchanged; an on-goal checkpoint scores 0 and
-drains the chart); the grading sharpens _which_ files count as drift, not the detector's tuning. The M2
-completeness score `s(x)` is a **logistic** over its features (concreteness, named specifics,
-vagueness, a smooth `tanh` length term) instead of an additive rubric with magic coefficients and
-discontinuous word-count steps — the `sigmoid` bounds it to (0,1) with no clamp, every feature's
-pull stays attributable, and a labeled bank could refine the weights via `predictor.js`'s
-`trainLogistic`. The hand-set prior (not fit to data) puts the paper's own examples on the
-right side of the 0.6 threshold: a bare "make the auth better" ≈ 0.23 → ask; the concrete
-verifyToken edit ≈ 0.88 → proceed. That edit scored ≈ 0.63 when the weights were set, with one
-concrete anchor (the filename); since a named code identifier became a second anchor it scores
-≈ 0.88, and the weights were not re-fit.
+**Intent and prerequisites.** The hook accepts explicit work protocols, structured host intent and compatible verified workload labels. A new prompt length or a technical word has no assigned difficulty. Preflight separately parses file and symbol references. For explicit prerequisite files it reports the number present divided by the number required. An empty denominator produces unknown coverage. Goal-drift monitoring uses the persisted goal and changes observed since the last checkpoint.
 
 **The evidence trail (preflight).** Once a goal is anchored, every prompt appends its
 graded `driftScore` to the session log; `cusum` (until now test-only math) accumulates
@@ -379,7 +331,7 @@ Plain `forge verify`, end to end:
 
 **Deep verification (`src/consensus.js`, `forge verify --deep`).** Where plain `verify`
 asks one oracle (the tests) plus one heuristic, this runs a table of independent lenses
-and aggregates them with the same noisy-OR risk score `lessons.js` uses, behind a
+and aggregates them with a noisy-OR risk score behind a
 cross-family gate so correlated structural signals can't block alone. Deep `ok` is a
 conjunction: the core verifier must PASS **and** the lens consensus must not block; an
 unconfigured core can never yield `ok:true`. The score is a calibrated heuristic, not a
@@ -395,8 +347,7 @@ the ledger (whose decay semantics make an unsure placement safe), never "nowhere
 tasks" gap: a clean first-try success used to leave no durable trace (cortex only mints on
 correction). At Stop it mints one `summary` claim (a deterministic, secret-redacted gist),
 attaching a `test.run` confirm when the session's tests passed; `dejaLookup` then ranks
-prior summary/lesson/diagnosis claims for a new task with the same `retrieve()` (rel × rec
-× val) the ledger query uses. No new protocol — it reuses the shipped PCM machinery.
+prior summary, lesson and diagnosis claims for a new task using the ledger query’s empirical midrank retrieval. No new protocol — it reuses the shipped PCM machinery.
 
 **The documentation-impact graph (`src/docs_impact.js`, `forge docs impact`).** Where
 `docs check` reconciles fixed registries and `docs sync` scans a diff for identifiers,
@@ -417,7 +368,7 @@ central code that has hurt before outranks equally central code that hasn't. Exp
 
 **Parallel-session conflict radar (`src/collide.js`, `forge collide`).** Reads recent
 foreign-session summaries from the team-merged ledger and computes per-file collision risk
-via the same noisy-OR model lessons use: `risk = 1 − ∏(1 − recᵢ × strengthᵢ)` over
+with the noisy-OR expression `risk = 1 − ∏(1 − recᵢ × strengthᵢ)` over
 sessions that touched overlapping files or their 1-hop import neighbors. No server, no
 presence protocol — teammate summaries arrive via `forge ledger sync` / `git pull`. Exposed
 as the `collide_check` MCP tool.
@@ -594,11 +545,12 @@ forgekit/
     orchestration.js      # orchestration rule pack + routing policy config: defaults < user-level < repo config, on/off per rule
     advisor.js            # Claude Code advisor tool: pairing table (data) + check, config resolution over Claude settings, the Advisor section, hook nudges
     route_policy.js       # unattended routing policy (pure): vote raise, writes-code floor, risk floor, top-tier gate
-    ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, Eq. 3 retrieval, semilattice merge (ADR-0006)
+    ledger.js             # PCM core: content-addressed claims, oracle taxonomy, decayed Beta val, evidence-based midrank retrieval, semilattice merge (ADR-0006)
     ledger_store.js       # git-native on-disk ledger (.forge/ledger/): sharded claims, append-only evidence/tombstone logs, normal-form verify, local usage log
     ledger_retention.js   # retention learned from the ledger's own history: archive never-served claims, idle ones past the longest observed comeback, and exact duplicates; BIC-detected near-duplicates are only proposed (`ledger compact`)
-    ledger_bridge.js      # legacy-store bridge, dormant by default (ledger-only); `FORGE_LEDGER_ONLY=0` re-enables cortex/recall/brain shadow-writes + idempotent `ledger import`
-    ledger_read.js        # ledger-only read path by default (`FORGE_LEDGER_ONLY=0` merges legacy∪ledger instead): cortex lesson/fact injection, `recall list`, brain's AGENTS.md index all see teammate knowledge from `ledger merge`
+    ledger_bridge.js      # writes lesson observations, revisions and facts into the authoritative ledger
+    ledger_read.js        # projects local and merged claims for Cortex, recall, and the inlined brain index
+    ledger_migration.js   # verified historical Markdown migration, private backups, and byte-exact restore
     learn_consolidate.js  # scripts/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge exact duplicates, propose near-duplicates, drop only lessons whose exact ledger claim is refuted (dormant/retracted/attic); no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
@@ -678,24 +630,24 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>247 files"]
-  test["test<br/>218 files"]
+  src["src<br/>259 files"]
+  test["test<br/>225 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>18 files"]
+  global["global<br/>7 files"]
   bench["bench<br/>6 files"]
-  global["global<br/>6 files"]
   examples["examples<br/>2 files"]
   docs["docs<br/>1 file"]
-  test -- 497 --> src
+  test -- 537 --> src
   scripts -- 15 --> src
   bench -- 12 --> src
   test -- 8 --> global
-  src -- 6 --> global
+  src -- 7 --> global
   test -- 5 --> scripts
   examples -- 4 --> src
   scripts -- 4 --> test
+  global -- 2 --> src
   test -- 2 --> bench
-  global --> src
 ```
 <!-- forge:render:repo-map:end -->

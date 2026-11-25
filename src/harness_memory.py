@@ -13,6 +13,9 @@ import uuid
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS org_grants(
+  repo TEXT NOT NULL, organization TEXT NOT NULL,
+  access TEXT NOT NULL CHECK(access IN ('read','write')), PRIMARY KEY(repo,organization));
 CREATE TABLE IF NOT EXISTS observations(
   id TEXT PRIMARY KEY, repo TEXT NOT NULL, run TEXT NOT NULL, command TEXT NOT NULL,
   at REAL NOT NULL, digest TEXT NOT NULL, kind TEXT NOT NULL, success INTEGER NOT NULL,
@@ -50,9 +53,28 @@ CREATE TABLE IF NOT EXISTS nodes(
   repo TEXT NOT NULL, source TEXT NOT NULL,parent TEXT NOT NULL, path TEXT NOT NULL,val TEXT NOT NULL,
   PRIMARY KEY(repo,source,parent,path));
 """
-HALF_LIFE = {"semantic": 180, "procedural": 365, "episodic": 30}
-WEIGHT = {"L1": 0.4, "L2": 0.75, "L3": 1}
-PRIOR = {"L1": (1, 3), "L2": (3, 2), "L3": (8, 1)}
+LEVELS = ("L1", "L2", "L3")
+
+
+def midrank_scores(measurements):
+    """Average empirical CDF midranks across informative measurement dimensions."""
+    scores = {iid: 0.0 for iid in measurements}
+    axes = 0
+    for axis in zip(*measurements.values()):
+        ordered = sorted(zip(axis, measurements))
+        if ordered[0][0] == ordered[-1][0]:
+            continue
+        axes += 1
+        start = 0
+        while start < len(ordered):
+            end = start + 1
+            while end < len(ordered) and ordered[end][0] == ordered[start][0]:
+                end += 1
+            percentile = (start + end) / (2 * len(ordered))
+            for _, iid in ordered[start:end]:
+                scores[iid] += percentile
+            start = end
+    return {iid: score / axes if axes else 0.5 for iid, score in scores.items()}
 
 
 def uid():
@@ -83,6 +105,31 @@ class Memory:
         self.scopes = args["scopes"]
         self.repo = self.scopes["repo"]
         self.now = time.time()
+        self.org_access = None
+        if args.get("organization"):
+            name = args["organization"]
+            grant = db.execute("SELECT access FROM org_grants WHERE repo=? AND organization=?",
+                               (self.repo, name)).fetchone()
+            if grant is None:
+                raise ValueError("Organization access is not granted for this workspace")
+            self.org_access = grant["access"]
+            self.scopes["organization"] = "organization-" + hashlib.sha256(name.encode()).hexdigest()
+
+    def org_grant(self, p):
+        if p["access"] not in ("read", "write"):
+            raise ValueError("Choose read or write access")
+        self.db.execute("""INSERT INTO org_grants VALUES(?,?,?) ON CONFLICT(repo,organization)
+                           DO UPDATE SET access=excluded.access""", (self.repo, p["name"], p["access"]))
+        return {"organization": p["name"], "access": p["access"]}
+
+    def org_revoke(self, p):
+        removed = self.db.execute("DELETE FROM org_grants WHERE repo=? AND organization=?",
+                                  (self.repo, p["name"]))
+        return {"organization": p["name"], "revoked": removed.rowcount > 0}
+
+    def org_grants(self, p):
+        return [dict(row) for row in self.db.execute(
+            "SELECT organization,access FROM org_grants WHERE repo=? ORDER BY organization", (self.repo,))]
 
     def log(self, scope, item, run, event, details):
         self.db.execute("INSERT INTO ledger(scope,id,at,run,event,details) VALUES(?,?,?,?,?,?)",
@@ -127,8 +174,8 @@ class Memory:
         q = query_fts(query)
         if not q:
             return []
-        return self.db.execute("""SELECT i.* FROM lookup JOIN items i ON i.id=lookup.id
-          WHERE lookup MATCH ? AND i.scope=? AND i.active=1 ORDER BY bm25(lookup),i.id LIMIT ?""",
+        return self.db.execute("""SELECT i.*, -bm25(lookup) AS lexical FROM lookup JOIN items i ON i.id=lookup.id
+          WHERE lookup MATCH ? AND i.scope=? AND i.active=1 ORDER BY lexical DESC,i.id LIMIT ?""",
                                (q, scope, limit)).fetchall()
 
     def store(self, scope, text, level, layer, run, evidence, source=None):
@@ -141,7 +188,7 @@ class Memory:
             return {"stored": True, "id": old["id"], "level": level, "deduplicated": True}
         if old and self.human_confirmed(old) and source != "operator":
             return self.refuse({"runId": run}, "a maintainer must revise human-confirmed memory")
-        if old and WEIGHT[level] < WEIGHT[old["level"]]:
+        if old and LEVELS.index(level) < LEVELS.index(old["level"]):
             return self.refuse({"runId": run}, "weaker evidence cannot replace a stronger item")
         iid = uid()
         if old:
@@ -157,7 +204,7 @@ class Memory:
         self.db.execute("INSERT INTO items VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (iid, scope, layer, text, level, evidence, run, self.now,
                          self.now if level == "L3" else None, old["id"] if old else None,
-                         1, 0, *PRIOR[level], 0.5, self.now, sig))
+                         1, 0, 0, 0, 0, self.now, sig))
         self.db.execute("INSERT INTO lookup VALUES(?,?,?)", (iid, scope, text))
         self.log(scope, iid, run, "stored", {"level": level, "layer": layer, "evidence": evidence,
                                             "supersedes": old["id"] if old else None, "source": source})
@@ -189,6 +236,8 @@ class Memory:
         return result
 
     def share(self, p):
+        if p.get("target") == "organization" and self.org_access != "write":
+            raise ValueError("Organization sharing requires write access")
         target = self.scopes.get(p.get("target"))
         if not target or target == self.repo:
             raise ValueError("Enable the target scope explicitly")
@@ -214,7 +263,7 @@ class Memory:
         for r in [row, *shared]:
             if r["review"]:
                 continue
-            self.db.execute("UPDATE items SET level='L1',review=1,against=against+2 WHERE id=?", (r["id"],))
+            self.db.execute("UPDATE items SET level='L1',review=1,against=against+1 WHERE id=?", (r["id"],))
             self.log(r["scope"], r["id"], p["runId"], "contradicted",
                      {"previous": r["level"], "level": "L1", "evidence": obs["id"]})
         return {"id": row["id"], "level": "L1", "review": True}
@@ -241,10 +290,6 @@ class Memory:
         self.log(self.repo,new["id"],p["runId"],"human-confirmed",{"actor":p["actor"],"reason":p["reason"],"evidence":receipt["id"]})
         return new
 
-    def weight(self, r):
-        days = max(0, (self.now-r["used"])/86400)
-        return max(0.05, r["weight"] * 0.999**days)
-
     def finish(self, p):
         run = p["runId"]
         prior = self.db.execute("SELECT reply FROM finished WHERE repo=? AND run=?", (self.repo, run)).fetchone()
@@ -262,15 +307,10 @@ class Memory:
                                     (self.repo,iid)).fetchone()
                 if not r:
                     continue
-                w = self.weight(r)
-                if proven:
-                    w += 0.1 * (1-w)
-                elif not obs["success"]:
-                    w *= 0.8
-                else:
+                if not proven and obs["success"]:
                     continue
-                self.db.execute("UPDATE items SET weight=?,used=?,support=support+? WHERE id=?",
-                                (max(0.05,w),self.now,int(proven),iid))
+                self.db.execute("UPDATE items SET used=?,support=support+?,against=against+? WHERE id=?",
+                                (self.now, int(proven), int(not obs["success"]), iid))
                 self.edge(self.repo, episode["id"], "used", iid)
         result = {"episode": episode, "proposals": writes, "verified": proven}
         self.db.execute("INSERT INTO finished VALUES(?,?,?)", (self.repo, run, json.dumps(result)))
@@ -289,37 +329,50 @@ class Memory:
                 "supersedes":r["supersedes"]}
 
     def recall(self, p):
-        for name, scope in self.scopes.items():
-            lex = self.matches(scope,p["query"],128)
-            if not lex:
+        for scope in self.scopes.values():
+            lexical = self.matches(scope, p["query"], 128)
+            if not lexical:
                 continue
-            rows = {r["id"]: r for r in lex}
-            scores = {r["id"]:1/(61+i) for i,r in enumerate(lex)}
-            # A shared receipt or run connects related successful observations.
-            # Bound every branch before scoring so common commands cannot flood recall.
-            graph_ids = []
-            for r in lex[:12]:
-                neighbors = self.db.execute("""SELECT DISTINCT i.* FROM edges a JOIN edges b ON b.dst=a.dst AND b.scope=a.scope
-                  JOIN items i ON i.id=b.src WHERE a.scope=? AND a.src=? AND i.id!=a.src
-                  AND a.relation IN ('evidenced-by','observed-in') AND a.relation=b.relation AND i.active=1
-                  ORDER BY i.created DESC,i.id LIMIT 8""", (scope,r["id"])).fetchall()
-                for n in neighbors:
-                    rows[n["id"]] = n
-                    if n["id"] not in graph_ids:
-                        graph_ids.append(n["id"])
-            for i,iid in enumerate(graph_ids):
-                scores[iid] = scores.get(iid, 0) + 1/(61+i)
-            recent = sorted(rows.values(), key=lambda r:(-r["created"],r["id"]))
-            for i,r in enumerate(recent):
-                scores[r["id"]] += 1/(61+i)
+            rows = {r["id"]: r for r in lexical}
+            fits = {r["id"]: r["lexical"] for r in lexical}
+            overlaps = {}
+            # Count distinct seed items connected by an observed run or a receipt.
+            for seed in lexical[:12]:
+                neighbors = self.db.execute("""SELECT DISTINCT i.* FROM edges a
+                    JOIN edges b ON b.dst=a.dst AND b.scope=a.scope AND b.relation=a.relation
+                    JOIN items i ON i.id=b.src AND i.scope=b.scope
+                    WHERE a.scope=? AND a.src=? AND i.id!=a.src AND i.active=1
+                    AND a.relation IN ('evidenced-by','observed-in')
+                    ORDER BY i.created DESC,i.id LIMIT 8""", (scope, seed["id"])).fetchall()
+                for neighbor in neighbors:
+                    iid = neighbor["id"]
+                    rows[iid] = neighbor
+                    overlaps[iid] = overlaps.get(iid, 0) + 1
+
+            # Reconstruct actual outcomes from completed evaluation edges. Historic
+            # support/against columns included hand-set priors. The immutable receipts
+            # let old and new databases answer identically without inventing trials.
+            placeholders = ",".join("?" for _ in rows)
+            uses = self.db.execute(f"""SELECT e.dst, SUM(o.success), COUNT(*) FROM edges e
+                JOIN items episode ON episode.id=e.src AND episode.scope=e.scope
+                JOIN observations o ON o.id=episode.evidence AND o.repo=e.scope
+                WHERE e.scope=? AND e.relation='used' AND episode.layer='episodic'
+                  AND o.kind='check' AND e.dst IN ({placeholders}) GROUP BY e.dst""",
+                                   (scope, *rows))
+            outcomes = {iid: (wins, count) for iid, wins, count in uses}
+            measurements = {}
+            for iid, row in rows.items():
+                wins, count = outcomes.get(iid, (0, 0))
+                measurements[iid] = (fits.get(iid, 0), overlaps.get(iid, 0),
+                                     LEVELS.index(row["level"]), row["verified"] or row["created"],
+                                     (wins + 1)/(count + 2))
+            scores = midrank_scores(measurements)
             result = []
-            for iid,r in rows.items():
-                age = max(0,(self.now-(r["verified"] or r["created"]))/86400)
-                score = (scores[iid] * WEIGHT[r["level"]] * (0.5**(age/HALF_LIFE[r["layer"]]))
-                         * (1.25 if name=="repo" else 1 if name=="team" else .8)
-                         * self.weight(r) * r["support"]/(r["support"]+r["against"]))
-                result.append({**self.public(r), "score":score})
-            return sorted(result,key=lambda r:(-r["score"],r["id"]))[:p["limit"]]
+            for iid, row in rows.items():
+                wins, count = outcomes.get(iid, (0, 0))
+                result.append({**self.public(row), "score": scores[iid], "ranking": "empirical-midranks-v2",
+                               "observedOutcomes": {"passed": wins, "failed": count - wins}})
+            return sorted(result, key=lambda r:(-r["score"], r["id"]))[:p["limit"]]
         return []
 
     def source(self, p):
@@ -453,7 +506,7 @@ def main():
                 result = mem.candidates()
             elif op == "propose":
                 result = mem.propose(payload["proposal"])
-            elif op in {"observe","finish","history","graph","contradict","share","recall","source","refresh","correct","review","receipt"}:
+            elif op in {"org_grant","org_revoke","org_grants","observe","finish","history","graph","contradict","share","recall","source","refresh","correct","review","receipt"}:
                 result = getattr(mem,op)(payload)
             else:
                 raise ValueError("Unknown memory operation")

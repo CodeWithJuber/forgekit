@@ -124,8 +124,7 @@ export function referencingFiles(root, file) {
 
 /** Build the feature vector for a real edit from actual repo state (best-effort, degrades). */
 export function featuresForEdit(root, edit, { nowDay = 0 } = {}) {
-  // Ledger-aware read: the merged view (legacy ∪ ledger) so this works under
-  // FORGE_LEDGER_ONLY (no legacy files) and also sees merged teammate lessons.
+  // Read the local and merged teammate lessons from the same ledger.
   const activeLessons = mergedLessons(root, nowDay).filter((l) => l.status === "active");
   // caller_fanout from the SYMBOL when the caller knows one, else from the FILE. Callers
   // that only have a path (every hook fired on an edit event) used to get grepFanout

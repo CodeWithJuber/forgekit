@@ -4,13 +4,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mae, promotionGate } from "../src/promote.js";
-import {
-  applyCalibration,
-  CALIBRATION_SAMPLES,
-  calibratedComplexity,
-  calibrateRouting,
-  fitComplexityCalibration,
-} from "../src/route.js";
 
 test("mae is the mean absolute error; empty → 0", () => {
   assert.equal(
@@ -75,38 +68,6 @@ test("promotionGate: a candidate that throws while fitting falls back to the bas
   });
   assert.equal(res.mode, "baseline");
   assert.match(res.reason, /failed to fit/);
-});
-
-test("fitComplexityCalibration recovers a known affine relation", () => {
-  const train = [
-    { x: 0.1, y: 0.3 },
-    { x: 0.2, y: 0.5 },
-    { x: 0.3, y: 0.7 },
-    { x: 0.4, y: 0.9 },
-  ]; // y = 2x + 0.1
-  const { a, b } = fitComplexityCalibration(train);
-  assert.ok(Math.abs(a - 2) < 1e-6);
-  assert.ok(Math.abs(b - 0.1) < 1e-6);
-  assert.ok(Math.abs(applyCalibration({ a, b }, 0.25) - 0.6) < 1e-6);
-});
-
-test("calibrateRouting returns a measured verdict over the held-out fixture", () => {
-  const res = calibrateRouting();
-  assert.equal(res.n, CALIBRATION_SAMPLES.length);
-  assert.ok(res.mode === "baseline" || res.mode === "candidate");
-  assert.equal(typeof res.baselineMetric, "number");
-  assert.equal(typeof res.candidateMetric, "number");
-});
-
-test("calibratedComplexity applies the calibration only when the gate promoted it", () => {
-  const kept = calibratedComplexity("fix a typo", { mode: "baseline" });
-  assert.equal(kept.calibrated, false);
-  const promoted = calibratedComplexity("fix a typo", {
-    mode: "candidate",
-    model: { a: 0, b: 0.9 },
-  });
-  assert.equal(promoted.calibrated, true);
-  assert.ok(Math.abs(promoted.score - 0.9) < 1e-9); // a=0,b=0.9 → 0.9 regardless of the base
 });
 
 test("an apparent win on four held-out cases is insufficient for a blocking model", () => {

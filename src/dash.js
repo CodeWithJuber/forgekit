@@ -282,7 +282,7 @@ const claimBrowseRow = (c, nowDay, score) => ({
 });
 
 /**
- * Memory browser: ranked claims for the given query (Eq.3 rel×rec×val via `retrieve`)
+ * Memory browser: ranked claims for the given query (empirical midranks via `retrieve`)
  * or, with no query, the whole live ledger sorted by val. Optional kind filter.
  * @param {string} root
  * @param {{q?: string, kind?: string, nowDay?: number, budget?: number}} [opts]

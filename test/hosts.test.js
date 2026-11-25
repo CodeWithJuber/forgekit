@@ -949,7 +949,12 @@ test("runHook checks every target of a multi-file patch", async () => {
   );
   assert.equal(r.exit, 0);
   assert.deepEqual(
-    seen.map((e) => e.payload.tool_input.file_path),
+    seen.slice(0, -1).map((e) => e.payload.tool_input.file_path),
+    names.map((name) => join("/r", name)),
+  );
+  assert.deepEqual(seen.at(-1).guards, ["pre-edit-impact.sh"]);
+  assert.deepEqual(
+    seen.at(-1).payload.paths,
     names.map((name) => join("/r", name)),
   );
 });

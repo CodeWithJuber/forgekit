@@ -16,10 +16,7 @@ import { processSession } from "../src/cortex_hook.js";
 import { doctor, repairFailure } from "../src/doctor.js";
 import { mergeSettings } from "../src/init.js";
 import { writeForgeConfig } from "../src/repo_config.js";
-
-// Default is now ledger-only; these cases exercise the legacy FILE store (the
-// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
-process.env.FORGE_LEDGER_ONLY = "0";
+import { epochDay } from "../src/util.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-doctor-"));
 
@@ -82,8 +79,8 @@ test("doctor reports 'no lessons yet' on a fresh repo, and counts once learning 
     { type: "edit", file: "src/a.ts" },
     { type: "bash", command: "npm test", exitCode: 0 },
   ];
-  processSession(learned, s(), 1);
-  processSession(learned, s(), 2); // → active lesson
+  processSession(learned, s(), epochDay() - 1, { sessionId: "first-session" });
+  processSession(learned, s(), epochDay(), { sessionId: "second-session" }); // → active lesson
   const c1 = doctor({ targetRoot: learned }).results.find((r) => r.label === "cortex");
   assert.match(c1.note, /1 active/);
 });

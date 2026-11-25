@@ -28,23 +28,14 @@ forge preflight "<task>"
 
 ## `forge route`
 
-Recommend the cheapest capable model for a task.
-
 ```bash
-forge route "<task>"
-forge route "<task>" --mode unattended [--read-only] [--allow-top] [--json]
-forge route gateway        # emit LiteLLM gateway config
-forge route universal "<task>" [--objective match-best-single|target:<p>|value:<$>|budget:<$>] [--provider <name>]
-forge route outcome "<task>" --model <id> --pass|--fail [--cost <usd>] [--attempt <id>] [--verify-run <run id>]
-forge route fit            # refit the universal router on your recorded outcomes
-forge route models         # the registry: who serves which model, at what price
+forge models --refresh --json
+forge route "<task>" --provider PROFILE --workload repair --json
+forge route universal "<task>" --provider PROFILE --objective budget:0.25 --depth 2
+forge route calibrate --workload repair
 ```
 
-`route universal` is the opt-in cross-provider router; see
-[Model routing](/concepts/model-routing)
-for what its numbers mean and what they do not. `--mode unattended` adds the vote raise, the
-writes-code and risk floors and the top-tier gate for agents nobody watches; see
-[Agent orchestration](/guides/agent-orchestration).
+An automatic recommendation needs a scoped model listing and verified first attempts with recorded costs. The response reports its exact deployment and uncertainty. Missing evidence produces an unrated result. [Model routing](/concepts/model-routing)
 
 ## `forge orchestration`
 
@@ -54,7 +45,7 @@ View and switch the agent-orchestration rule pack and the routing policy, per re
 ```bash
 forge orchestration [list] [--json]
 forge orchestration on|off <rule-id|all|pack> [--global]
-forge orchestration set <key> <value> [--global]   # parallelCap, route.mode, route.topTier, …
+forge orchestration set <key> <value> [--global]   # parallelCap or route.topTier
 ```
 
 ## `forge advisor`

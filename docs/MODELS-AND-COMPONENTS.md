@@ -13,7 +13,7 @@ forge skills list --json
 forge hooks list --json
 ```
 
-Plain `forge models --json` preserves the legacy tier schema. Use `--schema 2` for profile rows. Private snapshots retain the last complete listing, scoped to the provider and credential. Cache filenames are keyed to this installation. Removing `model-scope.key` from private ForgeKit state starts a fresh cache on the next use. If the key cannot be read or created, a live lookup can still return models for that request. The command reports partial refreshes, denied access, absent credentials and cache age. A public catalog reports public listings. Refreshing requests metadata without starting a paid inference. OpenAI-compatible custom endpoints register with `forge config provider add NAME --base-url URL --format openai`. An exact per-call model takes precedence over a profile default set by `forge config model --exact ID --profile NAME`.
+Plain `forge models --json` returns profile rows in schema 2. Use `forge models --schema 1 --json` for the historic tier response. Private snapshots retain the last complete listing, scoped to the provider and credential. Cache filenames are keyed to this installation. Removing `model-scope.key` from private ForgeKit state starts a fresh cache on the next use. If the key cannot be read or created, a live lookup can still return models for that request. The command reports partial refreshes, denied access, absent credentials and cache age. A public catalog reports public listings. Refreshing requests metadata without starting a paid inference. OpenAI-compatible custom endpoints register with `forge config provider add NAME --base-url URL --format openai`. An exact per-call model takes precedence over a profile default set by `forge config model --exact ID --profile NAME`.
 
 Filter by provider-declared metadata with `forge models --capability input:image --availability public-listed --max-age 1d`. Capability terms can be a provider operation such as `generateContent`, an explicit capability, or an advertised input modality, output modality or parameter such as `parameter:tools`. `--capability unknown` selects rows without this information. `--max-age` accepts whole seconds or a duration ending in `s`, `m`, `h` or `d`. Undated evidence cannot satisfy an age bound. Profiles with no matches still report their listing status.
 
@@ -23,7 +23,7 @@ Provider catalog prices include currency, units and available cache read/write r
 
 A workload band compares first attempts on the same tasks with authenticated verification outcomes. Scores are relative to that cohort. The inventory leaves models unrated when it lacks three clearly separated groups. A scoped band recommendation requires a current listing, a matching provider binding in the routing registry and usable cost data. The verification receipt authenticates the task verdict. Recorded model attribution is operator supplied.
 
-In the local dashboard, open **Models** and enter a workload to inspect cached listings, dates and matched task counts. MCP clients can call `forge_models` for the same offline inventory and `route_task` with a task, profile and optional band for a scoped recommendation. Run `forge models --refresh` in the CLI when fresh listings are needed.
+In the local dashboard, open **Models** and enter a workload to inspect cached listings, dates and matched task counts. MCP clients can call `forge_models` for the same offline inventory and `route_task` with a task, profile and optional band for a scoped recommendation. Run `forge models --refresh` in the CLI when fresh listings are needed. Each automatic recommendation needs a fresh account listing and priced, verified first attempts on common workload tasks. Explicitly selected IDs carry a configured status and no inferred score.
 
 To constrain a Forge harness run, use `forge harness run "Review the change" --route reviewed --model MODEL_ID --model-profile NAME`. The configured route must agree with the exact ID and the profile's endpoint and credential slot. The existing harness trust and spend checks still apply. A resumed run checks the original route fingerprint. Native coding clients control their own models.
 
@@ -96,6 +96,7 @@ Model inventory schema **2**. Standalone component catalog schema **1**.
 | hooks      | `doom-loop`            | hook         | `PreToolUse`         |
 | hooks      | `format-on-edit`       | hook         | `PostToolUse`        |
 | hooks      | `lean-guard`           | hook         | `Stop`               |
+| hooks      | `pre-edit-impact`      | hook         | `PreToolUse`         |
 | hooks      | `protect-paths`        | hook         | `PreToolUse`         |
 | hooks      | `recall-load`          | hook         | `SessionStart`       |
 | hooks      | `secret-redact`        | hook         | `PostToolUse`        |

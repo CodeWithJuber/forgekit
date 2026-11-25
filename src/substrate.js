@@ -28,7 +28,7 @@ import { ambientLookup, repoLedger } from "./ledger_store.js";
 import { clarifyBlock, preflightRepo, referencedEntities } from "./preflight.js";
 import { rankReport } from "./rank.js";
 import { reusePeek, reuseQuery } from "./reuse.js";
-import { meterRoute, routeTask } from "./route.js";
+import { describeRoute, meterRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { currentSessionId, sessionChanges } from "./session.js";
 import { detectStack } from "./stack.js";
@@ -104,17 +104,12 @@ function sessionScope(root, sid) {
 // Every warning derives from signals the gate ALREADY computed — the preflight
 // DIMENSIONS rubric owns "which dimensions apply and which are missing", routing owns
 // complexity. No second keyword copy here to drift out of sync with those sources.
-function minimalityWarnings(_task, route, preflight) {
+function minimalityWarnings(preflight) {
   const warnings = [];
   const missing = new Set((preflight.assumption?.missing ?? []).map((m) => m.key));
   if (missing.has("target_scope") && preflight.entities.files.length === 0) {
     warnings.push(
       "High-risk broad change with no target files named; ask for scope before editing.",
-    );
-  }
-  if (route.score >= 0.55 && (preflight.assumption?.completeness ?? 1) < 0.7) {
-    warnings.push(
-      "Complex task with medium/low specification completeness; clarify before spending a premium model.",
     );
   }
   // Worded to what the signal actually means: the constraints DIMENSION applies to
@@ -254,7 +249,7 @@ export function predictImpact(
  * @param {string} task
  * @param {object} [opts]
  * @param {number} [opts.threshold]
- * @param {number} [opts.askThreshold]
+ * @param {string[]} [opts.requiredFiles]
  * @param {boolean} [opts.allowBuild]
  * @param {boolean} [opts.llm]
  * @param {string} [opts.model]
@@ -272,7 +267,7 @@ export function substrateCheck(
   task,
   {
     threshold = 0.1,
-    askThreshold = 0.6,
+    requiredFiles = [],
     allowBuild = true,
     llm,
     model,
@@ -306,12 +301,14 @@ export function substrateCheck(
     model,
     timeoutMs,
     bidirectional: bi,
-    minConfidence: spec?.llm?.minConfidence,
+    minConfidence: process.env.FORGE_PREFLIGHT_MIN_CONFIDENCE
+      ? Number(process.env.FORGE_PREFLIGHT_MIN_CONFIDENCE)
+      : undefined,
     signalFloor: spec?.llm?.signalFloor,
   };
   const entities = referencedEntities(text);
   const preflight = preflightRepo(root, text, {
-    askThreshold,
+    requiredFiles,
     allowBuild,
     ...llmOpts,
   });
@@ -323,14 +320,8 @@ export function substrateCheck(
       recordGate(root, { halted: preflight.assumption.shouldAsk });
     } catch {}
   }
-  // Reuse the gap preflight already computed — routeTask would otherwise recompute it (and, with
-  // FORGE_LLM on, fire a second, redundant assumption model call whose result it discards).
   const shortlist = allowBuild ? null : ambientLookup(repoLedger(root), text);
-  const route = routeTask(root, text, {
-    ...llmOpts,
-    ambiguity: preflight.gap,
-    lessonCandidates: shortlist?.claims,
-  });
+  const route = routeTask(root, text);
   // P8 route metering, same write contract as recordGate above: the explicit gate
   // meters, the ambient hook path (allowBuild:false) never appends. meterRoute is
   // itself best-effort (try/catch inside), so measurement can never block routing.
@@ -510,7 +501,7 @@ export function substrateCheck(
     // (φ(y) − φ*(x)) against the working diff once one exists — abstractions/files/lines the task
     // never asked for. `lean` is diff-based, so it's quiet until there's something to measure.
     minimality: (() => {
-      const pre = minimalityWarnings(text, route, preflight);
+      const pre = minimalityWarnings(preflight);
       const scope = session ? "session" : "worktree";
       if (!allowBuild) return { warnings: pre, footprint: null, scope };
       // This session changed nothing yet: whatever diff exists is not its footprint.
@@ -553,17 +544,16 @@ export function substrateCheck(
     },
     guarantees: {
       deterministic: [
-        "assumption rubric",
+        "declared prerequisite coverage",
         "repo symbol/file grounding",
-        "model routing rubric",
+        "model routing from attributed outcomes",
         "impact graph traversal",
         "scope decomposition",
       ],
       // Proposed by a model, then checked against the repo/graph/tests before it could move a
       // verdict — safe to surface, never blindly trusted (whitepaper tabayyun gate).
       llmVerified: [
-        "assumption refinement (verdict vs verdict, confidence-gated; clears a false ask only past the no-anchor + repo-grounding floors)",
-        "routing (band-to-band; a confident lower vote only, never below the strong-signal floor; a higher vote is never applied, only recorded as an advisory escalateTo that names the tier IF an external check later fails — the doom-loop diagnosis is its only consumer)",
+        "optional provider reading with explicit decision policy and verified prerequisites",
         "impact edges (graph + grep verified)",
         "goal-drift rescue (off→on, goal-referenced)",
       ],
@@ -582,15 +572,9 @@ export function substrateCheck(
 
 /**
  * Opt-in mandatory gate (the paper's Eq 5 / M2 "halt on insufficient input"). Turns the advisory
- * assumption gate into an actual BLOCK — but only on the strongest, lowest-false-positive signals,
- * so it halts a vacuous prompt ("fix it", "make it better") or an edit into a very large blast
- * radius, and never a specified task. Off unless `FORGE_ENFORCE=1` (or `enforce:true`); default
- * behaviour is unchanged. `reason` is written to be shown to the agent.
- * The blast-radius count is taken over DEPENDENTS (reverse / llm-verified files) by default:
- * the 25-file threshold was set on that walk, and the sibling/forward relations are a recall
- * instrument (precision 0.093 on this repo) — counting them would block most edits here,
- * against this gate's "strongest, lowest-false-positive signals only" contract. The block
- * reason still names them, and `blastRelations` counts other relations when wanted.
+ * assumption gate into a block for missing declared prerequisites or missing context.
+ * A caller may set a maximum count of known dependent files. An unconfigured limit
+ * leaves impact as evidence for review.
  * @param {object} result - substrateCheck() result
  * @param {object} [opts]
  * @param {boolean} [opts.enforce]
@@ -599,7 +583,11 @@ export function substrateCheck(
  */
 export function enforceDecision(
   result,
-  { enforce, blastThreshold = 25, blastRelations = DEPENDENT_RELATIONS } = {},
+  {
+    enforce,
+    blastThreshold = Number(process.env.FORGE_MAX_IMPACT_FILES),
+    blastRelations = DEPENDENT_RELATIONS,
+  } = {},
 ) {
   const on = typeof enforce === "boolean" ? enforce : process.env.FORGE_ENFORCE === "1";
   if (!on || !result) return { block: false };
@@ -608,7 +596,7 @@ export function enforceDecision(
     const qs = (result.assumption.questions || []).map((q) => `  • ${q}`).join("\n");
     return {
       block: true,
-      reason: `Forge gate (enforcing): this task has no concrete anchor to act on — clarify before I start:\n${qs}${tail}`,
+      reason: `Forge gate (enforcing): a declared prerequisite is missing:\n${qs}${tail}`,
     };
   }
   // P4 completeness gate: the task names things the repo cannot supply — the questions
@@ -629,7 +617,7 @@ export function enforceDecision(
     // An untagged file (a result built without relation tags) counts, as it always did.
     const counted = files.filter((f) => !rels[f] || blastRelations.includes(rels[f]));
     const blast = counted.length;
-    if (blast >= blastThreshold) {
+    if (Number.isSafeInteger(blastThreshold) && blastThreshold > 0 && blast >= blastThreshold) {
       const others = files.length - blast;
       return {
         block: true,
@@ -669,17 +657,13 @@ export function renderSubstrate(result) {
   const lines = ["Forge substrate — pre-action check", ""];
   lines.push(`  proceed: ${result.okToProceed ? "yes" : "ASK FIRST"}`);
   lines.push(
-    `  assumption: ${result.assumption.risk} risk · completeness ${result.assumption.completeness.toFixed(2)}`,
+    `  prerequisites: ${result.assumption.risk} · coverage ${result.assumption.completeness?.toFixed(2) ?? "unknown"}`,
   );
   if (result.assumption.questions.length) {
     lines.push("", "  clarify:");
     for (const q of result.assumption.questions) lines.push(`    - ${q}`);
   }
-  lines.push(
-    "",
-    `  route: ${result.route.model.name} (${result.route.tier}) · complexity ${result.route.score.toFixed(2)}`,
-  );
-  if (result.route.reasons.length) lines.push(`    driven by: ${result.route.reasons.join(", ")}`);
+  lines.push("", `  route: ${describeRoute(result.route)}`);
   if (result.reuse && result.reuse.tier !== "miss") {
     const a = result.reuse.artifact;
     // exact = the same text; near = a similar task, equivalence unverified (review it);
@@ -703,7 +687,7 @@ export function renderSubstrate(result) {
     const state = c.ok ? "complete" : c.overflow ? "OVER BUDGET" : "INCOMPLETE";
     lines.push(
       "",
-      `  context: ${state} — ${c.covered ?? "?"}/${c.required} required item(s) delivered, ${c.tokens}/${c.budget} tokens est. (\`forge context\` for the assembly)`,
+      `  context: ${state} — ${c.covered ?? "?"}/${c.required} required item(s) delivered, ${c.tokens}/${c.budget} (${c.tokenEstimate ?? "counting units"}) (\`forge context\` for the assembly)`,
     );
     if (c.pending?.length) lines.push(`    pending reads: ${c.pending.slice(0, 6).join(", ")}`);
     for (const q of c.questions ?? []) lines.push(`    ? ${q}`);
@@ -760,7 +744,7 @@ export function substrateContext(result) {
     result.impact.atlasFresh === false ||
     result.minimality.warnings.length > 0 ||
     result.goalAnchor?.drift ||
-    ["opus", "fable"].includes(result.route.key);
+    result.route.status === "measured";
   if (!worthSaying) return "";
   const lines = ["Forge substrate — pre-action advisory (advisory, never blocks):"];
   if (result.assumption.shouldAsk) {
@@ -769,9 +753,7 @@ export function substrateContext(result) {
       ...result.assumption.questions.map((q) => `    • ${q}`),
     );
   }
-  lines.push(
-    `- Suggested model: ${result.route.model.name} (${result.route.tier}); escalate only on a verifier failure.`,
-  );
+  if (result.route.model) lines.push(`- ${describeRoute(result.route)}`);
   if (result.impact.atlasFresh === false) {
     lines.push(
       "- Impact unavailable: atlas missing or stale — predicted blast radius is not trustworthy (rebuild the atlas to get it).",

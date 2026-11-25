@@ -13,16 +13,18 @@
 // (a Bayesian update), writing .forge/router_model.json. The shipped fit comes from public
 // per-task results (data/router_prior.json records its source and date).
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeAtomicIfChanged } from "../emit/_shared.js";
+import { activeProvider, inventoryProfiles } from "../providers.js";
 import { validate } from "../schema.js";
 import { passingSuiteEvidence } from "../test_counts.js";
 import { computeCodeState, readVerifyEvents } from "../verify.js";
 import { expectedCosts, fitCost } from "./cost.js";
-import { rawFeatures, standardise } from "./features.js";
+import { currentFeatures, FEATURE_NAMES, rawFeatures, standardise } from "./features.js";
 import { fitMirt, marginals, nodeProbabilities } from "./mirt.js";
-import { choose, parseObjective } from "./policy.js";
-import { loadRegistry, servableBy } from "./registry.js";
+import { cascadeSearchSize, choose, parseObjective } from "./policy.js";
+import { loadRegistry, outcomeBinding, servableBy } from "./registry.js";
 
 const SHIPPED_PRIOR = new URL("../../data/router_prior.json", import.meta.url);
 const LOCAL_MODEL = (root) => join(root, ".forge", "router_model.json");
@@ -39,7 +41,12 @@ const readJson = (p) => {
 /** The fitted router in effect: the project's refit if present, else the shipped prior fit. */
 export function loadRouterModel(root) {
   const local = root && existsSync(LOCAL_MODEL(root)) ? readJson(LOCAL_MODEL(root)) : null;
-  if (local?.mirt) return { ...local, origin: ".forge/router_model.json" };
+  if (
+    local?.mirt &&
+    local.features?.names?.join() === FEATURE_NAMES.join() &&
+    local.provenance?.local?.verifiedOnly === true
+  )
+    return { ...local, origin: ".forge/router_model.json" };
   const shipped = readJson(SHIPPED_PRIOR);
   return shipped?.mirt ? { ...shipped, origin: "data/router_prior.json" } : null;
 }
@@ -68,10 +75,14 @@ export function alignModels(fitted, registry) {
   }));
   for (let i = 0; i < ids.length; i++) {
     const j = idx.get(ids[i]);
-    if (j !== undefined) {
+    if (j !== undefined && (!fitted.observedModels || fitted.observedModels.includes(ids[i]))) {
       a.push(fitted.mirt.a[j]);
       L.push(fitted.mirt.L[j]);
-      alpha.push(fitted.cost.alpha[j]);
+      alpha.push(
+        !fitted.observedCostModels || fitted.observedCostModels.includes(ids[i])
+          ? fitted.cost.alpha[j]
+          : null,
+      );
       status.push("fitted");
     } else {
       a.push(meanA);
@@ -111,12 +122,26 @@ export function routeUniversal(root, task, opts = {}) {
   const x = standardise(fitted.features, raw);
   const objective = parseObjective(opts.objective ?? readConfigObjective(root));
   const allowed = new Set(opts.candidates ?? servableBy(registry, opts.provider ?? "any"));
-  const candidates = aligned.ids.map((id, i) => (allowed.has(id) ? i : -1)).filter((i) => i >= 0);
+  const candidates = aligned.ids
+    .map((id, i) => (allowed.has(id) && aligned.status[i] === "fitted" ? i : -1))
+    .filter((i) => i >= 0);
   const nodes = nodeProbabilities(aligned.mirt, x);
   const costs = expectedCosts(aligned.cost, x);
-  const maxDepth = Math.max(1, Math.min(opts.maxDepth ?? 3, candidates.length));
+  if (opts.maxDepth !== undefined && (!Number.isSafeInteger(opts.maxDepth) || opts.maxDepth < 1))
+    throw new Error("Depth must be a positive integer");
+  const maxDepth = Math.min(opts.maxDepth ?? 3, candidates.length);
+  if (cascadeSearchSize(candidates.length, maxDepth, nodes.weights.length) === null)
+    return {
+      ok: false,
+      reason:
+        "Exact benchmark comparison exceeds the computation limit. Reduce the requested depth or filter the candidates.",
+    };
   const pick = choose(nodes, costs, candidates, objective, maxDepth);
-  if (!pick) return { ok: false, reason: "no candidate model has a known cost for this provider" };
+  if (!pick)
+    return {
+      ok: false,
+      reason: "no candidate model has both fitted outcomes and a known cost for this comparison",
+    };
   const p1 = marginals(nodes);
   // Review A07: a registry entry is not availability. Each step names the providers that can
   // serve it and where its cost comes from; a step no configured provider serves is advice only.
@@ -176,7 +201,7 @@ export function routeUniversal(root, task, opts = {}) {
   return rec;
 }
 
-function readConfigObjective(root) {
+export function readConfigObjective(root) {
   if (!root) return undefined;
   const cfg = readJson(join(root, ".forge", "config.json"));
   return cfg?.route?.objective;
@@ -186,7 +211,7 @@ export const taskRef = (task) =>
   createHash("sha256").update(String(task)).digest("hex").slice(0, 16);
 
 /** The feature vector length the router fits on (FEATURE_NAMES), for outcome validation. */
-const featureCount = (root) => loadRouterModel(root)?.features?.mean?.length ?? null;
+const featureCount = (_root) => FEATURE_NAMES.length;
 
 /** One outcome row as stored in `.forge/route_outcomes.jsonl` — validated on write AND read
  *  (the file is user-editable and can be merged or replayed). */
@@ -196,6 +221,9 @@ const outcomeSpec = (nFeatures) =>
     required: ["task", "model", "passed", "features"],
     props: {
       attemptId: { type: "string", nonEmpty: true, max: 200 },
+      binding: { type: "string", pattern: /^[a-f0-9]{64}$/ },
+      profile: { type: "string", nonEmpty: true, max: 200 },
+      wireModel: { type: "string", nonEmpty: true, max: 200 },
       task: { type: "string", pattern: /^[0-9a-f]{16}$/ },
       model: { type: "string", nonEmpty: true, max: 200 },
       workload: { type: "string", pattern: /^[A-Za-z0-9_.-]{1,80}$/ },
@@ -302,7 +330,7 @@ function deriveProvenance(row, runs, claimed, attempt) {
  * from the events either way (readOutcomes), so the stored label is informational.
  * @param {string} root
  * @param {{task: string, model: string, passed: boolean, cost?: number|null,
- *   workload?:string, features?: number[]|null, attemptId?: string|null, verifyRunId?: string|null,
+ *   workload?:string, profile?:string, features?: number[]|null, attemptId?: string|null, verifyRunId?: string|null,
  *   registry?: {models: any[]}}} outcome
  */
 export function recordOutcome(
@@ -314,6 +342,7 @@ export function recordOutcome(
     cost = null,
     features = null,
     workload = "repo-verified",
+    profile,
     attemptId = null,
     verifyRunId = null,
     registry = loadRegistry(root),
@@ -323,6 +352,14 @@ export function recordOutcome(
     throw new Error("recordOutcome needs model and passed (boolean)");
   if (!registry.models.some((m) => m.id === model))
     throw new Error(`unknown model "${model}" — not in the registry (\`forge route models\`)`);
+  const selected = profile
+    ? inventoryProfiles(root).find((p) => p.name === profile)
+    : activeProvider(root);
+  if (!selected) throw new Error("Unknown or inactive model profile");
+  const wireModel = registry.models.find((m) => m.id === model).providers?.[selected.name];
+  if (profile && !wireModel)
+    throw new Error("Model has no exact registry binding to the selected profile");
+  const binding = outcomeBinding(selected, wireModel);
   const id = attemptId ?? randomUUID();
   const existing = readOutcomes(root);
   const prev = existing.find((o) => o.attemptId === id);
@@ -362,6 +399,7 @@ export function recordOutcome(
     workload,
     task: taskRef(task),
     features: features ?? rawFeatures(root, task),
+    ...(binding ? { binding, profile: selected.name, wireModel } : {}),
     model,
     passed,
     cost: cost === null || cost === undefined ? null : Number(cost),
@@ -416,7 +454,10 @@ export function readOutcomes(root) {
       invalid++;
       continue;
     }
-    if (!validate(row, spec).ok) {
+    if (
+      !validate(row, spec).ok &&
+      !(row?.features?.length === 12 && validate(row, outcomeSpec(12)).ok)
+    ) {
       invalid++;
       continue;
     }
@@ -428,7 +469,12 @@ export function readOutcomes(root) {
     const { provenanceNote: _stored, ...rest } = row;
     const d = deriveProvenance(row, runs, claimed, key);
     if (row.provenance === "verify-event" && d.provenance !== "verify-event") downgraded++;
-    out.push({ ...rest, provenance: d.provenance, ...(d.note ? { provenanceNote: d.note } : {}) });
+    out.push({
+      ...rest,
+      features: currentFeatures(rest.features),
+      provenance: d.provenance,
+      ...(d.note ? { provenanceNote: d.note } : {}),
+    });
   }
   readOutcomes.lastInvalid = invalid;
   readOutcomes.lastDowngraded = downgraded;
@@ -442,30 +488,38 @@ readOutcomes.lastDowngraded = 0;
  * update: few local outcomes barely move it, many outcomes dominate). Writes
  * .forge/router_model.json and returns it.
  */
-export function fitRouter(
-  root,
-  { outcomes = readOutcomes(root), registry = loadRegistry(root) } = {},
-) {
+export function fitRouter(root, { registry = loadRegistry(root) } = {}) {
+  const outcomes = readOutcomes(root);
   const shipped = readJson(SHIPPED_PRIOR);
   if (!shipped?.mirt) throw new Error("data/router_prior.json missing: cannot fit without a prior");
   const base = alignModels(shipped, registry);
   const index = new Map(base.ids.map((id, i) => [id, i]));
   const byTask = new Map();
   const costObs = [];
+  const first = new Set();
   let skipped = 0;
   let verified = 0;
   for (const o of outcomes) {
     const m = index.get(o.model);
-    if (m === undefined || !Array.isArray(o.features)) {
+    const pair = JSON.stringify([o.model, o.task]);
+    if (
+      first.has(pair) ||
+      m === undefined ||
+      o.provenance !== "verify-event" ||
+      !Array.isArray(o.features) ||
+      o.features.length !== FEATURE_NAMES.length
+    ) {
       skipped++;
       continue;
     }
-    if (o.provenance === "verify-event") verified++;
+    first.add(pair);
+    verified++;
     const x = standardise(shipped.features, o.features);
     if (!byTask.has(o.task)) byTask.set(o.task, { x, obs: [] });
     byTask.get(o.task).obs.push([m, o.passed ? 1 : 0]);
     if (o.cost > 0) costObs.push({ model: m, x, cost: o.cost });
   }
+  if (!verified) throw new Error("No authenticated verifier outcomes available to fit");
   const data = {
     nModels: base.ids.length,
     nFeatures: shipped.features.mean.length,
@@ -494,6 +548,18 @@ export function fitRouter(
   const model = {
     version: 1,
     models: base.ids,
+    observedModels: [
+      ...new Set([
+        ...shipped.models,
+        ...outcomes.filter((o) => o.provenance === "verify-event").map((o) => o.model),
+      ]),
+    ],
+    observedCostModels: [
+      ...new Set([
+        ...shipped.models.filter((_, i) => shipped.cost.alpha[i] != null),
+        ...costObs.map((row) => base.ids[row.model]),
+      ]),
+    ],
     features: shipped.features,
     mirt: params,
     cost: { ...base.cost, alpha },
@@ -505,17 +571,19 @@ export function fitRouter(
         // How much of the local evidence is tied to an AUTHENTICATED verifier event vs
         // self-reported (A01/N07 — derived by readOutcomes, never read from the row). The event
         // vouches for the pass/fail verdict only; model and cost stay self-reported.
+        verifiedOnly: true,
         verifiedOutcomes: verified,
         verifiedFields: ["passed"],
         selfReportedOutcomes: outcomes.length - skipped - verified,
+        excludedSelfReportedOutcomes: outcomes.filter((o) => o.provenance !== "verify-event")
+          .length,
         skipped,
         tasks: data.tasks.length,
         fittedAt: new Date().toISOString(),
       },
     },
   };
-  mkdirSync(join(root, ".forge"), { recursive: true });
-  writeFileSync(LOCAL_MODEL(root), JSON.stringify(model, null, 2));
+  writeAtomicIfChanged(LOCAL_MODEL(root), JSON.stringify(model, null, 2));
   return model;
 }
 

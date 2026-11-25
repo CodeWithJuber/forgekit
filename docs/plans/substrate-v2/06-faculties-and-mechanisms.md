@@ -7,7 +7,7 @@
 
 ## §1 Impact-awareness — harden the atlas, make the gate mandatory
 
-**Implementation status, November 2026.** `forge atlas build --ast` enables optional TypeScript compiler syntax parsing and Python standard-library AST parsing. Inspect reported coverage before using inferred edges. Runtime dependencies and cross-language effects can remain unresolved. The distributed pre-action gate is advisory by default. An operator can enable supported enforcement with `FORGE_ENFORCE=1`. The mandatory gate and `FORGE_GATE` below describe the original proposal.
+**Implementation status, November 2026.** `forge atlas build --ast` enables optional TypeScript compiler and Python standard-library syntax analysis. The named-edit gate runs by default in participating before-tool adapters and the native Claude guard. Its per-session receipts bind the edit and checkout. `forge impact --review <id>` computes transitive static dependents and test scope, preserving all tests unless independent observations justify selection. Opaque shell commands and clients without these callbacks use staged verification or CI. The substrate prompt advisory has its own `FORGE_ENFORCE` setting. See [edit reviews](../../INTEGRATIONS.md#review-a-named-edit).
 
 **Plan:**
 

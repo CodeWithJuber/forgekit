@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { appendSessionEvent } from "../src/cortex_hook.js";
 import {
   gatherGitFacts,
   readState,
@@ -180,11 +181,11 @@ test("gatherGitFacts: branch + dirty files inside a repo, empty-safe outside", (
 
 test("writeState surfaces recorded assumption events from the newest session log", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-handoff-"));
-  mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
-  writeFileSync(
-    join(root, ".forge", "sessions", "s1.jsonl"),
-    `${JSON.stringify({ type: "assumption", missing: ["target_scope"], ambiguous: ["it"] })}\n`,
-  );
+  appendSessionEvent(root, "s1", {
+    type: "assumption",
+    missing: ["target_scope"],
+    ambiguous: ["it"],
+  });
   writeState(root, { done: ["x"] });
   const text = readFileSync(statePath(root), "utf8");
   assert.match(text, /target_scope/, "assumption keys carried into the handoff");
@@ -205,7 +206,7 @@ test("a row containing '<!--' never truncates the snapshot (only provenance is s
   assert.match(block, /CRITICAL: fix auth bypass/, "the injection carries the full snapshot");
 });
 
-test("gatherAssumptions dedupes identical events and caps the list", () => {
+test("gatherAssumptions still reads historical public assumption markers and deduplicates them", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-handoff-"));
   mkdirSync(join(root, ".forge", "sessions"), { recursive: true });
   const line = `${JSON.stringify({ type: "assumption", missing: ["test-command"] })}\n`;

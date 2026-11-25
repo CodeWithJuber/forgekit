@@ -67,14 +67,16 @@ export async function runProjectHarness(root, raw, options = {}) {
   const worker = request.channel === "worker";
   if (input.triggerEvidence) request.triggerEvidence = input.triggerEvidence;
   const hooks = createHarnessHooks();
-  const extensions = loadHarnessExtensions({
-    root,
-    task: request.task,
-    host: options.host,
-    hooks,
-    policy: config.policy,
-  });
-  const builtin = createHarnessTools();
+  const extensions = worker
+    ? null
+    : loadHarnessExtensions({
+        root,
+        task: request.task,
+        host: options.host,
+        hooks,
+        policy: config.policy,
+      });
+  const builtin = worker ? [] : createHarnessTools();
   const budget = harnessBudget(
     config,
     request.priority,
@@ -98,7 +100,7 @@ export async function runProjectHarness(root, raw, options = {}) {
     );
   }
   const releaseExtensions = () => {
-    for (const item of extensions.active) extensions.unload(item.name);
+    for (const item of extensions?.active ?? []) extensions.unload(item.name);
   };
   try {
     return await runHarness({
@@ -108,26 +110,30 @@ export async function runProjectHarness(root, raw, options = {}) {
       budget,
       model,
       verify: createHarnessVerifier(options.verifier ?? (await localVerifier(root))),
-      memory: createHarnessMemory(root, {
-        team: config.policy.memory?.team,
-        personal: config.policy.memory?.personal === true,
-      }),
+      memory: worker
+        ? null
+        : createHarnessMemory(root, {
+            team: config.policy.memory?.team,
+            personal: config.policy.memory?.personal === true,
+          }),
       hooks,
       policyDigest: config.digest,
       releaseExtensions,
       tools: () => (worker ? [] : [...builtin, ...extensions.tools]),
-      working: () => [
-        ...extensions.skills.map((s) => ({ id: s.name, text: s.instructions, score: 1 })),
-        ...(input.triggerEvidence
-          ? [
-              {
-                id: `Trigger event ${input.triggerEvidence.name}`,
-                text: JSON.stringify(input.triggerEvidence.data),
-                score: 1,
-              },
-            ]
-          : []),
-      ],
+      working: worker
+        ? []
+        : () => [
+            ...extensions.skills.map((s) => ({ id: s.name, text: s.instructions, score: 1 })),
+            ...(input.triggerEvidence
+              ? [
+                  {
+                    id: `Trigger event ${input.triggerEvidence.name}`,
+                    text: JSON.stringify(input.triggerEvidence.data),
+                    score: 1,
+                  },
+                ]
+              : []),
+          ],
       resume: resumed?.id,
       signal: options.signal,
       onCheckpoint: options.onCheckpoint,

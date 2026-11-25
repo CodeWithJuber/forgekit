@@ -9,13 +9,13 @@ The following commands target the unreleased working tree derived from v1.19.2. 
 | Work package | Working behavior | Boundary to verify in your environment |
 |---|---|---|
 | R1. Verification | Versioned receipts bind the checkout and the observed suite results. Consumers reject historical receipts without execution counts. Failing assertions, unexplained success, empty discovery and entirely skipped runs produce distinct outcomes. A custom isolated check supplies a counted test summary or a versioned JSON result. | A trusted producer and an independent acceptance criterion remain essential. A passing command authenticates what it ran. |
-| R2. Hook enforcement | The normalized adapter checks every affected path or reports that it cannot safely evaluate the action. Unsupported input, guard timeouts and malformed protected actions reach a deny-capable host. Replay binds the decision to the normalized action. Supported output edits are returned to the client. | A host without an output-replacement facility may already expose its original output. Check the generated capability reference and observed native execution. |
+| R2. Hook enforcement | The normalized adapter checks every affected path or reports that it cannot safely evaluate the action. Unsupported input, guard timeouts and malformed protected actions reach a deny-capable host. Replay binds the decision to the normalized action. Supported output edits are returned to the client. Named pre-edit checks bind a reviewed operation to the checkout. Explicit setup for a host without a blocking callback selects strict local Git verification. | A host without an output-replacement facility may already expose its original output. Check the generated capability reference and observed native execution. |
 | R3. Memory | Ordinary MCP writes private candidates. The operator approves, rejects and resolves conflicts explicitly. Shared projections respect retractions, including after peer sync. Prompt capture requires opt-in. A user-scoped, bounded candidate index supports prompt-time search. | An authorized ordinary CLI can still publish project memory. Old commits containing prompts require separate historical remediation. A bounded search may omit a relevant item. |
 | R4. Settings and dispatch | Concurrent config updates serialize read, merge and replace. Partial budget updates preserve hard mode and warning levels. An exact profile/endpoint/model binding is retained through request construction. The harness accounts separately for deferred eligibility and attempted execution. | A crashed settings writer can leave a lock with its PID. Inspect the owner before removing it. Ambiguous provider work requires reconciliation. |
-| R5. Models | The CLI, ordinary MCP and local dashboard expose account-scoped inventories, status, freshness and workload ratings. Provider metadata can be refreshed independently. The supervised harness supports content-bound route pins. | Each account may have different catalog, billing and execution permissions. A cold model stays unrated. Native hosts control their own model unless their adapter establishes otherwise. |
+| R5. Models | The CLI, ordinary MCP and local dashboard expose account-scoped inventories, status, freshness and workload ratings. Provider metadata can be refreshed independently. The supervised harness supports content-bound route pins. | Each account may have different catalog, billing and execution permissions. A cold model stays unrated. Claude Code advisor pairings come from a dated host compatibility table. Unlisted versions have no assigned rank. Native hosts control their own model unless their adapter establishes otherwise. |
 | R6. Components | Agents, skills and hooks can be listed, inspected and used individually. Portable handoffs work without an inference service. Bound skills accept typed inputs. Client-specific installation preserves user changes. Script candidates use content digests, frozen fixtures and an isolated runtime. | A host installation requires the client's own trust and activation. A live recipe replay needs its digest-pinned container image on the machine. |
-| R7. Analysis and continuity | Optional JS/TS compiler syntax and Python AST workers produce source spans and static relationships. The graph has content-addressed reuse, bounded file processing and atomic publication. Unknown coverage selects conservative verification. The harness pages large reads against the actual context allowance. | Syntax parsing cannot resolve every runtime dispatch, generated source or cross-language dependency. The file reader retains its bounded-file limit. |
-| R8. Advice and learning | Continuations, acknowledgements and ordinary questions can bypass new-task interruption. Public lookups require a personal choice. Automatic advice uses an abbreviated public reference with its source details. Generic projects and monorepos receive instructions conditioned on the detected stack. | The calibration corpus is small and authored. Track interventions across real languages, teams and task types. |
+| R7. Analysis and continuity | TypeScript compiler symbols resolve local calls, types and re-exports. Context budgets use exact UTF-8 bytes or an explicitly selected tokenizer. Test selection follows the reverse closure of checkout-bound, producer-declared dependencies. | Missing dependency coverage selects the full suite. Each compiler and coverage producer has a limited language and runtime scope. |
+| R8. Advice and learning | Callers can identify continuations, acknowledgements and questions explicitly. An unclassified prompt alone triggers no missing-information warning. Public lookups require a personal choice. Automatic advice uses an abbreviated public reference with its source details. Generic projects and monorepos receive instructions conditioned on the detected stack. | Repeated verified tasks can reuse an operator-provided label. Intervention rates across real languages and teams still need measurement. |
 | R9. Delivery | External Actions use immutable revisions. The release gate installs the packed CLI in a fresh consumer. The source installer preserves the checked-in launcher mode. The remote session-start hook uses the lockfile. The strictly typed subset runs alongside the legacy typecheck. | This change was exercised locally on Linux. Hosted CI, remote archive retention, repository settings and clean Windows/macOS consumers need their own run receipts. |
 | R10. Documentation and interoperability | CLI usage, generated component/model/host references and deployed documentation share versioned registries. A packaged developer template shows supported CLI, MCP and HTTP contracts. Repeated docs generation is checkable in CI. | Inspect the requested protocol and actual native client version. The stdio and HTTP transports support different revisions. |
 | R11. Evaluation | The 20-task rollout machinery and the 100-pair cost pilot can freeze a workload, record both arms, report missing billing and evaluate quality and cost. Promotion uses measured evidence and can retain the baseline. | No consented real-user pilot was supplied. Savings, adoption and general productivity gains remain unmeasured. |
@@ -42,7 +42,7 @@ forge verify --json
 forge demo workshop
 ```
 
-Use an existing tracked file with `--evidence`. Local packages and available credentials affect the inventory. `forge models --json` retains the v1 response for existing scripts. Select `--schema 2` for the cross-profile contract. Each new standalone component can produce a handoff or invoke its documented binding. A user must choose an execution backend for an inference call.
+Use an existing tracked file with `--evidence`. Local packages and available credentials affect the inventory. `forge models --json` shows the cross-profile inventory. Select `--schema 1` for the historical compatibility response. Each new standalone component can produce a handoff or invoke its documented binding. A user must choose an execution backend for an inference call.
 
 ### Use the supplied Quran profile for a review
 
@@ -54,7 +54,7 @@ In this review, *Tabayyun* (49:6) meant checking the verdict when one runner rep
 
 A client requesting context packets can import `applyContextPacket` from `@codewithjuber/forgekit/context-packet`. Keep the returned snapshot and acknowledge its revision on the next request, for example with `forge context "Review src/ledger.js" --budget 1200 --packet --ack "$revision" --json`. Apply the response to the retained snapshot before giving the reconstructed text to a model. A lost client snapshot requires a fresh full packet. ForgeKit stores manifest hashes outside the checkout. The packet exposes missing, partial and withheld inputs. A smaller transfer can still produce the same model input and bill.
 
-For impacted testing, let $G=(V,E)$ contain static dependency edges from consumers to producers. Starting from changed nodes $C$, the reverse transitive closure identifies candidate consumers. Collapse cycles before scheduling. The selector takes the union of mechanically required tests and any learned additions. A missing edge means a test can still be missed. Independently run the full suite on the same checkout to measure that miss rate before allowing a selected run to replace a required gate.
+For impacted testing, let $G=(V,E)$ contain static dependency edges from consumers to producers. Starting from changed nodes $C$, the reverse transitive closure identifies candidate consumers. Collapse cycles before scheduling. The selector uses the exact reverse closure from a dependency observation bound to the checkout and test environment. Incomplete evidence keeps the full suite. A missing edge means a test can still be missed. Independently run the full suite on the same checkout to measure that miss rate before allowing a selected run to replace a required gate.
 
 For model comparison, intersect the sets of frozen tasks evaluated by candidate routes, retain the first attributed attempt per task and join the verified outcomes. Compare model quality within that shared workload. A missing price, unproven capability or wide uncertainty has a distinct representation. At the deployment boundary, a safe route also needs a current permission binding and spend ceiling. Treating a tier name as a callable model ID loses those guarantees.
 
@@ -62,22 +62,36 @@ For context, retain the required source spans first, then use the remaining budg
 
 For a paired budget study, divide the actual billed spend of *all* attempts by independently verified completions in each arm. Report abandonment, missing bills, provider retries, latency, human review and quality along with this ratio. Split cold, repeat-heavy and mixed tasks. Predeclare noninferiority margins before observing outcomes. A lower input-token count alone cannot establish lower spend.
 
+### Which decisions use data
+
+| Decision | Inputs and algorithm | When inputs are missing |
+|---|---|---|
+| Should Forge ask about missing information? | The caller declares required files. Coverage is the number present divided by the number required. A mentioned identifier can also be resolved against the graph. | No declared prerequisites gives unknown coverage. Prompt length and English adjectives carry no score. |
+| Which model can do this task? | Join the provider inventory to attributable outcomes on shared workloads. Compare verified success and cost over comparable attempts. | The deployment stays unrated. List it for inspection or select it explicitly. |
+| Which tests should run? | Traverse reverse dependency edges from every changed input. Bind the observation to the source bytes, revision, runner and declared environment. | Run the full suite. A filename or a neighboring test does not establish coverage. |
+| Which memory and context should travel? | Rank candidate records by observed evidence. Retain required source material first, then use marginal nonredundant value per counting unit. Report truncated definitions and missing references. | Return the available evidence and identify what could not fit. |
+| Which worker starts next? | Respect the dependency graph and concurrency limit. Completed prerequisite evidence releases each dependent. Observed durations inform critical-path priority. | Independent tasks retain deterministic ordering. A single undecomposed task goes to the lead. |
+
+Permissions, tenant grants, spend limits, schema versions and cryptographic parameters are explicit contracts. The Quran review profile asks the lead to substantiate a claim, obtain an independent check and state what remains unknown. For a team study, freeze the improvement targets before collecting results. `forge team evaluate compare` reports individual wins, losses and ties and the one-sided paired sign-test probability. Interpretation assumes independent, exchangeable pairs under the null.
+
+Some numerical assumptions are still visible in the source. The PCM ledger has versioned oracle reliability and time-decay assumptions. Its empirical search ranks measured observations, but claim validity still depends on that confidence model. Atlas uses fixed edge weights for its advisory impact estimates and PageRank. Those estimates also depend on which files and relationships its parser found. The research-only merge-impact matrices and the historical Python router keep their original profiles so past experiments can be reproduced. None of those experiments establishes model quality or authorizes running fewer tests. [Ledger implementation](../src/ledger.js) · [Merge-impact study](MERGE_IMPACT.md)
+
 ### Priorities after local acceptance
 
 1. Exercise current versions of each advertised native client, then record observed registration, callback, denial, redaction or immutable-output behavior and model delivery independently.
 2. Enroll a willing test team in a self-hosted dashboard. Verify tenant configuration, TLS termination, storage and backup retention, deletion propagation and endpoint capacity using that team's operating limits.
 3. Collect blinded paired outcomes and provider bills on the frozen 20- and 100-task protocols. Compare against the team's ordinary workflow and an equivalent fixed-model baseline. Keep negative and inconclusive results.
-4. Expand semantic coverage to compiler-resolved calls, runtime dependencies, generated sources and cross-language links with a labeled corpus. Evaluate eligibility to reduce required test scope separately for each ecosystem. Track advanced tokenizers, an organization-wide memory policy and end-to-end multi-agent scheduling as distinct product capabilities.
+4. Expand semantic coverage to compiler-resolved calls, runtime dependencies, generated sources and cross-language links with a labeled corpus. Evaluate eligibility to reduce required test scope separately for each ecosystem. Measure misses in each ecosystem on independent full runs. Evaluate tokenizer support and scheduling quality on the deployments the team uses.
 
 ### What happened to the earlier roadmap
 
 | Earlier proposal or concern | Current disposition |
 |---|---|
-| P4 context assembly and P5 graph enforcement | Budgeted packets and optional syntax parsers are implemented. Semantic sufficiency on arbitrary repositories and an always-on, cross-host pre-edit gate remain open. |
+| P4 context assembly and P5 graph enforcement | Counted context packets identify missing spans. The TypeScript compiler adds resolved local relationships. Supported pre-edit events bind each named edit to its impact review. Explicit setup for a host without a blocking callback, for example `forge init --tools aider`, installs a checkout-local verified-index hook unless advisory mode is selected. A user-owned hook or an external Git hook directory requires the documented manual or CI integration. Universal semantic sufficiency and support in every client remain unmeasured. |
 | P8 cost evaluation and model drift | The paired evaluation worksheet and a calibrated, fixed-horizon regression monitor run locally. A real cohort, dated provider bills and independent acceptance results are still needed. |
-| Memory corrections, collisions and legacy files | Private proposals, approval, retraction and peer synchronization have local tests. `forge collide` checks overlapping work. `FORGE_LEDGER_ONLY=0` still enables compatibility with the old store. Retirement requires a migration and a tested recovery path for existing users. |
-| Self-hosted cloud and the earlier relay idea | The working HTTP service allows authorized readers to inspect enrolled artifacts. An end-to-end encrypted relay whose server cannot read the contents would have a different trust model and remains a separate proposal. |
-| Reusable adapters, release stability and dormant modules | The packaged template exercises the CLI, MCP and HTTP interfaces. The merge-impact helpers and guard-evaluation module currently have test callers. Flake triage, versioned output for every command and a core stability declaration remain open. |
+| Memory corrections, collisions and legacy files | The ledger serves live reads and writes. Migrate a legacy store with a hashed recovery snapshot. Workspace-specific device grants control organization recall and publication. Contradictions and retractions remain explicit. |
+| Self-hosted cloud and the earlier relay idea | The private dashboard can inspect a full enrolled workspace. The encrypted relay lets a separate authorized client verify and decrypt workspace data. The server can observe sizes, timing and changed object IDs. A deployment owner still controls keys, TLS, retention and backups. |
+| Reusable adapters and release stability | The packaged template exercises CLI, MCP and HTTP. The stable automation contracts specify CLI envelopes, context packet reconstruction and authenticated run-history triage. See the operating manuals below. |
 
 The original reviews also identified strengths worth preserving. The claim register records refuted claims, host evidence distinguishes declared support from observed behavior, and the ledger binds records to their content. The packaged CLI still has zero production npm dependencies. Optional workers use Python and SQLite. [Claim register](status/README.md) · [Host evidence](INTEGRATIONS.md) · [Original substrate phases](plans/substrate-v2/00-overview.md)
 
@@ -124,9 +138,17 @@ Ordinary MCP exposed 36 tools on the reviewed revision. A trusted supervised che
 
 ## Runtime results and findings
 
+### Acceptance of evidence-based defaults
+
+On Linux with Node 24, the repository suite passed 2,408 of 2,416 tests, with eight skips and zero failures. The browser and container checks below ran separately with their optional runtimes enabled.
+- Native loopback sessions exercised a complete edit cycle. Claude Code 2.1.325 (project settings and plugin), Codex CLI 0.169.0 and 0.172.0-alpha.2, and Kimi Code 2.6.2 each denied the first edit, accepted a review bound to that operation and then allowed the identical edit. Eight emitted hook dialects passed adapter tests. Other clients still need a native run for this behavior.
+- On a local two-tenant service, the encrypted relay round-tripped content, authenticated retries, rejected a stale writer after deletion, and supported an authorized read from a restored SQLite backup. Fifteen Chromium checks and nine digest-pinned container checks passed in separate runs. Production enrollment, key custody and retention require evidence from the operator.
+- A real `js-tiktoken` 1.0.21 installation counted a rendered Unicode source excerpt with `cl100k_base` at 19 ordinary-text tokens. The same block occupied 72 UTF-8 bytes. The verification history test signed a genuine passing and failing suite on the same checkout and recovered both run IDs through the CLI.
+- Two independent fits reproduced all 162 committed values in the historical routing benchmark. On 350 held-out tasks, the measured router solved 80.0% at an estimated $0.128 per task. A fixed cascade solved 80.6% at $0.136. This replay does not establish current provider prices or a quality advantage. [Reproduction and split](../bench/universal-router/README.md)
+
 ### Acceptance during pull request review
 
-The review added a regression for cache separation between provider accounts and installations. At commit `56748b2`, the Linux Node 24 suite ran 2,450 cases, passed 2,442, skipped eight and recorded zero failures. GitHub's Linux Node 20 and 22 jobs each passed 2,438 of the same 2,450 cases, skipped twelve and recorded zero failures. Chromium passed all 15 browser cases in a separate run with its optional runtime enabled. The packed CLI checks passed on Linux, macOS and Windows, and CodeQL passed. GitHub's dependency review returned HTTP 403 when reading the dependency graph. The separate npm audit reported zero known vulnerabilities in the installed dependency tree. [Review and checks](https://github.com/CodeWithJuber/forgekit/pull/253) · [Hosted Node 20 and 22 results](https://github.com/CodeWithJuber/forgekit/actions/runs/45553942271)
+The review added a regression for cache separation between provider accounts and installations. At commit `56748b2`, the Linux Node 24 suite ran 2,450 cases, passed 2,442, skipped eight and recorded zero failures. GitHub's Linux Node 20 and 22 jobs each passed 2,438 of the same 2,450 cases, skipped twelve and recorded zero failures. Chromium passed all 15 browser cases in a separate run with its optional runtime enabled. The packed CLI checks passed on Linux, macOS and Windows, and CodeQL passed. GitHub's dependency review initially returned HTTP 403. Its second attempt at commit `06413d5` passed. [Dependency review retry](https://github.com/CodeWithJuber/forgekit/actions/runs/45554430001/job/139012194218). The separate npm audit reported zero known vulnerabilities in the installed dependency tree. [Review and checks](https://github.com/CodeWithJuber/forgekit/pull/253) · [Hosted Node 20 and 22 results](https://github.com/CodeWithJuber/forgekit/actions/runs/45553942271)
 
 ### Local acceptance of the implementation
 
@@ -276,7 +298,7 @@ In Claude Code, a packaged crew agent installs in the project's `.claude/agents/
 
 Run `forge demo workshop` from any directory. Add `--json` for the full machine-readable receipt. It requires Node.js, Git and Python 3. The example uses anonymous synthetic RSVP and capacity tables. A researcher counts demand, a planner checks available seats, and one coordinator owns the acceptance decision. Two scoped handoffs are prepared. The result is computed by local CLI commands without starting model workers.
 
-For your own planning brief, give `forge team "<question>" --brief streams.json --handoff generic --json` two independent streams with concrete paths, estimates, an acceptance check per stream, and one owner to merge their findings. The explicit `planner` and `researcher` roles work for non-code materials. A scoped worker receives its assigned paths and matching workspace references. The lead can review and relay additional citations. Hosts determine what their own native file tools can read. Tiny tasks can stay with the coordinator.
+For your own planning brief, give `forge team "<question>" --brief streams.json --handoff generic --json` each stream's concrete paths, acceptance check and optional prerequisite IDs. Name one owner to merge the findings. The `planner` and `researcher` roles work for non-code materials. A scoped worker receives its assigned references and bounded file excerpts. The lead can relay additional citations. Adding `--review` to a team command selects a single independent reviewer. [Worker breakdown and scheduling](DEVELOPMENT-GATES.md#decide-when-to-split-a-task)
 
 In the example, morning has 12 RSVPs for 14 seats. Afternoon exceeds capacity by one. The printed result includes both alternatives, the acceptance condition, original row ranges, the Git revision and the reusable claim ID. Reuse only after confirming the source hashes still match. The example tests a changed source and an edited report as well as the successful reuse case. This fixture demonstrates the workflow. To measure outcomes on real participants and work, follow the consented 100-pair pilot. [Workshop walkthrough](../examples/workshop-planner/README.md) · [Paired pilot](../reports/cost-eval.md#run-the-paired-pilot-locally)
 
@@ -293,7 +315,7 @@ forge skills list --json
 forge hooks list --json
 ```
 
-Plain `forge models --json` preserves the legacy tier schema. Use `--schema 2` for profile rows. Private snapshots retain the last complete listing, scoped to the provider and credential. Cache filenames are keyed to this installation. Removing `model-scope.key` from private ForgeKit state starts a fresh cache on the next use. If the key cannot be read or created, a live lookup can still return models for that request. The command reports partial refreshes, denied access, absent credentials and cache age. A public catalog reports public listings. Refreshing requests metadata without starting a paid inference. OpenAI-compatible custom endpoints register with `forge config provider add NAME --base-url URL --format openai`. An exact per-call model takes precedence over a profile default set by `forge config model --exact ID --profile NAME`.
+Plain `forge models --json` returns profile rows in schema 2. Use `forge models --schema 1 --json` for the historic tier response. Private snapshots retain the last complete listing, scoped to the provider and credential. Cache filenames are keyed to this installation. Removing `model-scope.key` from private ForgeKit state starts a fresh cache on the next use. If the key cannot be read or created, a live lookup can still return models for that request. The command reports partial refreshes, denied access, absent credentials and cache age. A public catalog reports public listings. Refreshing requests metadata without starting a paid inference. OpenAI-compatible custom endpoints register with `forge config provider add NAME --base-url URL --format openai`. An exact per-call model takes precedence over a profile default set by `forge config model --exact ID --profile NAME`.
 
 Filter by provider-declared metadata with `forge models --capability input:image --availability public-listed --max-age 1d`. Capability terms can be a provider operation such as `generateContent`, an explicit capability, or an advertised input modality, output modality or parameter such as `parameter:tools`. `--capability unknown` selects rows without this information. `--max-age` accepts whole seconds or a duration ending in `s`, `m`, `h` or `d`. Undated evidence cannot satisfy an age bound. Profiles with no matches still report their listing status.
 
@@ -303,7 +325,7 @@ Provider catalog prices include currency, units and available cache read/write r
 
 A workload band compares first attempts on the same tasks with authenticated verification outcomes. Scores are relative to that cohort. The inventory leaves models unrated when it lacks three clearly separated groups. A scoped band recommendation requires a current listing, a matching provider binding in the routing registry and usable cost data. The verification receipt authenticates the task verdict. Recorded model attribution is operator supplied.
 
-In the local dashboard, open **Models** and enter a workload to inspect cached listings, dates and matched task counts. MCP clients can call `forge_models` for the same offline inventory and `route_task` with a task, profile and optional band for a scoped recommendation. Run `forge models --refresh` in the CLI when fresh listings are needed.
+In the local dashboard, open **Models** and enter a workload to inspect cached listings, dates and matched task counts. MCP clients can call `forge_models` for the same offline inventory and `route_task` with a task, profile and optional band for a scoped recommendation. Run `forge models --refresh` in the CLI when fresh listings are needed. Each automatic recommendation needs a fresh account listing and priced, verified first attempts on common workload tasks. Explicitly selected IDs carry a configured status and no inferred score.
 
 To constrain a Forge harness run, use `forge harness run "Review the change" --route reviewed --model MODEL_ID --model-profile NAME`. The configured route must agree with the exact ID and the profile's endpoint and credential slot. The existing harness trust and spend checks still apply. A resumed run checks the original route fingerprint. Native coding clients control their own models.
 
@@ -373,6 +395,7 @@ Model inventory schema **2**. Standalone component catalog schema **1**.
 | hooks      | `doom-loop`            | hook         | `PreToolUse`         |
 | hooks      | `format-on-edit`       | hook         | `PostToolUse`        |
 | hooks      | `lean-guard`           | hook         | `Stop`               |
+| hooks      | `pre-edit-impact`      | hook         | `PreToolUse`         |
 | hooks      | `protect-paths`        | hook         | `PreToolUse`         |
 | hooks      | `recall-load`          | hook         | `SessionStart`       |
 | hooks      | `secret-redact`        | hook         | `PostToolUse`        |
@@ -552,6 +575,243 @@ Reader credentials can list the workspace and retrieve eligible artifacts, inclu
 - Reusing a deleted workspace ID requires deliberate baseline replacement on the newly enrolled client. A new workspace ID starts empty.
 
 The API exposes `GET /v1/workspaces/{id}` for the manifest and latest 100 receipts, `GET /v1/workspaces/{id}/events?after=<revision>` for paginated incremental receipts, `GET /v1/workspaces/{id}/events?id=<revision>` for changed paths and content hashes, `GET /v1/workspaces/{id}/artifact?path=…` for a base64-encoded artifact and hash, `POST /v1/workspaces/{id}/sync` for a versioned change batch and `DELETE /v1/workspaces/{id}` for deletion. One upload at a time bounds receiver memory. A busy receiver responds with HTTP 429. Local `forge dash` remains independent of the web service.
+
+#### End-to-end encrypted relay
+
+Choose `forge relay` when the receiver should store encrypted content. The same Node and SQLite service can run in relay mode on a separate port with a separate private data directory. Use the scoped principal configuration above. A workspace can have independent dashboard and relay enrollments. Each has its own credentials, queue, revision and logout.
+
+Generate one random 32-byte workspace encryption key using a secret manager, with standard base64 encoding. For example, `openssl rand -base64 32` produces that format. Keep the key on the authorized clients and deliver it to collaborators through an independent trusted channel. Use a different bearer credential for each reader, writer and administrator. Keep the encryption key out of the server configuration, shell logs and project files. Losing every copy of the key makes the encrypted workspace unreadable.
+
+Start the receiver with `forge relay serve --config /private/relay.json`. It binds to loopback, accepts the scoped relay API and serves a text landing page. Use an HTTPS reverse proxy for remote access. The operator controls bearer credentials, the tenant and workspace IDs, storage, deletion and backups. Read decrypted files with an independently installed client.
+
+The service exposes status, sync, events, artifact retrieval and administrator deletion under `/v1/relay/{tenant}/{workspace}`. Artifact retrieval takes an opaque object identifier and the expected current revision. An operator with the scoped administrator credential can delete the active data through the API if all clients lose their encryption keys.
+
+The following commands assume the client has the workspace key in `WORKSPACE_RELAY_KEY` and the appropriate scoped bearer credential in `WORKSPACE_ACCESS`.
+
+```sh
+forge relay configure --full-workspace --url https://relay.example.org --tenant team --workspace demo --token-env WORKSPACE_ACCESS --key-env WORKSPACE_RELAY_KEY
+forge relay preview
+forge relay push
+forge relay status --remote
+forge relay list
+forge relay read README.md --revision "$EXPECTED_REVISION" --json
+```
+
+A push returns its revision. Send that revision over an independent channel when a second device needs to verify an exact snapshot. Set `EXPECTED_REVISION` on the reader to that value. On the reader, configure the same endpoint, tenant and workspace with its own bearer credential and the shared encryption key. `list` decrypts names and metadata locally. `read` writes the verified bytes to stdout. Use `--path=--help` for a file named `--help`. The JSON form returns base64 bytes, verified SHA-256 and the revision. The reader chooses the destination. Provision a reader or administrator token for file contents. A writer with the workspace key can verify the encrypted manifest for replacement. `watch`, `logout` and administrator `delete --confirm` follow the cloud operations above in the relay's separate storage namespace.
+
+##### What the relay can observe
+
+The client encrypts the manifest and changed artifacts after local redaction. Protocol version 1 derives separate keys with HKDF-SHA-256 for each tenant and workspace. A path becomes an HMAC-SHA-256 identifier. Each record uses an independently derived revision-and-object key, a random 96-bit nonce and AES-256-GCM with a 128-bit tag. Authenticated data includes the protocol, tenant, workspace, object identifier and revision. The encrypted manifest binds the path, content digest, media type, redaction status, ciphertext digest and originating revision of every file. The client verifies the complete manifest and the selected file before returning its bytes. Retrying a pending push reuses the exact sealed batch. An unchanged artifact retains its identifier and ciphertext.
+
+The receiver sees tenant and workspace IDs, credentials presented to it, timestamps, revision links, counts, ciphertext lengths and repeated opaque file identifiers. It can infer which encrypted objects changed and can withhold or serve older data. A revision received through an independent channel detects a rollback. A first-time reader without such a revision establishes only that the snapshot was written by someone holding the shared key. `status --remote` verifies the manifest locally and reports its revision, authentication status and file count. An empty or deleted workspace with no encrypted manifest reports `authenticated: false`. A key holder can create a valid manifest. Client compromise, access-pattern privacy and individual author signatures are outside this protocol. [HKDF](https://www.rfc-editor.org/rfc/rfc5869) · [GCM](https://csrc.nist.gov/pubs/sp/800/38/d/final)
+
+The 128 MiB snapshot limit includes the sealed manifest and encryption overhead. Up to 20,000 artifacts are supported, with one additional manifest. The existing 24 MiB file limit applies to plaintext artifacts and to the encoded manifest before encryption. Exceeding any bound fails the push. The client records the credential variable names and a key binding in enrollment state. Pending artifact bytes and the cursor manifest are encrypted on disk. A client-only authentication tag covers the full pending request. If local queue bytes change, the client rejects the retry before contacting the receiver.
+
+Changing either scope or key requires a new enrollment. To rotate after a device loses access, provision a new workspace ID, encryption key and scoped bearer credentials, publish a fresh snapshot, revoke the old credentials and apply your retention policy to the old workspace. A holder of a previous key may retain already decrypted files and decrypt copies of ciphertext they retained. Remote deletion clears active contents and receipts. Operators separately expire old database copies, WAL archives, volume snapshots and replicas according to policy.
+
+##### Verify a deployment
+
+Use disposable tenants and synthetic files. Publish a known text fixture and binary artifact, transfer the resulting revision to a separate reader, and verify the local content digests. Confirm a credential scoped to another tenant cannot read this workspace even when both tenants use the same workspace ID. Disconnect a writer after the server stores a revision, then retry the push and check it reports the same revision. Delete the sandbox as an administrator and verify the old writer's queued parent revision is rejected.
+
+For backup acceptance, use SQLite's online backup API or the SQLite shell's `.backup` command to a new owner-only file on the operator's private volume. Restore it into a fresh private data directory on a separate loopback instance. Verify a known saved revision and file digest with the trusted client. The repository's `test/cloud_relay.test.js` runs this drill with synthetic keys and checks that a later receipt detects a stale restore. Record the production TLS configuration, recovery time, effective access policy and backup expiry for the deployment where they were observed.
+
+### Memory storage and recovery
+
+#### Learning from corrections
+
+A captured recovery starts with a command’s nonzero exit code. A later success of the identical command completes it. Cortex records the intervening target files. A file that received multiple edits supplies a second observable source. Commands whose text needed secret redaction are ineligible. A different successful command, wording in a prompt, or edits alone cannot establish a correction. The result reports the distinct signals and their sources. An explicitly recorded human correction can also propose a lesson.
+
+The first supported episode produces a private proposal. Session captures and pending lessons are isolated by checkout under `cortex-session-events-v2` and `cortex-corrections-v2` in the operating system user’s ForgeKit state directory. Neither is included in cloud workspace exports, shared memory, generated host instructions or MCP lookup. The handoff command can still carry recorded assumption markers. Historical checkout session logs remain readable for assumptions and cannot establish new corrections.
+
+Inspect the proposed wording, locations and episode count, then confirm the lesson you want to share.
+
+```sh
+forge cortex review --json
+forge cortex confirm LESSON_ID
+forge cortex why path/to/file
+```
+
+An independent second recovery on the same file and command can publish the original observation. The operator can publish sooner by confirming the proposal. If an opt-in distiller changes its meaning, the revised wording stays private until operator confirmation. This also applies if the original observation was published while the distiller ran. A reviewed replacement retains the prior claim as its parent and starts with its own approval receipt. ForgeKit reports the episode and independent confirmations separately. Showing a lesson to an agent adds no confirmation.
+
+A recovery receipt binds the target file to the host’s failed and successful tool action IDs. If either ID is unavailable, one session can support at most one recovery for that file and command. Replaying a receipt on a different day adds no evidence. When a host supplies neither action IDs nor session identity, repeating the anonymous trace has the same limitation. A session’s temporary private event log is cleared at Stop. Stale captures follow the existing session pruning window.
+
+For newly published lessons, the number of distinct confirming receipts must exceed opposing receipts for the lesson to be active. A tie with at least one contradiction places it in quarantine. A successful Git revert counts against a lesson only when the reported Git commit reverses the matching file blobs and the checkout observed the reverted version in a correction episode. Files larger than 1 MiB, linked files and unobserved versions have no automatic reversal attribution. A retracted lesson stays retired. Historical lesson claims retain their version’s original scoring and lifecycle.
+
+#### Organization access on one installation
+
+ForgeKit stores the harness memory database under the operating system user's private state directory. The checkout’s canonical path identifies its repository scope. An operator can authorize individual checkouts to read or publish to a named organization on the same installation. Organization names are case-insensitive.
+
+In the checkout that owns a verified claim, run the following commands.
+
+```sh
+forge harness memory org-grant platform write
+forge harness memory org-grants
+forge harness memory share CLAIM_ID organization --organization platform
+```
+
+In a second checkout, grant read access and select the organization for the query.
+
+```sh
+forge harness memory org-grant platform read
+forge harness memory recall "deployment window" --organization platform
+forge harness memory history SHARED_ITEM_ID --organization platform
+forge harness memory org-revoke platform
+```
+
+A write grant includes read access. Changing a grant to `read` immediately removes permission to publish. Revocation takes effect on the next database transaction, including for callers with an existing store handle. Read permission requires both a current grant and an explicitly selected organization. Recall first searches the checkout's eligible facts. When these have no matches, it searches the selected shared scopes.
+
+The publisher chooses each active L3 item to share. Publication copies the verified assertion and its evidence reference. The source checkout retains the underlying receipt. If the source evidence is contradicted, previously shared copies are flagged for review. Personal and team memory have separate namespaces. The MCP tool registry exposes no organization grant or share operation. Cloud workspace exports contain that workspace's records and exclude organization grants and shared copies. A user with full shell access to private state already controls the local account. These grants implement local checkout sharing. Cross-device identity and directory federation require a separate authority.
+
+#### Upgrading older lessons and recall files
+
+Portable repository facts and Cortex lessons use the content-addressed ledger at `.forge/ledger`. Personal recall uses the ledger inside the user's private recall directory. `MEMORY.md` and `AGENTS.brain.md` are derived indexes. Source files from early versions may still contain lessons or facts missing from the ledger.
+
+```sh
+forge ledger migrate --json
+forge ledger migrate --personal --json
+```
+
+The first command captures `.forge/lessons/*.md` and `.forge/brain/facts/*.md`. The second captures `facts/*.md` in the private recall store. Historical `episodes.jsonl` files remain available for inspection. New Cortex captures and provisional observations live in private checkout-scoped user state. `forge ledger import` invokes the same migration. The former `FORGE_LEDGER_ONLY` setting has no effect on live reads or writes.
+
+Each result includes the snapshot ID, source file count, imported lesson, fact and outcome counts, number of previously tracked entries retained, and verification result. A SHA-256 digest covers the paths and exact source bytes, including line endings. Backups and migration receipts reside outside the checkout under `ledger-migrations-v1` in private user state. Treat this directory as part of a device backup.
+
+An existing ledger fact or lesson with the same logical name takes precedence. Archived and retracted claims retain their disposition. For a new historical lesson the importer carries its episode references, expands confirmation counts at the last confirmation day and contradiction counts at the creation day, and records a historical retirement. Earlier file formats retained aggregate counts instead of per-event dates. Repeating a completed migration adds no evidence. An interrupted import can fill in missing records from its original bytes. Concurrent migration commands serialize on the selected scope. If an interrupted process leaves a lock, the command reports its path. Check that the recorded process has exited before removing that specific lock.
+
+The importer rejects malformed lessons, credential-shaped content, linked source files, oversize records and unsafe paths. Its input limits are 1 MiB per file, 32 MiB of source bytes per snapshot, 10,000 files and 10,000 historical outcomes. Correct the reported source and retry. Changing eligible source bytes produces a new snapshot ID. The original files remain available for inspection.
+
+#### Restoring original files
+
+Run from the checkout that made the backup. Personal backups are accessible across checkouts under the same private installation.
+
+```sh
+forge ledger restore-legacy ../restored-forgekit
+forge ledger restore-legacy ../earlier-copy --snapshot SNAPSHOT_ID
+forge ledger restore-legacy ../restored-recall --personal
+```
+
+Choose a new destination directory under an existing parent. Restore verifies the manifest before writing, then checks each output digest against the saved source. The restored tree preserves the original paths and bytes. It contains historical files as of the selected migration. Recent ledger-only activity is available through the ledger's export and synchronization commands.
+
+#### Ranking ledger queries
+
+The CLI, MCP, dashboard search and similar-task lookup rank live claims with `empirical-midranks-v2`. `forge ledger query "payments" --json` reports the ranking version and similarity backend. Inputs are query similarity, overlap with recorded scope names, recency of a confirmation or mint, and the ledger's evidence-based validity. ForgeKit uses one similarity backend per query.
+
+For each input that varies across the candidates, its percentile equals the number of lower values plus half the number of equal values, divided by the candidate count. ForgeKit averages these percentiles and multiplies by the larger of text similarity and scope overlap. When all inputs tie, the measured match alone sets the score. Exact ties use the content address. Four sorts cost O(n log n) after measuring the candidates. The score is specific to the query's candidate set. `retrieve` accepts `ranking: "eq3-v1"` for reproducing older numerical results.
+
+Harness recall ranks its local FTS5 and evidence graph candidates separately. It averages tie-aware percentiles for BM25 relevance, the number of connected lexical matches, recorded verification level, timestamp, and the posterior success rate of completed uses. For `p` passed checks in `n` completed uses, the estimated rate is `(p+1)/(n+2)`, the posterior mean under a uniform beta prior. `observedOutcomes` reports the actual passed and failed counts. Earlier SQLite files can reconstruct these counts from the same recorded use edges and receipts.
+
+### Stable automation contracts
+
+Automation can depend on the v1 CLI envelopes and the v1 context packet consumer. An incompatible change to one of these formats requires a new version selector. Consumers should ignore unfamiliar fields. Individual command payloads retain their own schemas. A provider's catalog, a measured quality band and the text that a human sees can change with the evidence.
+
+#### Read one command result
+
+```sh
+forge --output=json-v1 verify --json
+forge --output=json-v1 models --json
+forge --output=json-v1 verify triage --json
+```
+
+The global option goes before the command. The command receives its normal arguments, working directory, environment and standard input. Its exit status reaches the caller. Each envelope contains `schemaVersion`, `command`, `exitCode`, `signal`, `complete`, `stdout` and `stderr`. Each stream reports its byte length and truncation flag. A stream with a complete JSON value uses `kind=json` and a parsed `value`. Other UTF-8 output uses `kind=text` and a string. Binary output uses `kind=binary` and `base64`. Each stream keeps its first 8 MiB in this mode. A truncated response sets `complete=false`. Check the exit code, completeness and the command's own verdict before acting on a verification result.
+
+For larger outputs or a running process, use `forge --output=jsonl-v1 <command>`. Each line identifies the schema version and command. The first event is `started`. Intermediate `stdout` and `stderr` events carry base64 bytes in stream order. Decode and join chunks separately for each stream. The final `exit` reports `exitCode` and `signal`. When a host expects MCP stdio or hook JSON, invoke its native command with the transport specified by that host.
+
+#### Count and reconstruct context
+
+```sh
+forge context "Review the invoice parser" --budget 1200 --packet --json
+forge context "Review the invoice parser" --budget 1200 --encoding cl100k_base --packet --json
+```
+
+The default counts the exact UTF-8 bytes of the assembled block. This is an upper bound for byte-level tokenizers. For an exact supported encoding, install `js-tiktoken` in a trusted location outside the target checkout on ForgeKit's Node module search path. Select the encoding used by your deployment. The renderer counts the joined block including separators, Unicode and ordinary text that resembles special tokens. The budget excludes host instructions, tools, chat wrappers and other provider-added input.
+
+Import `contextCounter` and `applyContextPacket` from `@codewithjuber/forgekit/context-packet`. When a packet names an encoding, obtain the same encoder with `contextCounter(name, workspacePath)` and pass it as the third argument to `applyContextPacket(packet, priorSnapshot, counter)`. A digest binds the encoder identity, package version, chunk order and context manifest. Retain the validated snapshot before acknowledging it. A missing base requires a full packet. Old v1 manifests keep their original counting convention for reconstruction.
+
+#### Inspect verification history
+
+`forge verify triage --json` reports repeated counted suite outcomes from locally authenticated events for this checkout. Runs match on the verifier version, head, measured working-tree bytes, recorded environment, suite command, directory and coverage. A pass and failure in one group produce `inconsistent` and both run IDs. One run produces `one-observation`. Identifying the root cause still requires reading the failures. The latest verification verdict and commit decision continue to use the actual run result. An environment digest covers the recorded attributes of the verifier. Clocks, external services and ignored dependencies can still vary.
+
+The contract tests exercise the normal CLI, earlier packet formats, wrong encoders, missing bases, tampered content, distinct working trees and mixed suite outcomes. The experimental host adapters and hosted deployment settings have separate acceptance records. [Host evidence](INTEGRATIONS.md)
+
+### When to use multiple agents
+
+The lead owns edits and verifies the combined result. Select `--review` for one independent reviewer or use a JSON brief to name each read-only assignment, its file scope, acceptance criterion and dependencies. Without a selection the plan keeps the work with the lead. Prompt wording cannot authorize additional workers.
+
+```sh
+forge team "Review the retry change" --review --handoff generic --json
+forge team "Trace the retry change" --brief streams.json --json
+forge team "Trace the retry change" --brief streams.json --run claude --budget-usd 0.20 --max-workers 2 --json
+```
+
+The first two commands generate local handoffs or plans. The scheduler releases ready work up to the configured concurrency ceiling. It uses previous durations or explicit estimates to prioritize the longest dependency chain. If durations are incomplete, the longest chain of remaining tasks gets priority. A failure blocks dependent work and leaves independent findings available. Scoped briefs include the selected paths and bounded, redacted source excerpts from ordinary workspace files. A directory scope can supply indexed symbol locations within that directory. [Breakdown example and scheduling details](DEVELOPMENT-GATES.md#decide-when-to-split-a-task) · [ForgeKit orchestration](ORCHESTRATION.md)
+
+The third command sends the scoped briefs to the configured provider using Claude Code. The executor checks host capabilities before launching. Scoped workers run in temporary directories with built-in tools disabled. The explicitly selected project-wide `--review` role runs in the worktree with Read, Grep and Glob. The host runs in bare, restricted mode with strict MCP configuration and session persistence disabled. Choose `--model MODEL_ID` for an explicit native model or let the selected provider or CLI supply its default. Each receipt distinguishes the requested model and the model IDs the provider reported. To preview timing for a particular route, pass `--handoff claude --model MODEL_ID` or supply `host` and `model` to the MCP planner. A host-neutral plan uses operator estimates when it lacks host-specific observations. The executor divides the total dollar cap across all assignments in whole cents. The host enforces its own estimate and its actual charge can exceed it. A missing cost stays unknown. Kimi and Codex launches require `--host-billing` and support a time limit. [Claude CLI options](https://code.claude.com/docs/en/cli-reference)
+
+#### Select tests from measured dependencies
+
+`forge test-select --json` keeps the ordinary full suite when a change has no complete,
+current dependency observation. It can select a smaller set even for a schema, template or
+file consumed across language boundaries. From every changed path, it walks dependency
+edges backwards to all discovered test files. A visited set handles cycles in time
+proportional to the nodes and edges. A path which reaches no test, one unresolved input,
+or a change to the checkout or runner environment invalidates the reduction.
+
+A trusted test or build pipeline supplies the full test inventory, input graph and identity
+of its execution environment. For runtime traces, include all inputs that can alter test
+discovery or execution, including configs, test fixtures, conditional loads and child
+processes. A passing sample or aggregate line-coverage report alone cannot establish that.
+Record unresolved inputs in the observation whenever the producer cannot close the graph.
+
+1. On the checkout where tests will run, set `FORGE_TEST_ENVIRONMENT` to the protected
+   pipeline's environment identity. For example, use the immutable image digest plus a
+   digest of the relevant run configuration. Ensure it changes when tools, installed
+   dependencies, services or inputs outside Git change. Run
+   `forge test-select --state --json` before and after collecting dependencies. Publish the
+   `checkout` object only when both observations match.
+2. Save the producer's JSON outside the repository. The example below shows the field
+   names. Replace the empty `checkout` with the state from step 1 and supply the runner's
+   actual discovered tests and dependencies.
+
+```json
+{
+  "schemaVersion": 1,
+  "producer": "CI test-discovery and dependency collector",
+  "runner": "node:test",
+  "checkout": {},
+  "complete": true,
+  "unresolved": [],
+  "tests": ["test/invoice.mjs", "test/search.mjs"],
+  "dependencies": [
+    ["test/invoice.mjs", "workers/price.py"],
+    ["workers/price.py", "schemas/rate.json"],
+    ["test/search.mjs", "src/search.ts"]
+  ]
+}
+```
+
+Each pair is a consumer followed by its dependency. The optional `lcov` string accepts
+per-test LCOV records with a discovered repository-relative test path in `TN`, a
+repository-relative source path in `SF`, `DA` line-hit counts and `end_of_record`.
+Positive hits add edges to the producer's graph. Inputs and test entry points must be
+tracked, regular files. ForgeKit binds the receipt to Git HEAD, index records, working file
+bytes, non-ignored untracked input, OS, architecture, Node version and the declared
+environment identity. Merge conflicts, submodules and oversized snapshots use full verification.
+The producer is responsible for its test-discovery and completeness claims.
+
+```sh
+forge test-select --evidence /protected/test-dependencies.json --changed schemas/rate.json --json
+forge test-select --register /protected/test-dependencies.json
+forge test-select --base origin/main --head HEAD --json
+```
+
+The first command would select `test/invoice.mjs` for the complete example graph. The
+second stores the observation privately for the checkout. A ref range includes pending
+worktree changes because the runner will see those bytes. Each Linux CI matrix member
+rechecks the evidence under its own Node version. With no enrolled observation, CI runs
+the full suite. The Windows job runs the full suite.
+
+`forge develop --mode focused|repair|standard` selects the planning workflow. A focused
+plan still uses the same verification scope. A recorded failing verification can select the
+repair workflow. Task wording alone supplies no evidence about test coverage.
 
 ### Run the paired pilot locally
 

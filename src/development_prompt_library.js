@@ -77,7 +77,7 @@ export const rolePrompts = [
     id: "orchestrator",
     title: "Orchestrator",
     prompt:
-      "Use one lead. Delegate only independently checkable subtasks with explicit ownership, boundaries and budget. Cap the team at the smaller of four and the project limit. Reconcile conflicting evidence, rerun critical checks and compare actual cost and duration with the single-agent estimate.",
+      "Use one lead. Delegate only independently checkable subtasks with explicit ownership, boundaries and budget. Queue ready work within the operator’s and workspace’s concurrency limits. Reconcile conflicting evidence, rerun critical checks and compare actual cost and duration with the single-agent estimate.",
     proof:
       "Each assignment has an owner, an output and a check. The lead records the verified result and unresolved disagreements.",
   },

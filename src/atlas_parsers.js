@@ -26,12 +26,12 @@ export function createAtlasParsers(root) {
       let bin, args, provider;
       if (kind === "typescript") {
         const custom = process.env.FORGE_TYPESCRIPT_PATH;
-        if (
-          custom &&
-          (!isAbsolute(custom) || containsPath(realpathSync(root), realpathSync(custom)))
-        )
+        if (custom && !isAbsolute(custom)) throw new Error("Choose an absolute compiler path");
+        provider = realpathSync.native(
+          custom || file("../node_modules/typescript/lib/typescript.js"),
+        );
+        if (containsPath(realpathSync.native(root), provider))
           throw new Error("Choose a compiler installed outside the indexed workspace");
-        provider = realpathSync(custom || file("../node_modules/typescript/lib/typescript.js"));
         bin = process.execPath;
         args = ["--max-old-space-size=192", file("./atlas_typescript_worker.mjs"), provider];
       } else {
@@ -51,6 +51,11 @@ export function createAtlasParsers(root) {
       // The build records the unavailable provider on every affected source.
     }
   }
+  // Whole-program symbols depend on every module, including cached syntax rows.
+  // Release the snapshot as soon as the compiler budget is exceeded.
+  const inputs = [];
+  let size = 0;
+  let limited = false;
   function flush(kind) {
     const r = runners.get(kind);
     if (!r?.batch.length) return;
@@ -96,6 +101,49 @@ export function createAtlasParsers(root) {
       if (r.bytes + bytes > maxBatch || r.batch.length >= 48) flush(kind);
       r.batch.push({ file: path, text, receive });
       r.bytes += bytes;
+    },
+    observe(path, text) {
+      if (limited || !runners.has("typescript")) return;
+      size += Buffer.byteLength(text);
+      if (size > maxBatch || inputs.length >= 512) {
+        limited = true;
+        inputs.length = 0;
+      } else inputs.push({ file: path, text });
+    },
+    compiler(aliases) {
+      const r = runners.get("typescript");
+      if (!r || limited || !inputs.length)
+        return {
+          status: "unavailable",
+          reason: limited
+            ? "compiler-input-limit"
+            : !r
+              ? "compiler-unavailable"
+              : "no-compiler-input",
+        };
+      const result = spawnSync(r.bin, [r.args[0], file("./atlas_semantic_worker.mjs"), r.args[2]], {
+        env,
+        input: JSON.stringify({ files: inputs, aliases }),
+        encoding: "utf8",
+        timeout: 10000,
+        killSignal: "SIGKILL",
+        maxBuffer: 12 * 1024 * 1024,
+      });
+      if (result.status === 0) {
+        try {
+          const answer = JSON.parse(result.stdout);
+          if (Array.isArray(answer.sites)) return { status: "available", ...answer };
+        } catch {
+          /* failed or truncated output */
+        }
+      }
+      return {
+        status: "unavailable",
+        reason:
+          /** @type {NodeJS.ErrnoException} */ (result.error)?.code === "ETIMEDOUT"
+            ? "compiler-timeout"
+            : "compiler-worker-failed",
+      };
     },
     finish() {
       for (const kind of runners.keys()) flush(kind);

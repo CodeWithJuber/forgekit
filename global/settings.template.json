@@ -163,6 +163,21 @@
         ]
       },
       {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "~/.forge/guards/run.mjs",
+              "--event",
+              "PreToolUse",
+              "~/.forge/guards/pre-edit-impact.sh"
+            ]
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
         "hooks": [
           {

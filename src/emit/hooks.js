@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { BRAND } from "../brand.js";
 import { projectForgeLauncher } from "../forge_launcher.js";
 import { HOSTS, isForgeHookCommand, kimiPluginEnabled, render, userLevelWired } from "../hosts.js";
+import { KNOWN_TOOLS } from "../repo_config.js";
 import { readJsonSafe } from "../util.js";
 import { writeAtomicIfChanged } from "./_shared.js";
 import { applyPlugin, planPlugin } from "./opencode.js";
@@ -328,6 +329,23 @@ export function reconcileProjectHooks(
   }
 }
 
+/** @param {{events: Record<string, {as:string,tool?:string,mcpOnly?:boolean}>} | undefined} adapter */
+function beforeEditEvents(adapter) {
+  return Object.entries(adapter?.events ?? {})
+    .filter(([, spec]) => spec.as === "PreToolUse" && !spec.tool && !spec.mcpOnly)
+    .map(([name]) => name);
+}
+
+/** The plain editor may select an agent through a separate integration. Only a documented
+ * native callback for this host, or its explicitly inherited adapter, counts here. */
+export function toolsWithoutEditCallbacks(tools) {
+  return (tools ?? KNOWN_TOOLS).filter((tool) => {
+    const adapter =
+      HOSTS[tool] ?? Object.values(HOSTS).find((host) => host.via && host.tool === tool);
+    return !beforeEditEvents(adapter).length;
+  });
+}
+
 /**
  * Where each host stands in this repository: `on` (the file holds exactly what forge would
  * write), `stale` (it holds forge entries, but not today's), `off`, or `via <host>` for an
@@ -387,11 +405,22 @@ export function hooksStatus(root, { config = {}, home } = {}) {
       note: host.trust,
     };
   });
+  const editCallbacks = hosts.map((row) => ({
+    host: row.host,
+    configuration: row.state,
+    events: beforeEditEvents(HOSTS[row.host]),
+  }));
   return {
     enabled: config?.hooks?.project === true,
     bootstrap,
     userLevel: userLevelWired(home ? { home } : {}),
     hosts,
+    edits: {
+      callbacks: editCallbacks,
+      withoutCallbacks: toolsWithoutEditCallbacks(KNOWN_TOOLS),
+      commit: `${BRAND.cli} harden --require-verified`,
+      ci: `${BRAND.cli} verify --json`,
+    },
   };
 }
 

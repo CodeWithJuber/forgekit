@@ -11,8 +11,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { tokensOf } from "./context.js";
 import { canonicalize } from "./ledger.js";
+import { byteCounter, packetCounter } from "./token_count.js";
 import { contentHash } from "./util.js";
 import { privateWorkspaceFile } from "./workspace_preference.js";
 
@@ -71,8 +71,10 @@ function remember(dir, revision, m) {
 }
 
 /** Assemble with includeSegments:true. Acknowledgements are meaningful only for a retaining client. */
-export function createContextPacket(root, task, result, ack = undefined) {
+export function createContextPacket(root, task, result, ack = undefined, counter = byteCounter) {
   const { block, segments, ...context } = result;
+  if (!context.tokenizer && !String(context.tokenEstimate ?? "").startsWith("chars/3.6"))
+    context.tokenizer = counter.descriptor;
   if (
     !Array.isArray(segments) ||
     !segments.every((s) => typeof s === "string") ||
@@ -82,11 +84,15 @@ export function createContextPacket(root, task, result, ack = undefined) {
   if (
     !Number.isSafeInteger(context.budget) ||
     context.budget < 0 ||
-    tokensOf(block) !== context.tokens ||
+    packetCounter(context, counter)(block) !== context.tokens ||
     context.tokens > context.budget
   )
     throw new Error("Context exceeds its declared budget or token count");
-  const scope = digest([realpathSync.native(root), task]);
+  const scope = digest(
+    context.tokenizer
+      ? [realpathSync.native(root), task, context.tokenizer]
+      : [realpathSync.native(root), task],
+  );
   const order = segments.map(contentHash);
   const chunks = Object.fromEntries(order.map((id, i) => [id, segments[i]]));
   const m = manifest(scope, context, order);
@@ -135,7 +141,7 @@ export function createContextPacket(root, task, result, ack = undefined) {
 }
 
 /** Consumer API: verify the exact base and every retained or delivered chunk before acknowledging. */
-export function applyContextPacket(packet, retained = undefined) {
+export function applyContextPacket(packet, retained = undefined, counter = byteCounter) {
   const { scope, version, mode, revision, context, order, chunks } = packet;
   if (
     version !== 1 ||
@@ -157,7 +163,7 @@ export function applyContextPacket(packet, retained = undefined) {
   if (mode === "delta") {
     if (retained?.mode !== "full" || retained.scope !== scope || retained.revision !== packet.base)
       throw new Error("Missing acknowledged base; request a full packet");
-    const base = applyContextPacket(retained);
+    const base = applyContextPacket(retained, undefined, counter);
     available = new Map(Object.entries(base.snapshot.chunks));
     const kept = new Set(order);
     const removed = [...available.keys()].filter((id) => !kept.has(id)).sort();
@@ -177,7 +183,7 @@ export function applyContextPacket(packet, retained = undefined) {
     return available.get(id);
   });
   const block = parts.join("\n\n");
-  if (tokensOf(block) !== context.tokens || context.tokens > context.budget)
+  if (packetCounter(context, counter)(block) !== context.tokens || context.tokens > context.budget)
     throw new Error("Reconstructed context exceeds its declared budget or token count");
   // A single validated snapshot suffices for the next acknowledgement, even after many deltas.
   const snapshot = {
@@ -192,3 +198,5 @@ export function applyContextPacket(packet, retained = undefined) {
   };
   return { block, context, revision, snapshot };
 }
+
+export { contextCounter } from "./token_count.js";
