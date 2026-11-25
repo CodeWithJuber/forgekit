@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
+import { createHook } from "node:async_hooks";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { linkSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { defaultHarnessRouting } from "../src/harness_router.js";
 import { selectHarnessRoute } from "../src/harness_runtime.js";
 import { buildHttpRunner } from "../src/llm.js";
+import { readModelCalls, recordModelCall } from "../src/model_call_evidence.js";
 import { inventoryRoute, modelInventory, workloadRatings } from "../src/model_inventory.js";
 import { modelScope } from "../src/model_scope.js";
 import { activeProvider, addProvider, setProfileModel } from "../src/providers.js";
@@ -92,14 +95,24 @@ test("private model cache identifiers bind the installation, purpose and account
   const root = repo(t);
   const state = repo(t);
   env(t, { FORGE_HOME: state });
+  let derivations = 0;
+  const hook = createHook({
+    init(_id, type) {
+      if (type === "SCRYPTREQUEST") derivations++;
+    },
+  }).enable();
+  t.after(() => hook.disable());
   const fields = ["fixture-provider"];
   const id = modelScope(root, "inventory", fields, "fixture-account");
   assert.match(id, /^[a-f0-9]{64}$/);
   assert.equal(modelScope(root, "inventory", fields, "fixture-account"), id);
   assert.notEqual(modelScope(root, "model-call", fields, "fixture-account"), id);
+  assert.equal(derivations, 1);
   assert.notEqual(modelScope(root, "inventory", fields, "rotated"), id);
+  assert.equal(derivations, 2);
   process.env.FORGE_HOME = repo(t);
   assert.notEqual(modelScope(root, "inventory", fields, "fixture-account"), id);
+  assert.equal(derivations, 3);
   writeFileSync(join(process.env.FORGE_HOME, "model-scope.key"), "invalid");
   assert.equal(modelScope(root, "inventory", fields), null);
 });
@@ -323,6 +336,15 @@ test("bands require separated scores on the same verified first-attempt workload
   );
   assert.equal(r.get("a").n, 100);
   assert.equal(r.get("a").score, 0);
+  const pair = workloadRatings(
+    rows.filter((r) => r.model === "a" || r.model === "c"),
+    "repair",
+  );
+  assert.deepEqual(
+    [...pair.values()].map((rating) => rating.band),
+    ["unrated", "unrated"],
+  );
+  assert.ok(pair.get("a").high < pair.get("c").low);
   assert.equal(workloadRatings(rows).size, 0);
   assert.equal(workloadRatings(rows.slice(0, 3), "repair").get("a").band, "unrated");
 });
@@ -448,4 +470,25 @@ test("harness selection intersects exact ID, operator provider binding, and rout
     /one configured/,
   );
   assert.equal(selectHarnessRoute(root, routing), null);
+});
+
+test("a damaged, oversized or multiply linked call record leaves unrelated model evidence available", (t) => {
+  const root = repo(t),
+    state = repo(t);
+  env(t, { FORGE_HOME: state });
+  const profile = { name: "fixture", baseUrl: "https://example.invalid", type: "openai" };
+  const models = ["ordinary", "linked", "large", "damaged"];
+  for (const sent of models)
+    recordModelCall(root, profile, "", { sent, at: 10, status: "success", latencyMs: 1 });
+  const nameFor = (id) => createHash("sha256").update(id).digest("hex") + ".json";
+  const files = readdirSync(state, { recursive: true }).map(String);
+  const pathFor = (id) =>
+    join(
+      state,
+      files.find((path) => path.endsWith(nameFor(id))),
+    );
+  linkSync(pathFor("linked"), join(state, "extra-link"));
+  writeFileSync(pathFor("large"), " ".repeat(2050));
+  writeFileSync(pathFor("damaged"), "{");
+  assert.deepEqual([...readModelCalls(root, profile, "").keys()], ["ordinary"]);
 });

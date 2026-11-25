@@ -74,6 +74,8 @@ test("each callback dialect binds a named file edit to an actual review", async 
       tool_name: "Write",
       tool_input: { file_path: "note.md", content: "hello" },
     };
+    const anonymous = await send(host, event[0], { ...body, session_id: "" });
+    assert.match(anonymous.stdout + anonymous.stderr, /stable session ID/, host);
     const first = await send(host, event[0], body);
     const id = requestId(first);
     assert.ok(id, `${host}: ${JSON.stringify(first)}`);
@@ -136,7 +138,7 @@ test("one CLI review covers all moved/added paths; a changed operation, checkout
   );
 });
 
-test("a fresh nongit workspace and an unidentified session receive conservative scope", async (t) => {
+test("a new workspace gets full scope and required review rejects unidentified edits", async (t) => {
   const { root } = fixture(t);
   rmSync(join(root, ".git"), { recursive: true });
   const paths = ["new.txt"];
@@ -144,10 +146,12 @@ test("a fresh nongit workspace and an unidentified session receive conservative 
   const first = await checkPreEdit({ cwd: root, paths, intent, session: "new" });
   const review = await reviewPreEdit(root, first.id);
   assert.equal(review.plan.fullSuite, true);
-  const once = await checkPreEdit({ cwd: root, paths, intent });
-  assert.equal(once.allow, true);
-  assert.ok(once.plan.fullSuite);
-  assert.equal(once.id, undefined);
+  for (const session of [undefined, "", " \t "]) {
+    const once = await checkPreEdit({ cwd: root, paths, intent, session });
+    assert.equal(once.allow, false);
+    assert.match(once.reason, /stable session ID/);
+    assert.equal(once.id, undefined);
+  }
 });
 
 test("strict precommit requires a counted PASS linked to the actual staged tree", (t) => {
@@ -174,6 +178,13 @@ test("strict precommit requires a counted PASS linked to the actual staged tree"
   assert.match(hook, /precommit --require-verified/);
   assert.match(hook, /command -v node .*exit 1/);
   harden({ targetRoot: root });
+  assert.equal(
+    check().allow,
+    false,
+    "the newly created local sandbox policy is outside the staged snapshot",
+  );
+  git("add", "-f", ".forge/sandbox.json");
+  assert.ok(verify({ targetRoot: root }).provenance.indexDigest);
   assert.doesNotThrow(() => git("hook", "run", "pre-commit"));
   writeFileSync(join(root, "readme.md"), "different staged change\n");
   assert.equal(check().allow, false);
