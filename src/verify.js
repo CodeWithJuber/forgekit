@@ -32,6 +32,7 @@ import { duplicateGate } from "./duplicate_gate.js";
 import { workspaceEvidence } from "./harness_tools.js";
 import { countedGradleReports, gradleReports } from "./junit_reports.js";
 import { npmCliPath } from "./npm_runtime.js";
+import { readBounded } from "./private_paths.js";
 import { readForgeConfig } from "./repo_config.js";
 import { reporterFor } from "./runner_reports.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
@@ -100,6 +101,30 @@ function git(args, cwd) {
   }
 }
 
+// These are the files verification itself creates. The remaining untracked ForgeKit
+// inputs, including ignored config and scripts, are outside the staged snapshot.
+const verifierOutputs = new Set([
+  ".forge/atlas.json",
+  ".forge/atlas.cache.json",
+  ".forge/provenance.json",
+  ".forge/verify-events.jsonl",
+  ".forge/ledger/.state-cache.json",
+  ".forge/uicheck.json",
+]);
+
+function untrackedForgeInputs(cwd) {
+  return gitStrict(["ls-files", "--others", "--full-name", "-z", "--", ":(top).forge"], cwd)
+    .split("\0")
+    .filter((path) => {
+      if (!path) return false;
+      // Browser and end-to-end receipts are written after the check hashes the tree.
+      const sessionTrail = /^\.forge\/sessions\/[A-Za-z0-9_-]+\.trail$/.test(path);
+      if (!sessionTrail && !verifierOutputs.has(path)) return true;
+      const info = lstatSync(join(cwd, path));
+      return !info.isFile() || info.nlink !== 1;
+    });
+}
+
 /** Observe the complete staged object inventory only when Git also reports that the
  * checked-out tracked files match it. Sparse/assumed-unchanged entries cannot prove that
  * equivalence. Local build dependencies ignored by Git remain part of the test environment.
@@ -111,7 +136,11 @@ export function matchingIndex(cwd) {
       cwd,
     );
     const other = gitStrict(["ls-files", "--others", "--exclude-standard", "-z"], cwd);
-    if (other.split("\0").some((file) => file && !file.startsWith(".forge/"))) return null;
+    if (
+      other.split("\0").some((file) => file && !file.startsWith(".forge/")) ||
+      untrackedForgeInputs(cwd).length
+    )
+      return null;
     const entries = execFileSync(
       verificationGit.getStore()?.binary ?? "git",
       [...GIT_SAFE, "ls-files", "-v", "--stage", "--full-name", "-z", "--", ":/"],
@@ -130,7 +159,7 @@ export function matchingIndex(cwd) {
         return null;
       i = end + 1;
     }
-    return createHash("sha256").update(entries).digest("hex");
+    return createHash("sha256").update("forge-index/v2\0").update(entries).digest("hex");
   } catch {
     return null;
   }
@@ -148,41 +177,71 @@ export function matchingIndex(cwd) {
 // one JSON file in the project; it takes a deliberate, visible step outside the repo. Real
 // unforgeability needs a signer the agent cannot reach (CI, or a helper process holding the
 // key) — see the review's B7 note.
-function evidenceKeyPath() {
-  return join(userStateDir(), "evidence.key");
+function readEvidenceKey(path) {
+  const read = () => {
+    const text = readBounded(path, 65).bytes.toString("utf8");
+    if (!/^[a-f0-9]{64}\n?$/.test(text)) throw new Error("Invalid verification key");
+    return text.trimEnd();
+  };
+  try {
+    return read();
+  } catch (error) {
+    if (error.code !== "EMLINK") throw error;
+    // link() may have succeeded just before the publishing process exited. Remove
+    // only its UUID-named sibling pointing at this exact inode. An unrelated
+    // hard link still prevents readBounded from accepting the key.
+    const published = lstatSync(path, { bigint: true });
+    for (const name of readdirSync(dirname(path))) {
+      if (!/^evidence\.key\.[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(name)) continue;
+      const temp = join(dirname(path), name);
+      const info = lstatSync(temp, { bigint: true, throwIfNoEntry: false });
+      if (
+        info?.isFile() &&
+        info.ino !== 0n &&
+        info.dev === published.dev &&
+        info.ino === published.ino
+      )
+        rmSync(temp, { force: true });
+    }
+    return read();
+  }
 }
 
-/**
- * The machine-local evidence key, created on first use. `null` only when the state dir is
- * unwritable AND no key exists — callers then degrade to unsigned evidence rather than
- * bricking the gate (a missing key cannot be an agent's doing: the gate creates it too).
+/** Load or exclusively publish the installation's signing key. Unsupported filesystems or
+ * unsafe existing files leave signing unavailable. Existing keys are never replaced.
  * @returns {string|null}
  */
 export function evidenceKey() {
-  const p = evidenceKeyPath();
+  const dir = userStateDir();
+  let temp;
   try {
-    const k = readFileSync(p, "utf8").trim();
-    if (k) return k;
-  } catch {}
-  const temp = `${p}.${randomUUID()}`;
-  try {
-    mkdirSync(dirname(p), { recursive: true, mode: 0o700 });
-    const k = randomBytes(32).toString("hex");
-    writeFileSync(temp, `${k}\n`, { flag: "wx", mode: 0o600 });
-    // Publish one complete key even when multiple first-time verification processes race.
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const path = join(realpathSync.native(dir), "evidence.key");
     try {
-      linkSync(temp, p);
-      return k;
+      return readEvidenceKey(path);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    const file = path + "." + randomUUID();
+    const key = randomBytes(32).toString("hex");
+    const fd = openSync(file, "wx", 0o600);
+    temp = file;
+    try {
+      writeFileSync(fd, key + "\n");
+    } finally {
+      closeSync(fd);
+    }
+    try {
+      linkSync(file, path);
+      return key;
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
-      return readFileSync(p, "utf8").trim() || null;
+      return readEvidenceKey(path);
     }
   } catch {
     return null;
   } finally {
-    try {
-      rmSync(temp, { force: true });
-    } catch {}
+    if (temp) rmSync(temp, { force: true });
   }
 }
 
@@ -344,8 +403,8 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
  *  hash concatenated untracked files' bytes with no path and no boundary, so renaming an
  *  untracked file, or moving bytes from one file to the next, kept the same hash. v3 (review
  *  N05): nested repositories and submodules are bound by their own code state, and declared
- *  `verify.external` paths are part of the hashed policy. */
-export const CODE_STATE_SCHEME = "manifest-v3";
+ *  `verify.external` paths are part of the hashed policy. v4 binds local ForgeKit inputs. */
+export const CODE_STATE_SCHEME = "manifest-v4";
 
 /**
  * The per-repo `verify` settings from `.forge/forge.config.json` (`verify` key), validated:
@@ -580,17 +639,16 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
     ].map((g) => `:(top,exclude,glob)${g}`);
     const trackedSpec = excludes.length ? ["--", ":/", ...excludes] : [];
     const untrackedSpec = excludes.length ? ["--", ".", ...excludes] : [];
-    // Exclude forge's OWN state dir: writing provenance.json / session files must never
-    // perturb the fingerprint the stamp is bound to (self-reference), and it's ignored in
-    // real repos anyway — this keeps the hash stable even if a user forgot to gitignore it.
+    // Only verifier outputs are self-referential. Bind local ForgeKit inputs even if
+    // the checkout ignores its entire .forge directory.
     // A nested repository's untracked files are read with its COMMITTED .gitignore files
     // only — never its private `.git/info/exclude` or a global excludes file, which would
     // silently hide its code from the outer proof (review N05 round 2).
     const ignore = depth > 0 ? ["--exclude-per-directory=.gitignore"] : ["--exclude-standard"];
-    const untracked = gitStrict(["ls-files", "--others", ...ignore, "-z", ...untrackedSpec], cwd)
+    const ordinary = gitStrict(["ls-files", "--others", ...ignore, "-z", ...untrackedSpec], cwd)
       .split("\0")
-      .filter((f) => f && !f.startsWith(".forge/"))
-      .sort();
+      .filter((f) => f && f !== ".forge" && !f.startsWith(".forge/"));
+    const untracked = [...ordinary, ...untrackedForgeInputs(cwd)].sort();
     const h = createHash("sha256");
     // Every section is length-prefixed: no section's bytes can masquerade as another's.
     const section = (name, data) => {

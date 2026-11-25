@@ -639,7 +639,7 @@ flowchart LR
   bench["bench<br/>6 files"]
   examples["examples<br/>2 files"]
   docs["docs<br/>1 file"]
-  test -- 543 --> src
+  test -- 545 --> src
   scripts -- 15 --> src
   bench -- 12 --> src
   test -- 8 --> global

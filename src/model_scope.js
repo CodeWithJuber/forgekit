@@ -18,6 +18,25 @@ import { outsideWorkspace } from "./private_paths.js";
 import { userStateDir } from "./util.js";
 
 const processKey = randomBytes(32);
+const accountKeys = new Map();
+
+function accountKeyFor(key, credential) {
+  if (!credential) return key;
+  // The fixed-length installation key distinguishes salt rotations. The process
+  // secret keeps plaintext credentials and offline guessable cache keys out of the Map.
+  const id = createHmac("sha256", processKey).update(key).update(credential).digest("hex");
+  let accountKey = accountKeys.get(id);
+  if (!accountKey) {
+    accountKey = scryptSync(credential, key, 32, {
+      N: 32768,
+      r: 8,
+      p: 3,
+      maxmem: 64 * 1024 * 1024,
+    });
+    accountKeys.set(id, accountKey);
+  }
+  return accountKey;
+}
 
 function readKey(path) {
   if (!lstatSync(path).isFile()) throw new Error("Invalid model cache key");
@@ -79,10 +98,7 @@ export function modelScope(root, purpose, fields, credential = "") {
   }
   // A custom provider can use a short, human-chosen credential. Scrypt also
   // protects its cache identifiers if both the private salt and names are copied.
-  const accountKey = credential
-    ? scryptSync(credential, key, 32, { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 })
-    : key;
-  return createHmac("sha256", accountKey)
+  return createHmac("sha256", accountKeyFor(key, credential))
     .update(JSON.stringify([purpose, fields]))
     .digest("hex");
 }

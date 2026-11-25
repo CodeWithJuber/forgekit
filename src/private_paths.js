@@ -43,13 +43,26 @@ export function outsideWorkspace(root, path, reason) {
 }
 
 export function readBounded(path, limit) {
+  const named = lstatSync(path);
+  if (!named.isFile() || realpathSync.native(path) !== path)
+    throw new Error("Verification input must be a bounded regular file");
   const fd = openSync(
     path,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
   );
   try {
     const st = fstatSync(fd);
-    if (!st.isFile() || st.nlink !== 1 || st.size > limit || realpathSync.native(path) !== path)
+    if (named.nlink !== 1 || st.nlink !== 1)
+      throw Object.assign(new Error("Verification input has multiple links"), { code: "EMLINK" });
+    const unchanged = (other) =>
+      other.isFile() &&
+      other.nlink === 1 &&
+      other.dev === st.dev &&
+      other.ino === st.ino &&
+      other.size === st.size &&
+      other.ctimeMs === st.ctimeMs &&
+      other.mtimeMs === st.mtimeMs;
+    if (!unchanged(named) || st.size > limit)
       throw new Error("Verification input must be a bounded regular file");
     const bytes = Buffer.alloc(st.size);
     let pos = 0;
@@ -58,7 +71,12 @@ export function readBounded(path, limit) {
       if (!n) throw new Error("File changed during verification");
       pos += n;
     }
-    if (readSync(fd, Buffer.alloc(1), 0, 1, null))
+    if (
+      readSync(fd, Buffer.alloc(1), 0, 1, null) ||
+      !unchanged(fstatSync(fd)) ||
+      !unchanged(lstatSync(path)) ||
+      realpathSync.native(path) !== path
+    )
       throw new Error("File changed during verification");
     return { bytes, mode: st.mode & 0o111 ? 0o555 : 0o444 };
   } finally {

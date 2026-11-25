@@ -2,12 +2,20 @@
 // else's verification claim: CONFIRMED / STALE / REFUTED with evidence, no re-run
 // needed when the tree is unchanged (the MAC'd, fingerprint-bound stamp IS the evidence).
 import assert from "node:assert/strict";
-import { execFileSync, execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync, execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { linkSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { computeCodeState, signProvenance, verify, verifyClaim } from "../src/verify.js";
+import { promisify } from "node:util";
+import {
+  computeCodeState,
+  matchingIndex,
+  signProvenance,
+  verify,
+  verifyClaim,
+} from "../src/verify.js";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli.js");
 
@@ -134,4 +142,43 @@ test("a legacy signed PASS without execution counts is historical evidence", () 
   assert.ok(stamp.signature, "signed");
   const r = verifyClaim({ provenance: stamp, tests: { status: "PASS" }, ok: true }, { cwd: dir });
   assert.equal(r.verdict, "UNVERIFIABLE");
+});
+
+test("concurrent first-use signing publishes one key and cleans up every temporary file", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "forge-first-key-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const script = `import {evidenceMac} from ${JSON.stringify(new URL("../src/verify.js", import.meta.url).href)}; console.log(evidenceMac(["fixture"]));`;
+  const sign = async () =>
+    (
+      await promisify(execFile)(process.execPath, ["--input-type=module", "-e", script], {
+        env: { ...process.env, FORGE_HOME: dir },
+      })
+    ).stdout.trim();
+  const signatures = await Promise.all(Array.from({ length: 8 }, sign));
+  assert.match(signatures[0], /^[0-9a-f]{64}$/);
+  assert.equal(new Set(signatures).size, 1);
+  assert.deepEqual(readdirSync(dir), ["evidence.key"]);
+  linkSync(join(dir, "evidence.key"), join(dir, "evidence.key." + randomUUID()));
+  assert.equal(await sign(), signatures[0]);
+  assert.deepEqual(readdirSync(dir), ["evidence.key"]);
+  linkSync(join(dir, "evidence.key"), join(dir, "second-name"));
+  assert.equal(await sign(), "null");
+});
+
+test("an ignored local ForgeKit config or helper cannot supply staged verification evidence", (t) => {
+  const root = gitRepo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".gitignore"), ".forge/\n");
+  execFileSync("git", ["add", ".gitignore"], { cwd: root });
+  assert.ok(matchingIndex(root));
+  mkdirSync(join(root, ".forge"));
+  for (const name of ["forge.config.json", "helper.js"]) {
+    const file = join(root, ".forge", name);
+    const before = computeCodeState(root).dirtyHash;
+    writeFileSync(file, name.endsWith("json") ? "{}" : "export const value = 1;");
+    assert.equal(matchingIndex(root), null);
+    assert.notEqual(computeCodeState(root).dirtyHash, before);
+    rmSync(file);
+    assert.ok(matchingIndex(root));
+  }
 });

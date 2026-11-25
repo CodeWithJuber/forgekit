@@ -277,7 +277,19 @@ test("forge_remember makes a private proposal and only human approval publishes 
   const { listProposals, reviewProposal, proposeMemory } = await import(
     "../src/memory_proposals.js"
   );
-  assert.equal(listProposals(root)[0].id, id);
+  const { privateMemoryDir } = await import("../src/private_memory.js");
+  const proposals = privateMemoryDir(root, "proposals");
+  const damaged = "0".repeat(64);
+  writeFileSync(
+    join(proposals, damaged + ".json"),
+    JSON.stringify({ id: damaged, name: "ordinary", body: "text" }),
+  );
+  writeFileSync(join(proposals, "1".repeat(64) + ".json"), "{");
+  assert.deepEqual(
+    listProposals(root).map((p) => p.id),
+    [id],
+  );
+  assert.throws(() => reviewProposal(root, damaged, true), /Damaged proposal/);
   reviewProposal(root, id, true);
   assert.equal(
     loadClaims(repoLedger(root)).find((c) => c.kind === "fact")?.body.text,
