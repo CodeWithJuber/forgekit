@@ -432,7 +432,8 @@ export const COMMANDS = {
   },
   cortex: {
     summary: "inspect project memory and review privately observed corrections",
-    usage: "forge cortex status | why <symbol-or-file> | review [--json] | confirm <id> [--json]",
+    usage:
+      "forge cortex status | why <symbol-or-file> | review [--json] | confirm <lesson-id|full-claim-hash> [--json]",
     examples: ["forge cortex why src/ledger.js", "forge cortex review --json"],
   },
   deja: {
