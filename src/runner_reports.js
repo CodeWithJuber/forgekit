@@ -61,8 +61,8 @@ export function terminalReport(raw, expected = "") {
       return { kind: "node", text: nodeText.slice(header.index), reports: [] };
     }
   }
-  if (allow("jest") && /^Tests:\s+(?:\d+ \w+[, ]*)+$/.test(last))
-    return { kind: "jest", text: tail(/^Tests:\s+(?:\d+ \w+[, ]*)+$/), reports: [] };
+  if (allow("jest") && /^Tests:[ \t]*\d/.test(last) && /\b\d+ total$/.test(last))
+    return { kind: "jest", text: tail(/^Tests:[ \t]*\d/), reports: [] };
   if (allow("vitest") && /^Tests\s+.*\(\d+\)$/.test(last))
     return { kind: "vitest", text: last, reports: [] };
   if (
@@ -126,23 +126,24 @@ export function terminalReport(raw, expected = "") {
     result.total = result.pass + result.fail + result.skipped;
     return { reports: [result] };
   }
-  if (allow("bun") && /^Ran \d+ tests? across \d+ files?\b/.test(last)) {
-    const block =
-      /((?:\s*\d+ (?:pass|fail|skip|todo|expect\(\) calls)\s*\n)+)\s*Ran (\d+) tests? across/.exec(
-        text.slice(text.lastIndexOf("\n\n") + 1),
-      ) ??
-      /((?:^\s*\d+ (?:pass|fail|skip|todo|expect\(\) calls)\s*\n)+)\s*Ran (\d+) tests? across/gm.exec(
-        text,
+  const bunRun = /^Ran (\d+) tests? across \d+ files?\b/.exec(last);
+  if (allow("bun") && bunRun) {
+    const result = counts(0);
+    let observed = false;
+    for (let i = lines.length - 2; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const row = /^(\d+) (pass|fail|skip|todo|expect\(\) calls)$/.exec(line);
+      if (!row) break;
+      if (row[2] === "expect() calls") continue;
+      const key = /** @type {"pass"|"fail"|"skipped"|"todo"} */ (
+        row[2] === "skip" ? "skipped" : row[2]
       );
-    if (block) {
-      const result = counts(0);
-      for (const row of block[1].matchAll(/(\d+) (pass|fail|skip|todo)\b/g))
-        result[
-          /** @type {"pass"|"fail"|"skipped"|"todo"} */ (row[2] === "skip" ? "skipped" : row[2])
-        ] = +row[1];
-      result.total = +block[2];
-      return { reports: [result] };
+      result[key] = Number(row[1]);
+      observed = true;
     }
+    result.total = Number(bunRun[1]);
+    return { reports: observed ? [result] : [] };
   }
   if (
     allow("mvn") &&

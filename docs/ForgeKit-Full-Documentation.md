@@ -149,6 +149,8 @@ On Linux with Node 24, the repository suite passed 2,411 of 2,419 tests, with ei
 
 ### Changes after the runtime reviews
 
+Linux on Node 24 ran 2,433 tests, with 2,424 passes, nine optional skips and zero failures. Chromium passed all 16 browser checks, including the CRLF dashboard. A real two-package pnpm workspace produced two counted passes, and the strict Git hook rejected the same workspace after one test failed. An explicitly throttled loopback cloud push acknowledged its artifact after 56.9 seconds.
+
 Plain init can detect a host without installing commit verification. Explicit selection installs the fallback for clients without edit callbacks. `forge init --review-edits` separately enables impact review. It uses the installed Node launcher and a fresh saved index of code imports and calls. An unavailable index leaves the full suite required.
 
 Verification reads terminal runner reports, groups concurrent pnpm output by package, and separates a successful process with uncounted checks from a signed passing suite. Native Go can provide per-test JSON events. Gradle can provide fresh JUnit XML. MCP preflight names unchecked references and missing index coverage. Recent model calls remain visible across catalog refreshes, and the measured router compares exact decimal totals against the operator’s budget. Optional LLM review records the reason for abstaining when its model needs configuration.
