@@ -124,7 +124,13 @@ Ordinary MCP exposed 36 tools on the reviewed revision. A trusted supervised che
 
 ## Runtime results and findings
 
+### Acceptance during pull request review
+
+The review added a regression for cache separation between provider accounts and installations. At commit `56748b2`, the Linux Node 24 suite ran 2,450 cases, passed 2,442, skipped eight and recorded zero failures. GitHub's Linux Node 20 and 22 jobs each passed 2,438 of the same 2,450 cases, skipped twelve and recorded zero failures. Chromium passed all 15 browser cases in a separate run with its optional runtime enabled. The packed CLI checks passed on Linux, macOS and Windows, and CodeQL passed. GitHub's dependency review returned HTTP 403 when reading the dependency graph. The separate npm audit reported zero known vulnerabilities in the installed dependency tree. [Review and checks](https://github.com/CodeWithJuber/forgekit/pull/253) · [Hosted Node 20 and 22 results](https://github.com/CodeWithJuber/forgekit/actions/runs/45553942271)
+
 ### Local acceptance of the implementation
+
+This table records the earlier implementation run before the pull request review.
 
 | Check performed on 25 November 2026 | Observed result |
 |---|---|
