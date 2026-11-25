@@ -13,6 +13,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `forge models --json` returns the provider inventory in schema 2. Consumers of the original tiers can request `--schema 1`.
 - Cloud and relay enrollment now honor Git ignore rules by default. To share ignored files, preview the extra paths and re-enroll with `--include-ignored`.
 
+- V2 corrections from peers or earlier versions need local corroboration before agent hooks serve them. Operators can inspect an incoming correction with `forge ledger show FULL_CLAIM_HASH` and accept that exact revision with `forge cortex confirm FULL_CLAIM_HASH`.
 - Each self-hosted workspace has a 128 MiB default retained-history quota. Existing history counts on upgrade. Administrators can set `maxHistoryBytes`; a full journal rejects new changes with HTTP 413.
 
 ### Fixed
