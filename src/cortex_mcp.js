@@ -15,7 +15,7 @@ import { doctor } from "./doctor.js";
 import { EVIDENCE_TOOLS, evidenceTool } from "./evidence_tools.js";
 import { negotiateStdio } from "./mcp_protocol.js";
 import { mcpInstructions } from "./orient.js";
-import { clarifyBlock, preflightRepo } from "./preflight.js";
+import { preflightRepo, preflightReport } from "./preflight.js";
 import { describeRoute, routeTask } from "./route.js";
 import { decompose } from "./scope.js";
 import { predictImpact, substrateCheck } from "./substrate.js";
@@ -81,7 +81,7 @@ async function callTool(name, args = {}, host = undefined) {
   }
   if (name === "preflight_check") {
     const r = preflightRepo(root, String(args.task ?? ""));
-    return clarifyBlock(r) || "All clear — everything this task names is grounded in the codebase.";
+    return preflightReport(r);
   }
   if (name === "route_task") {
     const rec = routeTask(root, String(args.task ?? ""), {

@@ -50,20 +50,19 @@ function terms(summary, expectedTotal) {
   return expectedTotal == null || counts.total === Number(expectedTotal) ? counts : null;
 }
 
-/** Parse terminal summaries emitted by Node TAP/spec, pytest, Jest and Vitest.
- * @param {unknown} output @returns {EvidenceCounts|null} */
-export function observedTestCounts(output) {
-  if (!output) return null;
-  // Strip terminal styles before matching complete, unindented summary records.
-  const text = stripVTControlCharacters(String(output)).replaceAll("\r\n", "\n");
+/** Read complete reports from one output stream. A partial report contributes no pass.
+ * @param {string} text @param {(Counts|null)[]} summaries */
+function collectReports(text, summaries) {
   const node =
     /^(?:#|ℹ) tests (\d+)\n(?:#|ℹ) suites \d+\n(?:#|ℹ) pass (\d+)\n(?:#|ℹ) fail (\d+)\n(?:#|ℹ) cancelled (\d+)\n(?:#|ℹ) skipped (\d+)\n(?:#|ℹ) todo (\d+)\n(?:#|ℹ) duration_ms [\d.]+$/gm;
-  const summaries = [];
+  let nodeReports = 0;
   for (const m of text.matchAll(node)) {
     const [total, pass, fail, cancelled, skipped, todo] = m.slice(1).map(Number);
     summaries.push({ total, pass, fail, cancelled, skipped, todo });
+    nodeReports++;
   }
-  let malformed = (text.match(/^(?:#|ℹ) tests \d+$/gm) ?? []).length - summaries.length;
+  const starts = (text.match(/^(?:#|ℹ) tests \d+$/gm) ?? []).length;
+  for (let i = nodeReports; i < starts; i++) summaries.push(null);
   for (const m of text.matchAll(/^Tests:[ \t]*([^\n]*)$/gm)) {
     const parts = /^(?:(.+),[ \t]*)?(\d+) total$/.exec(m[1].trim());
     if (parts?.[1]) summaries.push(terms(parts[1], parts[2]));
@@ -75,8 +74,55 @@ export function observedTestCounts(output) {
     /^(?:=+ )?((?:\d+ [a-z]+, )*\d+ [a-z]+|no tests ran) in [\d.]+s(?: \([\d:]+\))?(?: =+)?$/gm,
   ))
     summaries.push(m[1] === "no tests ran" ? empty() : terms(m[1]));
-  if (!summaries.length && !malformed) return null;
+}
+
+/** Parse terminal summaries emitted by Node TAP/spec, pytest, Jest and Vitest.
+ * pnpm multiplexes workspace lifecycle output by project. Never join parts of two
+ * different packages' reports or let a passing package cover a silent sibling.
+ * @param {unknown} output @param {string[]} [pnpmProjects] @returns {EvidenceCounts|null} */
+export function observedTestCounts(output, pnpmProjects = []) {
+  if (!output) return null;
+  const text = stripVTControlCharacters(String(output)).replaceAll("\r\n", "\n");
+  /** @type {(Counts|null)[]} */
+  const summaries = [];
+  if (text.includes(" test: ") || text.includes(" test$ ")) {
+    /** @type {Map<string,string[]>} */
+    const streams = new Map();
+    const expected = new Set(pnpmProjects);
+    const outer = [];
+    for (const line of text.split("\n")) {
+      const scope = /^(\S.*?) test([:$]) (.*)$/.exec(line);
+      if (!scope) {
+        outer.push(line);
+        continue;
+      }
+      const name = scope[1].replaceAll("\\", "/").replace(/^\.\//, "");
+      let lines = streams.get(name);
+      if (!lines && scope[2] !== "$" && !expected.has(name)) {
+        outer.push(line);
+        continue;
+      }
+      if (!lines) {
+        lines = [];
+        streams.set(name, lines);
+      }
+      if (scope[2] === ":") lines.push(scope[3]);
+    }
+    collectReports(outer.join("\n"), summaries);
+    for (const lines of streams.values()) {
+      const before = summaries.length;
+      collectReports(lines.join("\n"), summaries);
+      if (summaries.length === before) summaries.push(null);
+    }
+    if (streams.size || expected.size > 1)
+      for (const name of expected) if (!streams.has(name)) summaries.push(null);
+  } else {
+    collectReports(text, summaries);
+    if (pnpmProjects.length > 1) summaries.push(null);
+  }
+  if (!summaries.length) return null;
   const all = empty();
+  let malformed = 0;
   let incomplete = 0;
   for (const c of summaries) {
     if (

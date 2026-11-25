@@ -423,13 +423,13 @@ function inventoryFromRows(
     const calls = ["untrusted", "credential-missing", "denied"].includes(r.status)
       ? new Map()
       : readModelCalls(root, p, profileCredential(p).value);
-    if (["offline", "unavailable", "partial", "rate-limited", "stale"].includes(r.status)) {
-      const ids = new Set(r.models.map((m) => m.id));
-      for (const id of calls.keys())
-        if (!ids.has(id)) r.models.push({ id, availability: "observed-only" });
-    }
+    // Listings and dispatches are independent evidence. A gateway may advertise
+    // a canonical deployment and successfully serve a different requested alias.
+    const byId = new Map(r.models.map((m) => [m.id, m]));
+    for (const id of calls.keys())
+      if (!byId.has(id)) byId.set(id, { id, availability: "observed-only" });
     const models = [];
-    for (const m of r.models) {
+    for (const m of byId.values()) {
       const binding = bindings.get(m.id);
       const call = calls.get(m.id);
       const caps = m.capabilities ?? m.operations ?? null;

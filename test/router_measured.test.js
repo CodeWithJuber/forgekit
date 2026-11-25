@@ -26,6 +26,34 @@ for (let i = 0; i < 20; i++) {
 }
 const evidence = firstAttempts(rows, "repair");
 
+test("a budget compares the exact reported decimal total against budget times task count", () => {
+  const route = (costs, budget, alternative = false) => {
+    const trials = costs.flatMap((cost, i) => {
+      const row = { ...rows[0], task: String(i), passed: true, cost };
+      return alternative ? [row, { ...row, model: "b", passed: i === 0, cost: 0 }] : [row];
+    });
+    return measuredRoute(firstAttempts(trials, "repair"), bindings, "unseen", {
+      objective: `budget:${budget}`,
+    });
+  };
+  for (const [costs, budget] of [
+    [[0.1, 0.1, 0.1], 0.1],
+    [[0.05, 0.1, 0.15], 0.1],
+    [[2e-8, 1e-8, 3e-8], 2e-8],
+  ]) {
+    const best = route(costs, budget, true);
+    assert.equal(best.ok, true);
+    assert.equal(best.cascade[0].model, "a");
+    assert.equal(best.expectedCost, budget);
+    assert.equal(best.budgetMet, true);
+    assert.doesNotThrow(() => JSON.stringify(best));
+  }
+  assert.equal(route([0.1, 0.1, 0.1], 0.09).ok, false);
+  const over = [0.1, 0.1, 0.10000000000000002];
+  assert.equal(route(over, 0.1).budgetMet, false);
+  assert.equal(route(over, 0.1, true).cascade[0].model, "b");
+});
+
 test("paired replay prices only reached attempts and captures complementary failures", () => {
   const single = measuredRoute(evidence, bindings, "unseen");
   assert.deepEqual(

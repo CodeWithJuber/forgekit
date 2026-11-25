@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { npmCliPath } from "../src/npm_runtime.js";
+import { countVerdict, observedTestCounts } from "../src/test_counts.js";
 import {
   CODE_STATE_SCHEME,
   classifySuiteFailure,
@@ -29,6 +30,46 @@ import {
   verify,
 } from "../src/verify.js";
 import { fakeGithubPat } from "./_fixtures.js";
+
+test("recursive pnpm counts complete reports per package even when their lines interleave", () => {
+  const projects = ["packages/left", "packages/right"];
+  const report = (prefix, passed, failed = 0, skipped = 0) =>
+    [
+      `tests ${passed + failed + skipped}`,
+      "suites 0",
+      `pass ${passed}`,
+      `fail ${failed}`,
+      "cancelled 0",
+      `skipped ${skipped}`,
+      "todo 0",
+      "duration_ms 14.7",
+    ].map((line) => prefix + " " + line);
+  const scoped = (left, right, names = projects) => {
+    const lines = names.map((p) => `${p} test$ node --test`);
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      if (left[i]) lines.push(`${projects[0]} test: ${left[i]}`);
+      if (right[i]) lines.push(`${projects[1]} test: ${right[i]}`);
+    }
+    return observedTestCounts(lines.join("\n"), projects);
+  };
+  const left = report("ℹ", 1),
+    right = report("#", 1);
+  assert.deepEqual(scoped(left, right), {
+    total: 2,
+    pass: 2,
+    fail: 0,
+    cancelled: 0,
+    skipped: 0,
+    todo: 0,
+  });
+  assert.equal(countVerdict(scoped(left, report("#", 0, 1))), "FAIL");
+  for (const other of [[], report("#", 0), report("#", 0, 0, 1), right.slice(0, -1)]) {
+    assert.equal(countVerdict(scoped(left, other)), "INCOMPLETE");
+  }
+  assert.equal(countVerdict(scoped(left, [], [projects[0]])), "INCOMPLETE");
+  assert.equal(countVerdict(scoped(left.slice(0, 4), left.slice(4))), "INCOMPLETE");
+  assert.equal(countVerdict(scoped(["Tests: 2 passed, 2 total"], ["Tests 1 passed (1)"])), "PASS");
+});
 
 test("the npm JS launcher runs a suite in a path with spaces and rejects a project-owned launcher", (t) => {
   const root = mkdtempSync(join(tmpdir(), "forge npm runtime "));

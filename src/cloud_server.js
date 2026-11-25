@@ -16,7 +16,11 @@ import { MAX_FILE, MAX_FILES, MAX_TOTAL, sha, validPath, workspaceId } from "./c
 import { installedHarnessProgram } from "./harness_python.js";
 
 const worker = fileURLToPath(new URL("./cloud_store.py", import.meta.url));
-const page = readFileSync(new URL("./cloud_dashboard.html", import.meta.url));
+// HTML parsing normalizes CRLF and lone CR before the browser hashes a script.
+const page = readFileSync(new URL("./cloud_dashboard.html", import.meta.url), "utf8").replace(
+  /\r\n?/g,
+  "\n",
+);
 const digest = (s) => createHash("sha256").update(s).digest();
 const fail = (status, message) => Object.assign(new Error(message), { status });
 function validateChange(c, relay) {
@@ -263,5 +267,5 @@ export function cloudService({ dataDir, principals, transport = "cloud" }, env =
   server.headersTimeout = 15000;
   return server;
 }
-const script = page.toString().match(/<script>([\s\S]+?)<\/script>/i)[1];
+const script = page.match(/<script>([\s\S]+?)<\/script>/i)[1];
 const pageScriptHash = createHash("sha256").update(script).digest("base64");

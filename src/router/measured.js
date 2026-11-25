@@ -38,24 +38,42 @@ export function firstAttempts(rows, workload) {
   return attempts;
 }
 
-function replay(seq, tasks, attempts) {
+// Reported prices are JSON decimal numbers. Express every distinct price and the
+// budget on their common power-of-ten scale, including fractional cents.
+function priceScale(prices) {
+  const parts = new Map();
+  let exponent = 0;
+  for (const price of prices) {
+    const [mantissa, shift = "0"] = String(price).split("e");
+    const [integer, fraction = ""] = mantissa.split(".");
+    const power = Number(shift) - fraction.length;
+    exponent = Math.min(exponent, power);
+    parts.set(price, { digits: BigInt(integer + fraction), power });
+  }
+  const units = new Map();
+  for (const [price, { digits, power }] of parts)
+    units.set(price, digits * 10n ** BigInt(power - exponent));
+  return { units, exponent };
+}
+
+function replay(seq, tasks, attempts, units) {
   let passed = 0;
-  let cost = 0;
+  let total = 0n;
   for (const task of tasks) {
     for (const model of seq) {
       const observation = attempts.get(model).get(task);
-      cost += observation.cost;
+      total += units.get(observation.cost);
       if (observation.passed) {
         passed++;
         break;
       }
     }
   }
-  return { seq, interval: wilson(passed, tasks.length), cost: cost / tasks.length };
+  return { seq, interval: wilson(passed, tasks.length), total };
 }
 
 function order(a, b) {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
   return 0;
 }
 
@@ -89,7 +107,6 @@ export function measuredRoute(
     };
   const exact = paired.includes(task);
   const tasks = exact ? [task] : paired;
-  const singles = new Map(candidates.map((id) => [id, replay([id], tasks, attempts)]));
   const depth = Math.min(maxDepth, candidates.length);
   // A user-provided depth can request factorial work. Fail explicitly instead of
   // silently truncating the search and describing the result as an optimum.
@@ -100,8 +117,20 @@ export function measuredRoute(
       reason:
         "Exact replay exceeds the computation limit. Reduce the requested depth or filter the candidates.",
     };
-  const strongest = [...singles.values()].sort(
-    (a, b) => b.interval.score - a.interval.score || a.cost - b.cost,
+  const prices = new Set();
+  for (const id of candidates) for (const t of tasks) prices.add(attempts.get(id).get(t).cost);
+  if (objective.kind === "budget") prices.add(objective.budget);
+  const { units, exponent } = priceScale(prices);
+  const n = BigInt(tasks.length);
+  const budgetTotal = objective.kind === "budget" ? units.get(objective.budget) * n : null;
+  // Only public estimates and the utility objective need a floating-point mean.
+  // Keep enough decimal places to represent even one price unit divided over all n tasks.
+  const extraPlaces = Number.MAX_SAFE_INTEGER.toString().length + tasks.length.toString().length;
+  const precision = 10n ** BigInt(extraPlaces);
+  const mean = (total) => Number(`${(total * precision) / n}e${exponent - extraPlaces}`);
+  const singles = new Map(candidates.map((id) => [id, replay([id], tasks, attempts, units)]));
+  const strongest = [...singles.values()].sort((a, b) =>
+    order([-a.interval.score, a.total], [-b.interval.score, b.total]),
   )[0];
   if (strongest.interval.score === 0)
     return { ok: false, reason: "No listed model has a verified success on the comparable tasks" };
@@ -111,25 +140,25 @@ export function measuredRoute(
     const p = result.interval.low;
     if (target !== null)
       return p >= target
-        ? [0, result.cost, -p, result.seq.length]
-        : [1, -p, result.cost, result.seq.length];
-    if (objective.kind === "budget")
-      return result.cost <= objective.budget
-        ? [0, -p, result.cost, result.seq.length]
-        : [1, result.cost, -p, result.seq.length];
-    return [0, -(objective.value * p - result.cost), result.seq.length];
+        ? [0, result.total, -p, result.seq.length]
+        : [1, -p, result.total, result.seq.length];
+    if (budgetTotal !== null)
+      return result.total <= budgetTotal
+        ? [0, -p, result.total, result.seq.length]
+        : [1, result.total, -p, result.seq.length];
+    return [0, -(objective.value * p - mean(result.total)), result.seq.length];
   }
   let best = strongest;
   for (const seq of cascades(candidates, depth)) {
-    const trial = seq.length === 1 ? singles.get(seq[0]) : replay(seq, tasks, attempts);
+    const trial = seq.length === 1 ? singles.get(seq[0]) : replay(seq, tasks, attempts, units);
     if (order(rank(trial), rank(best)) < 0) best = trial;
   }
   const bestSingle = {
     model: strongest.seq[0],
     pSuccess: strongest.interval.score,
-    expectedCost: strongest.cost,
+    expectedCost: mean(strongest.total),
   };
-  const budgetMet = objective.kind === "budget" ? best.cost <= objective.budget : null;
+  const budgetMet = budgetTotal === null ? null : best.total <= budgetTotal;
   const targetMet = target !== null ? best.interval.low >= target : null;
   const feasible = budgetMet !== false && targetMet !== false;
   const cascade = best.seq.map((id) => {
@@ -140,7 +169,7 @@ export function measuredRoute(
       band: bindings.get(id).rating.band,
       pSolveAlone: single.interval.score,
       interval: single.interval,
-      expectedAttemptCost: single.cost,
+      expectedAttemptCost: mean(single.total),
       providers: profile ? [profile] : [],
       status: "observed",
       costSource: "operator-reported paired first attempts",
@@ -158,9 +187,11 @@ export function measuredRoute(
     budgetMet,
     pSuccess: best.interval.score,
     interval: best.interval,
-    expectedCost: best.cost,
-    minimumExpectedCost: Math.min(...[...singles.values()].map((s) => s.cost)),
-    estimatedCostIfAllAttemptsRun: cascade.reduce((sum, step) => sum + step.expectedAttemptCost, 0),
+    expectedCost: mean(best.total),
+    minimumExpectedCost: Math.min(...[...singles.values()].map((s) => mean(s.total))),
+    estimatedCostIfAllAttemptsRun: mean(
+      best.seq.reduce((sum, id) => sum + singles.get(id).total, 0n),
+    ),
     bestSingle,
     candidates: candidates.length,
     cascadesEvaluated: count,

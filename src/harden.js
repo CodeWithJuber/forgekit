@@ -18,7 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { BRAND } from "./brand.js";
 import { containsPath, physicalPath, readBounded } from "./private_paths.js";
 import { contentHash, hasBin as have } from "./util.js";
@@ -78,6 +78,10 @@ const SANDBOX = {
 const MARKER = `installed by ${BRAND.cli} harden`;
 const INIT_MARKER = "# Managed by forge init for hosts without edit callbacks";
 const CHECKSUM = "# ForgeKit hook body sha256 ";
+// A personal hook may call its sibling unconditionally. Keep that path callable
+// after deselection, including when the Forge CLI is no longer installed.
+const inactiveBody = `#!/usr/bin/env bash\n# ${MARKER}\n${INIT_MARKER}\nexit 0\n`;
+const inactiveSibling = inactiveBody + CHECKSUM + contentHash(inactiveBody) + "\n";
 const cliPath = join(BRAND.root, "src", "cli.js");
 const quotedCli = `'${cliPath.replaceAll("'", "'\\''")}'`;
 
@@ -139,28 +143,78 @@ function hookState(path) {
   return { exists: true, owned: false, strict: false, fromInit: false };
 }
 
+function publishHook(target, state, script) {
+  const temp = join(dirname(target), `.forge-hook-${randomUUID()}`);
+  try {
+    writeFileSync(temp, script, { flag: "wx", mode: 0o755 });
+    if (state.owned) {
+      if (hookState(target).current !== state.current)
+        throw new Error("The Git hook changed during setup");
+      renameSync(temp, target);
+    } else {
+      linkSync(temp, target);
+    }
+  } finally {
+    rmSync(temp, { force: true });
+  }
+}
+
+/** Retire only intact hooks marked as installed by init. Explicit harden and
+ * personal hooks have independent owners. */
+export function retireInitCommitHook(targetRoot) {
+  try {
+    const hooks = localHooksDir(realpathSync.native(targetRoot), true);
+    if (!hooks) return null;
+    const primary = join(hooks, "pre-commit");
+    const sibling = join(hooks, `pre-commit.${BRAND.cli}`);
+    const changes = [];
+    const first = hookState(primary);
+    if (first.fromInit) {
+      if (hookState(primary).current !== first.current)
+        throw new Error("The Git hook changed during setup");
+      rmSync(primary);
+      changes.push("removed the init-managed pre-commit hook");
+    }
+    const side = hookState(sibling);
+    if (side.fromInit && side.current !== inactiveSibling) {
+      publishHook(sibling, side, inactiveSibling);
+      changes.push("disabled the init-managed sibling");
+    }
+    return changes.length ? { state: "retired", active: false, message: changes.join(", ") } : null;
+  } catch (error) {
+    return { state: "manual", active: false, message: error.message };
+  }
+}
+
 /** Install just the Git check. A user-owned hook may opt into a sibling via
  * `git hook run` or by invoking it explicitly. No global Git or host settings are needed. */
-export function installCommitHook({ targetRoot, requireVerified = false, fromInit = false }) {
+export function installCommitHook({
+  targetRoot,
+  requireVerified = false,
+  fromInit = false,
+  existingOnly = false,
+}) {
   const command = `${BRAND.cli} precommit${requireVerified ? " --require-verified" : ""}`;
   const manual = `Run ${command} from your existing pre-commit hook or require ${BRAND.cli} verify --json in CI.`;
   try {
     const root = realpathSync.native(targetRoot);
     const hooks = localHooksDir(root, fromInit);
+    if (!hooks && existingOnly) return null;
     if (!hooks)
       return {
         state: "unavailable",
         active: false,
         message: `not a git repo — initialize Git and rerun setup, or require ${BRAND.cli} verify --json in CI`,
       };
-    mkdirSync(hooks, { recursive: true });
-    if (realpathSync.native(hooks) !== hooks)
-      throw new Error("The Git hook directory changed during setup");
     const primary = join(hooks, "pre-commit");
     const previous = hookState(primary);
     const sidecar = previous.exists && !previous.owned;
     const target = sidecar ? join(hooks, `pre-commit.${BRAND.cli}`) : primary;
     const state = sidecar ? hookState(target) : previous;
+    if (existingOnly && (!state.fromInit || state.current === inactiveSibling)) return null;
+    mkdirSync(hooks, { recursive: true });
+    if (realpathSync.native(hooks) !== hooks)
+      throw new Error("The Git hook directory changed during setup");
     if (state.exists && !state.owned)
       return {
         state: "manual",
@@ -173,20 +227,7 @@ export function installCommitHook({ targetRoot, requireVerified = false, fromIni
       fromInit: fromInit && (!state.owned || state.fromInit),
     });
     if (state.current !== script || !state.executable) {
-      const temp = join(hooks, `.forge-hook-${randomUUID()}`);
-      try {
-        writeFileSync(temp, script, { flag: "wx", mode: 0o755 });
-        if (state.owned) {
-          if (hookState(target).current !== state.current)
-            throw new Error("The Git hook changed during setup");
-          renameSync(temp, target);
-        } else {
-          // Publish without overwriting a personal hook created concurrently.
-          linkSync(temp, target);
-        }
-      } finally {
-        rmSync(temp, { force: true });
-      }
+      publishHook(target, state, script);
     }
     const installed = `${BRAND.cli} precommit${strict ? " --require-verified" : ""}`;
     return sidecar

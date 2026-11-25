@@ -323,6 +323,28 @@ export function clarifyBlock(result) {
   return lines.join("\n");
 }
 
+/** Explicit CLI and MCP queries report coverage even when the ambient gate has
+ * no reason to interrupt a user. Only a lookup that ran can ground a reference. */
+export function preflightReport(result) {
+  const sections = [clarifyBlock(result)].filter(Boolean);
+  const { symbols, files } = result.unknown;
+  if (symbols.length || files.length) {
+    const { indexCoverage } = result;
+    if (symbols.length && indexCoverage.status === "partial")
+      sections.push(
+        `Partial repository index (${indexCoverage.indexedFiles} files indexed, ${indexCoverage.skippedFiles} omitted).`,
+      );
+    if (symbols.length && indexCoverage.status === "unavailable")
+      sections.push("The repository index is unavailable.");
+    if (symbols.length) sections.push(`Unchecked symbols: ${symbols.join(", ")}.`);
+    if (files.length) sections.push(`Unchecked paths: ${files.join(", ")}.`);
+  }
+  if (sections.length) return sections.join("\n");
+  return result.checked
+    ? "All clear — the preflight check resolved every named reference."
+    : "The task contains no named code references to check.";
+}
+
 /**
  * @param {string} root
  * @param {string} text
@@ -354,7 +376,15 @@ export function preflightRepo(
 ) {
   const atlas = loadAtlas(root) || (allowBuild ? buildAtlas({ root }) : null);
   // Missing or incomplete index coverage yields an unknown symbol observation.
-  const hasSymbol = atlas && !atlas.capped ? (name) => has(atlas, name) : () => null;
+  const hasSymbol = (name) => {
+    if (atlas && has(atlas, name)) return true;
+    return atlas && !atlas.capped ? false : null;
+  };
+  const indexCoverage = {
+    status: !atlas ? "unavailable" : atlas.capped ? "partial" : "available",
+    indexedFiles: atlas ? atlas.files - (atlas.omitted?.length ?? 0) : null,
+    skippedFiles: atlas ? (atlas.skippedFiles ?? 0) : null,
+  };
   const workspace = physicalPath(root);
   const fileExists = (file, regular = false) => {
     if (typeof file !== "string" || !file.trim() || /\p{Cc}/u.test(file)) return false;
@@ -386,6 +416,7 @@ export function preflightRepo(
   )
     return {
       ...gap,
+      indexCoverage,
       assumption: { ...det, provenance: { path: "deterministic" } },
     };
   const proposal =
@@ -395,9 +426,7 @@ export function preflightRepo(
       : null);
   const grounded = (q) => {
     const { symbols, files } = referencedEntities(q);
-    return (
-      (!!atlas && !atlas.capped && symbols.some(hasSymbol)) || files.some((f) => fileExists(f))
-    );
+    return symbols.some(hasSymbol) || files.some((f) => fileExists(f));
   };
   // Repo grounding is a hard floor on CLEARING: if the task names entities the repo lacks, the
   // model can never wave a rubric ask through no matter how "complete" it judges the prose. It is
@@ -405,6 +434,7 @@ export function preflightRepo(
   const hasUnresolved = gap.unresolved.symbols.length + gap.unresolved.files.length > 0;
   return {
     ...gap,
+    indexCoverage,
     assumption: reconcileAssumption(det, proposal, {
       grounded,
       bidirectional,

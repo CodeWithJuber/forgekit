@@ -269,7 +269,7 @@ HANDLERS.init = async (argv) => {
   );
   if (gitVerification) {
     console.log(
-      `  Git verification for ${gitVerification.hosts.join(", ")}: ${gitVerification.message}`,
+      `  Git verification${gitVerification.hosts.length ? ` for ${gitVerification.hosts.join(", ")}` : ""}: ${gitVerification.message}`,
     );
     if (gitVerification.active && gitVerification.requested === "required")
       console.log(`  Stage the changes and run ${BRAND.cli} verify before committing.`);
@@ -1402,7 +1402,7 @@ HANDLERS.deja = async (argv) => {
   return;
 };
 HANDLERS.preflight = async (argv) => {
-  const { preflightRepo, clarifyBlock } = await import("./preflight.js");
+  const { preflightRepo, preflightReport } = await import("./preflight.js");
   const json = argv.includes("--json");
   const words = [],
     requiredFiles = [];
@@ -1430,8 +1430,7 @@ HANDLERS.preflight = async (argv) => {
   console.log(
     `  info-gap: ${r.gap?.toFixed(2) ?? "unknown"}  · prerequisite coverage ${r.assumption.completeness?.toFixed(2) ?? "unknown"}  (referenced ${r.entities.symbols.length} symbol(s), ${r.entities.files.length} file(s))`,
   );
-  const block = clarifyBlock(r);
-  console.log(block ? `\n${block}` : `\n  ${r.assumption.reasons.join("; ")}`);
+  console.log(`\n${preflightReport(r)}`);
   return;
 };
 HANDLERS.impact = async (argv) => {

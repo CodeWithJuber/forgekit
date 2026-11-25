@@ -16,7 +16,7 @@ import { build as buildAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { toolsWithoutEditCallbacks } from "./emit/hooks.js";
 import { ensureForgePrivateIgnored } from "./gitignore.js";
-import { installCommitHook } from "./harden.js";
+import { installCommitHook, retireInitCommitHook } from "./harden.js";
 import { claimEmittedIntegrations } from "./integrations.js";
 import { GITATTRIBUTES_RULE } from "./ledger_store.js";
 import { autoDetectProvider } from "./providers.js";
@@ -932,15 +932,25 @@ export function init({
       : { action: "skipped", reason: "Claude Code is outside this repo's tool selection" };
   const fallbackHosts = toolsWithoutEditCallbacks(selection.tools);
   let gitVerification;
-  if (fallbackHosts.length) {
+  if (selection.source !== "detected" && fallbackHosts.length) {
     const advisory =
       process.env.FORGE_GATE === "advisory" ||
       readForgeConfig(targetRoot).hooks?.commitVerification === "advisory";
-    gitVerification = {
-      hosts: fallbackHosts,
-      requested: advisory ? "advisory" : "required",
-      ...installCommitHook({ targetRoot, requireVerified: !advisory, fromInit: true }),
-    };
+    const hook = installCommitHook({
+      targetRoot,
+      requireVerified: !advisory,
+      fromInit: true,
+      existingOnly: selection.source !== "--tools",
+    });
+    if (hook)
+      gitVerification = {
+        hosts: fallbackHosts,
+        requested: advisory ? "advisory" : "required",
+        ...hook,
+      };
+  } else if (selection.source !== "detected") {
+    const hook = retireInitCommitHook(targetRoot);
+    if (hook) gitVerification = { hosts: [], requested: "off", ...hook };
   }
   const detected = autoDetectProvider();
   // Item 42: warm the atlas cache so the first `forge impact` is a warm query

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { build as buildAtlas, has } from "../src/atlas.js";
 import { BRAND } from "../src/brand.js";
 import { processSession } from "../src/cortex_hook.js";
 import { handle } from "../src/cortex_mcp.js";
@@ -170,6 +171,42 @@ test("handle: notifications get no response; unknown methods error", async () =>
 });
 
 const SERVER = fileURLToPath(new URL("../src/cortex_mcp.js", import.meta.url));
+
+test("MCP preflight distinguishes partial, resolved and unreferenced tasks", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "forge-mcp-preflight-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const names = ["alphaSymbol", "betaSymbol"];
+  for (const name of names)
+    writeFileSync(join(root, name + ".js"), `export function ${name}() {}\n`);
+  const partial = buildAtlas({ root, cap: 1 });
+  const indexed = names.find((s) => has(partial, s));
+  const unchecked = names.find((s) => !has(partial, s));
+  assert.ok(indexed && unchecked);
+  const call = (task) => {
+    const req = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "preflight_check", arguments: { task } },
+    };
+    const child = spawnSync(process.execPath, [SERVER], {
+      input: JSON.stringify(req) + "\n",
+      encoding: "utf8",
+      env: { ...process.env, FORGE_ROOT: root },
+    });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout).result.content[0].text;
+  };
+  const mixed = call(`Update \`${indexed}\` and \`${unchecked}\``);
+  assert.match(mixed, /partial repository index/i);
+  assert.match(mixed, /1 file.*indexed.*1 omitted/i);
+  assert.ok(mixed.includes(unchecked));
+  assert.doesNotMatch(mixed, /all clear/i);
+  assert.match(call(`Update \`${indexed}\``), /all clear/i);
+  assert.match(call("continue"), /no named code references/i);
+  buildAtlas({ root });
+  assert.match(call(`Update \`${indexed}\` and \`${unchecked}\``), /all clear/i);
+});
 
 test("live server over stdio returns learned lessons for a repo", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-mcp-"));

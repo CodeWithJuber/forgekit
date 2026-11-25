@@ -28,13 +28,61 @@ function fixture(t) {
   git("config", "user.name", "Fixture");
   git("config", "user.email", "test@example.invalid");
   const setup = (tools, env = {}) =>
-    spawnSync(process.execPath, [cli, "init", "--tools", tools, "--no-settings", "--no-warm"], {
-      cwd: root,
-      encoding: "utf8",
-      env: { ...process.env, ...env },
-    });
+    spawnSync(
+      process.execPath,
+      [cli, "init", ...(tools ? ["--tools", tools] : []), "--no-settings", "--no-warm"],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, ...env },
+      },
+    );
   return { temp, root, git, setup, hooks: join(root, ".git", "hooks") };
 }
+
+test("plain init can detect and remember VS Code without enrolling a documentation repo", (t) => {
+  const { root, git, setup, hooks } = fixture(t);
+  mkdirSync(join(root, ".vscode"));
+  writeFileSync(join(root, ".vscode", "settings.json"), "{}");
+  writeFileSync(join(root, "README.md"), "# Notes\n");
+  const primary = join(hooks, "pre-commit");
+  for (let i = 0; i < 2; i++) {
+    const detected = setup();
+    assert.equal(detected.status, 0, detected.stderr);
+    assert.equal(existsSync(primary), false);
+  }
+  git("add", "README.md");
+  git("commit", "-qm", "Document the project");
+  assert.equal(setup("vscode").status, 0);
+  writeFileSync(join(root, "README.md"), "# More notes\n");
+  git("add", "README.md");
+  assert.throws(() => git("hook", "run", "pre-commit"));
+  assert.equal(setup("codex").status, 0);
+  assert.equal(existsSync(primary), false);
+  git("commit", "-qm", "Continue writing");
+  assert.equal(setup().status, 0);
+  assert.equal(existsSync(primary), false);
+  installCommitHook({ targetRoot: root, requireVerified: true });
+  const manual = readFileSync(primary);
+  assert.equal(setup("codex").status, 0);
+  assert.deepEqual(readFileSync(primary), manual);
+});
+
+test("deselecting a host preserves a personal hook that invokes the ForgeKit sibling", (t) => {
+  const { root, hooks, git, setup } = fixture(t);
+  const primary = join(hooks, "pre-commit");
+  const mine = '#!/bin/sh\nexec "$0.forge"\n';
+  writeFileSync(primary, mine, { mode: 0o755 });
+  writeFileSync(join(root, "README.md"), "# Fixture\n");
+  git("add", "README.md");
+  assert.equal(setup("aider").status, 0);
+  assert.throws(() => git("hook", "run", "pre-commit"));
+  assert.equal(setup("codex").status, 0);
+  assert.equal(readFileSync(primary, "utf8"), mine);
+  git("hook", "run", "pre-commit");
+  assert.equal(setup("aider").status, 0);
+  assert.throws(() => git("hook", "run", "pre-commit"));
+});
 
 test("init --tools enrolls mixed hookless selections in actual staged verification", (t) => {
   const { root, git, setup, hooks } = fixture(t);

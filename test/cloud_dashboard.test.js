@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { cloudService } from "../src/cloud_server.js";
 import { sha } from "../src/cloud_snapshot.js";
 import { launchChromium, resolvePlaywright } from "../src/uivisual.js";
 
-test("hosted dashboard opens a scoped workspace, safely previews an artifact and clears the session", async (t) => {
+async function checkDashboard(t, crlf = false) {
   const pw = await resolvePlaywright();
   if (!pw) {
     t.skip("Install optional Playwright and Chromium to run native dashboard test");
@@ -17,7 +26,19 @@ test("hosted dashboard opens a scoped workspace, safely previews an artifact and
   const dataDir = mkdtempSync(join(realpathSync.native(tmpdir()), "forge-cloud-browser-"));
   t.after(() => rmSync(dataDir, { recursive: true, force: true }));
   const env = { READ: randomBytes(32).toString("hex"), WRITE: randomBytes(32).toString("hex") };
-  const server = cloudService(
+  let start = cloudService;
+  if (crlf) {
+    const checkout = join(dataDir, "checkout");
+    cpSync(new URL("../src/", import.meta.url), join(checkout, "src"), { recursive: true });
+    for (const name of ["brand.json", "package.json"])
+      copyFileSync(new URL("../" + name, import.meta.url), join(checkout, name));
+    const asset = join(checkout, "src", "cloud_dashboard.html");
+    writeFileSync(asset, readFileSync(asset, "utf8").replace(/\r\n?|\n/g, "\r\n"));
+    ({ cloudService: start } = await import(
+      pathToFileURL(join(checkout, "src", "cloud_server.js")).href
+    ));
+  }
+  const server = start(
     {
       dataDir,
       principals: [
@@ -66,6 +87,11 @@ test("hosted dashboard opens a scoped workspace, safely previews an artifact and
   const browser = await launchChromium(pw, dataDir);
   t.after(() => browser.close());
   const page = await browser.newPage();
+  const violations = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && /content security policy/i.test(msg.text()))
+      violations.push(msg.text());
+  });
   await page.goto(origin);
   await page.getByLabel("Workspace", { exact: true }).fill("demo");
   await page.getByLabel("Access token").fill(env.READ);
@@ -83,4 +109,10 @@ test("hosted dashboard opens a scoped workspace, safely previews an artifact and
   await page.getByRole("button", { name: "Clear session" }).click();
   assert.equal(await page.getByLabel("Access token").inputValue(), "");
   assert.equal(await page.getByRole("heading", { name: "Workspace files" }).isVisible(), false);
-});
+  assert.deepEqual(violations, []);
+}
+
+test("hosted dashboard opens a scoped workspace, safely previews an artifact and clears the session", (t) =>
+  checkDashboard(t));
+test("Chromium authenticates and previews dashboard artifacts from a CRLF checkout", (t) =>
+  checkDashboard(t, true));

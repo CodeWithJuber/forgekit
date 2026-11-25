@@ -1159,6 +1159,10 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       continue;
     }
     const startedMs = performance.now();
+    const pnpmProjects =
+      rel === "." && plan.coverage.rootRun?.tool === "pnpm" && isScriptRunner(r)
+        ? covers.filter((pkg) => pkg !== ".")
+        : [];
     try {
       // Heartbeat (item 7): a suite that hangs shows WHERE it stopped, on stderr
       // (stdout stays machine-readable for --json). The per-suite timeout below is
@@ -1175,7 +1179,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         maxBuffer: 8 * 1024 * 1024,
       });
       const output = [proc.stdout, proc.stderr].filter(Boolean).join("\n");
-      const counts = observedTestCounts(output);
+      const counts = observedTestCounts(output, pnpmProjects);
       if (proc.error || proc.signal || proc.status !== 0) {
         if (r.bin !== "pytest" || proc.status !== 5 || proc.error || proc.signal) {
           throw Object.assign(proc.error ?? new Error("Suite did not exit successfully"), {
@@ -1207,7 +1211,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         ...classifySuiteFailure(e, { label, bin: r.bin, timeout }),
         ...where,
         durationMs: Math.round(performance.now() - startedMs),
-        reportedCounts: observedTestCounts(e.stdout),
+        reportedCounts: observedTestCounts(e.stdout, pnpmProjects),
       };
       executed.push(classified);
       onProgress?.({ label, phase: "done", status: classified.status });

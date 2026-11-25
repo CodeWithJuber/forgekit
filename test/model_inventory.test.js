@@ -35,6 +35,59 @@ const response = (data) => ({
   body: JSON.stringify(data),
 });
 
+test("fresh and cached catalogs preserve a recently served, unlisted gateway alias", (t) => {
+  const root = repo(t);
+  env(t, { FORGE_HOME: repo(t), OPENAI_API_KEY: "initial-account" });
+  const dispatch = (reply) =>
+    buildHttpRunner({
+      root,
+      profile: "openai",
+      model: "team-alias",
+      spawn: () => reply,
+    })("fixture");
+  dispatch({ status: 0, stdout: JSON.stringify({ text: "done", model: "canonical" }) });
+  const lookup = (options = {}) =>
+    modelInventory(root, {
+      profile: "openai",
+      refresh: false,
+      ...options,
+    }).profiles[0];
+  const catalog = () => response({ data: [{ id: "canonical" }] });
+  const recent = { availability: "recently-callable", maxAge: "1h" };
+  const fresh = lookup({ refresh: true, fetchImpl: catalog, ...recent });
+  const cached = lookup(recent);
+  assert.equal(cached.status, "cached");
+  for (const result of [fresh, cached]) {
+    assert.deepEqual(
+      result.models.map((m) => m.id),
+      ["team-alias"],
+    );
+    const [alias] = result.models;
+    assert.equal(alias.catalogAvailability, "observed-only");
+    assert.equal(alias.availabilityEvidence.checkedAt, null);
+    assert.equal(alias.lastCall.returned, "canonical");
+  }
+  assert.deepEqual(
+    lookup({ availability: "listed" }).models.map((m) => m.id),
+    ["canonical"],
+  );
+  assert.deepEqual(lookup({ ...recent, now: Date.now() + 7200000 }).models, []);
+  const both = lookup({
+    refresh: true,
+    fetchImpl: () => response({ data: [{ id: "team-alias" }] }),
+    ...recent,
+  });
+  assert.equal(both.models.length, 1);
+  assert.equal(both.models[0].catalogAvailability, "listed");
+  assert.throws(() => dispatch({ status: 1, stderr: "llm: http 403" }), /403/);
+  assert.deepEqual(lookup(recent).models, []);
+  process.env.OPENAI_API_KEY = "another-account";
+  assert.deepEqual(
+    lookup({ refresh: true, fetchImpl: catalog, availability: "denied" }).models,
+    [],
+  );
+});
+
 test("private model cache identifiers bind the installation, purpose and account", (t) => {
   const root = repo(t);
   const state = repo(t);

@@ -39,7 +39,7 @@ export const TOOLS = [
   {
     name: "preflight_check",
     description:
-      "BEFORE starting a task, check what it names that the repo doesn't define — the things you'd otherwise ASSUME. Returns a clarify list or an all-clear. Ask instead of assuming.",
+      "Check named symbols and files before starting a task. Reports missing references, unchecked names and partial index coverage. All clear means every named reference resolved.",
     inputSchema: {
       type: "object",
       properties: { task: { type: "string", description: "the task/prompt" } },
