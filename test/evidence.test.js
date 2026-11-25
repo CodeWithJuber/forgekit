@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { configureAdvisor } from "../src/discovery_config.js";
 import { runEvidence } from "../src/evidence.js";
 import { evidenceTool } from "../src/evidence_tools.js";
 import { initSources, syncSources } from "../src/sources.js";
@@ -41,10 +40,6 @@ test("an ordinary task retrieves private rows and discloses only known public co
     };
   };
   const prompt = "Fix a PostgreSQL deadlock for private-client INTERNAL-234";
-  const local = await runEvidence(prompt, { root, hook: true, search });
-  assert.deepEqual(queries, []);
-  assert.match(local.text, /LOCAL_CANARY/);
-  configureAdvisor(root, { recommendations: true });
   const first = await runEvidence(prompt, { root, hook: true, search });
   assert.match(first.text, /LOCAL_CANARY/);
   assert.match(first.text, /public hint/);

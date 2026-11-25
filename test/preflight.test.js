@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import {
+  ambiguityMarkers,
   assessTask,
   assessTaskLLM,
   clarifyBlock,
+  completenessFeatures,
+  completenessScore,
   informationGap,
   preflightRepo,
   reconcileAssumption,
@@ -29,11 +33,6 @@ test("referencedEntities ignores plain English (no false identifiers)", () => {
 });
 
 // --- deep review D7: the scanners read addresses, fences and prose as code ---
-
-test("an explicitly named identifier can be a common word or a single letter", () => {
-  const r = referencedEntities("Change `add` and `x`; read the file first.");
-  assert.deepEqual(r.symbols.sort(), ["add", "x"]);
-});
 
 test("D7: a code fence never pairs with inline backticks — its words are not identifiers", () => {
   const text =
@@ -60,69 +59,43 @@ test("D7: URLs, links, images and N/A are not files; real paths still are", () =
   assert.deepEqual(r.files.sort(), ["./scripts/run", "src/api/", "src/api/user.js"]);
 });
 
-test("words, URLs, code examples and language never invent prerequisite evidence", () => {
-  for (const task of [
-    "make the auth better",
-    "Change verifyToken in src/auth.js to require length > 20; update tests",
-    "继续",
-    "https://example.test",
-    "sí",
-    "a ".repeat(1000),
-  ]) {
-    const r = assessTask(task);
-    assert.equal(r.completeness, null);
-    assert.equal(r.shouldAsk, false);
-    assert.deepEqual(r.questions, []);
-  }
+test("D7: concreteness anchors ignore URLs, image links, contractions and versions", () => {
+  const cases = [
+    "Make it work somehow, don't break it, it's the login thing",
+    "Fix the bug. ![screenshot](https://user-images.example.com/a.png) Something is wrong with it (again) since v2.3: it's broken.",
+    "Improve the auth stuff. Version 2: see https://example.com/x",
+  ];
+  for (const text of cases)
+    assert.equal(completenessFeatures(text).concreteness, 0, `no concrete anchor in: ${text}`);
+  assert.equal(assessTask(cases[0]).hardUnderspecified, true, "vague + no anchor → hard ask");
+  // ...while real anchors still fire.
+  assert.ok(completenessFeatures("set `retries: 3` in config.yaml").concreteness >= 2);
+  assert.ok(completenessFeatures("rename it to 'prod', e.g. for the deploy").concreteness >= 2);
 });
 
-test("coverage measures distinct declared files and protects required scope", () => {
-  const root = mkdtempSync(join(tmpdir(), "forge-preflight-"));
-  writeFileSync(join(root, "present"), "ok");
-  const r = preflightRepo(root, "continue", {
-    requiredFiles: ["present", "missing", "present"],
-    llm: false,
-  });
-  assert.equal(r.assumption.completeness, 0.5);
-  assert.deepEqual(
-    r.assumption.missing.map((m) => m.description),
-    ["missing"],
-  );
-  assert.equal(r.assumption.shouldAsk, true);
-  writeFileSync(join(root, "missing"), "");
-  assert.equal(
-    preflightRepo(root, "continue", { requiredFiles: ["present", "missing"] }).assumption
-      .completeness,
-    1,
-  );
-  const outside = mkdtempSync(join(tmpdir(), "forge-other-"));
-  writeFileSync(join(outside, "secret"), "private");
-  symlinkSync(outside, join(root, "linked"), "junction");
-  assert.equal(
-    preflightRepo(root, "test", { requiredFiles: ["linked/secret", "."] }).assumption.completeness,
-    0,
+test("D7: a named code identifier is a concrete anchor", () => {
+  const rename = assessTask("Rename getUser to fetchUser everywhere");
+  assert.equal(rename.hardUnderspecified, false, "two named identifiers are not 'no anchor'");
+  assert.ok(completenessFeatures("Rename getUser to fetchUser everywhere").concreteness >= 1);
+  const withPath = assessTask("Rename getUser to fetchUser in src/api/user.js");
+  assert.equal(withPath.shouldAsk, false, "identifier + path clears the gate");
+});
+
+test("D7: the success-criteria cue needs the word test, not 'latest'", () => {
+  const r = assessTask("Improve startup by upgrading to the latest release");
+  assert.ok(
+    r.missing.some((m) => m.key === "success_criteria"),
+    "'latest' does not say how success is verified",
   );
 });
 
-test("without an explicit provider confidence policy a proposal remains advisory", () => {
-  const det = assessTask("resolve it");
-  const r = reconcileAssumption(det, {
-    completeness: 0,
-    missing: ["constraints"],
-    questions: ["where?"],
-  });
-  assert.equal(r.shouldAsk, false);
-  assert.equal(r.provenance.path, "llm-advisory");
-  assert.equal(r.provenance.proposalCompleteness, 0);
+test("ambiguityMarkers catches vague wording", () => {
+  const m = ambiguityMarkers("handle errors somehow and add several validations, etc.");
+  assert.ok(m.includes("somehow") || m.includes("handle errors"));
+  assert.ok(m.includes("several"));
+  assert.ok(m.includes("etc"));
 });
 
-test("missing graph evidence is reported as unknown without an intervention", () => {
-  const r = informationGap("inspect `newSymbol`");
-  assert.deepEqual(r.unknown.symbols, ["newSymbol"]);
-  assert.equal(r.gap, null);
-  assert.equal(r.checked, 0);
-  assert.equal(clarifyBlock(r), "");
-});
 test("informationGap: all references resolve → gap 0 (silent)", () => {
   const has = (n) => n === "computeTax";
   const r = informationGap("refactor `computeTax`", { hasSymbol: has });
@@ -160,6 +133,97 @@ test("preflightRepo grounds against a real repo (missing file/symbol → clarify
   assert.ok(!r.unresolved.symbols.includes("computeTax"), "resolved symbol is not flagged");
 });
 
+// --- M2 completeness is a logistic estimator (smooth, bounded, calibrated), not a step scorer ---
+
+test("completenessScore: logistic output is strictly bounded in (0,1) at feature extremes", () => {
+  const floor = completenessScore({
+    words: 1,
+    concreteness: 0,
+    specifics: 0,
+    vagueness: 12,
+    length: -1,
+  });
+  const ceil = completenessScore({
+    words: 400,
+    concreteness: 8,
+    specifics: 8,
+    vagueness: 0,
+    length: 1,
+  });
+  assert.ok(floor > 0 && floor < 0.02, "a wall of vagueness floors near 0 without a hard clamp");
+  assert.ok(ceil > 0.99 && ceil < 1, "a dense concrete spec saturates near 1 but never reaches it");
+});
+
+test("completenessScore: each concrete anchor raises completeness monotonically (no step jumps)", () => {
+  let prev = -1;
+  for (let c = 0; c <= 5; c++) {
+    const s = completenessScore({
+      words: 15,
+      concreteness: c,
+      specifics: 0,
+      vagueness: 0,
+      length: 0,
+    });
+    assert.ok(s > prev, `concreteness ${c} must exceed ${c - 1}`);
+    prev = s;
+  }
+});
+
+test("completenessScore: vagueness pulls down, specifics pull up (signed, attributable)", () => {
+  const base = {
+    words: 15,
+    concreteness: 1,
+    specifics: 0,
+    vagueness: 0,
+    length: 0,
+  };
+  assert.ok(completenessScore({ ...base, vagueness: 2 }) < completenessScore(base));
+  assert.ok(completenessScore({ ...base, specifics: 2 }) > completenessScore(base));
+});
+
+test("assessTask: completeness is continuous in length — no discontinuity at the old 22/30-word steps", () => {
+  // The old scorer jumped +0.1/+0.2 crossing 22/30 words; the tanh length term must be smooth,
+  // so completeness for 29 vs 30 words (same other features) differs only marginally.
+  const mk = (n) => `Implement parseThing to convert input to output ${"x ".repeat(n).trim()}`;
+  const a = assessTask(mk(20)).completeness;
+  const b = assessTask(mk(21)).completeness;
+  assert.ok(Math.abs(a - b) < 0.03, `adjacent word counts must not jump (${a} vs ${b})`);
+});
+
+test("assessTask: reproduces the paper's calibrated anchor examples", () => {
+  const vague = assessTask("make the auth better");
+  const clear = assessTask(
+    "Change verifyToken in src/auth.js to require length > 20; update tests",
+  );
+  assert.ok(vague.completeness < 0.3 && vague.shouldAsk, "bare ask stays under-specified");
+  assert.ok(clear.completeness >= 0.6 && !clear.shouldAsk, "a concrete task clears the gate");
+  // features are inspectable
+  assert.equal(completenessFeatures("make the auth better").concreteness, 0);
+});
+
+// The docs quoted the verifyToken example at ≈ 0.63 while the code gave 0.878: the prior was
+// set when the task had one concrete anchor, and a named identifier became a second one. Pin
+// what the code computes and that the docs' example output says the same.
+test("assessTask: the documented examples score what the docs say (0.23 and 0.88)", () => {
+  const task = "Change verifyToken in src/auth.js to require length > 20; update tests";
+  const clear = assessTask(task);
+  assert.equal(clear.completeness.toFixed(2), "0.88");
+  assert.equal(clear.risk, "low");
+  assert.equal(assessTask("make the auth better").completeness.toFixed(2), "0.23");
+  const f = completenessFeatures(task);
+  assert.equal(f.concreteness, 2, "the filename plus the named identifier");
+  assert.equal(
+    completenessScore({ ...f, concreteness: 1 }).toFixed(2),
+    "0.63",
+    "one anchor — the value the prior was hand-set against",
+  );
+  const line = `assumption: ${clear.risk} risk · completeness ${clear.completeness.toFixed(2)}`;
+  for (const doc of ["docs/GUIDE.md", "docs/cognitive-substrate/README.md"]) {
+    const text = readFileSync(fileURLToPath(new URL(`../${doc}`, import.meta.url)), "utf8");
+    assert.ok(text.includes(line), `${doc} shows "${line}"`);
+  }
+});
+
 test("assessTaskLLM: parses a completeness reading, rejects junk", () => {
   const p = assessTaskLLM("do a thing", {
     run: () => '{"completeness":0.3,"missing":["target_scope"],"questions":["Which file?"]}',
@@ -170,16 +234,55 @@ test("assessTaskLLM: parses a completeness reading, rejects junk", () => {
   assert.equal(assessTaskLLM("x", { run: () => '{"completeness":"nope"}' }), null);
 });
 
-test("a confident model cannot waive a declared unmet requirement", () => {
-  const det = assessTask("Fix it.", { requirements: [{ path: "contract.yml", present: false }] });
+test("reconcileAssumption: verdicts are compared, never the two scales blended", () => {
+  const det = assessTask("Fix the bug."); // under-specified, no anchor, shouldAsk
+  // Model claims fully specified — the no-anchor floor keeps the ask, and the reported
+  // completeness stays the rubric's own; the proposer's reading rides along in provenance.
+  const r = reconcileAssumption(det, { completeness: 1, missing: [], questions: [] });
+  assert.equal(r.shouldAsk, true);
+  assert.equal(r.completeness, det.completeness);
+  assert.equal(r.provenance.proposalCompleteness, 1);
+  assert.equal(r.provenance.path, "llm-overruled");
+  assert.equal(r.provenance.overruledBy, "no-anchor");
+});
+
+test("reconcileAssumption: never clears a deterministic / hard-underspecified ask", () => {
+  const det = assessTask("Fix it."); // hardUnderspecified
+  assert.equal(det.shouldAsk, true);
+  const r = reconcileAssumption(det, {
+    completeness: 0.95,
+    missing: [],
+    questions: [],
+  });
+  assert.equal(r.shouldAsk, true, "the gate only tightens; the model cannot open it");
+});
+
+test("reconcileAssumption: extra questions survive only if grounded or on a flagged dimension", () => {
+  const det = assessTask("optimize the pipeline"); // flags success_criteria/constraints dims
   const r = reconcileAssumption(
     det,
-    { completeness: 1, missing: [], questions: [] },
-    { minConfidence: 0.8 },
+    {
+      completeness: det.completeness,
+      missing: det.missing.map((m) => m.key), // maps to a flagged dimension → kept
+      questions: ["What is the acceptance benchmark?"],
+    },
+    { grounded: () => false },
   );
-  assert.equal(r.shouldAsk, true);
-  assert.equal(r.completeness, 0);
-  assert.equal(r.provenance.overruledBy, "missing-requirement");
+  assert.ok(
+    r.questions.some((q) => /benchmark/.test(q)) || det.questions.length === 0,
+    "a question on a flagged dimension is kept",
+  );
+  // An ungrounded question tied to no flagged dimension is dropped.
+  const r2 = reconcileAssumption(
+    det,
+    {
+      completeness: det.completeness,
+      missing: [],
+      questions: ["Unrelated musing?"],
+    },
+    { grounded: () => false },
+  );
+  assert.ok(!r2.questions.includes("Unrelated musing?"), "ungrounded extra question dropped");
 });
 
 test("reconcileAssumption: null proposal is a pure passthrough (deterministic path)", () => {
@@ -205,8 +308,6 @@ test("preflightRepo (llm on): fail-safe — a throwing runner keeps the determin
 });
 
 // --- Bidirectional M2 reconcile: clearing a false ask, guarded by hard floors ---
-const withPolicy = (det, proposal, opts = {}) =>
-  reconcileAssumption(det, proposal, { minConfidence: 0.8, ...opts });
 const detStub = (over = {}) => ({
   completeness: 0.5,
   risk: "medium",
@@ -220,7 +321,7 @@ const detStub = (over = {}) => ({
 
 test("bidirectional: a verified raise clears a borderline false ask", () => {
   const det = detStub({ completeness: 0.5, shouldAsk: true });
-  const r = withPolicy(
+  const r = reconcileAssumption(
     det,
     { completeness: 0.85, missing: [], questions: [] },
     { bidirectional: true, hasUnresolved: false },
@@ -235,13 +336,13 @@ test("bidirectional: a hard-underspecified task is NEVER cleared", () => {
     shouldAsk: true,
     hardUnderspecified: true,
   });
-  const r = withPolicy(det, { completeness: 1, missing: [], questions: [] }, {});
+  const r = reconcileAssumption(det, { completeness: 1, missing: [], questions: [] }, {});
   assert.equal(r.shouldAsk, true, "no concrete anchor → the model can't wave it through");
 });
 
 test("bidirectional: an unresolved-entity task is NEVER cleared (repo grounding floor)", () => {
   const det = detStub({ completeness: 0.55, shouldAsk: true });
-  const r = withPolicy(
+  const r = reconcileAssumption(
     det,
     { completeness: 0.95, missing: [], questions: [] },
     { hasUnresolved: true },
@@ -251,10 +352,10 @@ test("bidirectional: an unresolved-entity task is NEVER cleared (repo grounding 
 
 test("bidirectional: an unconfident reading can't lift a vague task over the line", () => {
   const det = detStub({ completeness: 0.2, shouldAsk: true });
-  const r = withPolicy(det, { completeness: 0.7, missing: [], questions: [] });
+  const r = reconcileAssumption(det, { completeness: 0.7, missing: [], questions: [] });
   assert.equal(r.shouldAsk, true, "p(proceed) 0.7 < minConfidence 0.8 → the rubric's ask stands");
   assert.equal(r.provenance.overruledBy, "confidence");
-  const opened = withPolicy(
+  const opened = reconcileAssumption(
     det,
     { completeness: 0.7, missing: [], questions: [] },
     { minConfidence: 0.6 },
@@ -264,7 +365,7 @@ test("bidirectional: an unconfident reading can't lift a vague task over the lin
 
 test("bidirectional: the model can still TIGHTEN a rubric-proceed task into an ask", () => {
   const det = detStub({ completeness: 0.7, shouldAsk: false, questions: [] });
-  const r = withPolicy(det, { completeness: 0.1, missing: [], questions: [] });
+  const r = reconcileAssumption(det, { completeness: 0.1, missing: [], questions: [] });
   assert.equal(r.shouldAsk, true, "a confident 'unspecified' reading → now asks");
   assert.equal(r.provenance.path, "llm-tightened");
 });
@@ -275,14 +376,14 @@ test("D6: unresolved entities never force an ask the rubric and the model both c
   const det = detStub({ completeness: 0.9, shouldAsk: false, questions: [] });
   const complete = { completeness: 0.99, missing: [], questions: [] };
   for (const bidirectional of [true, false]) {
-    const r = withPolicy(det, complete, { hasUnresolved: true, bidirectional });
+    const r = reconcileAssumption(det, complete, { hasUnresolved: true, bidirectional });
     assert.equal(r.shouldAsk, false, `bidirectional:${bidirectional} — no ask out of thin air`);
     assert.equal(r.provenance.path, "llm-agreed");
   }
   // ...while it still blocks CLEARING a rubric ask, in both modes.
   const asking = detStub({ completeness: 0.5, shouldAsk: true });
   for (const bidirectional of [true, false]) {
-    const r = withPolicy(asking, complete, { hasUnresolved: true, bidirectional });
+    const r = reconcileAssumption(asking, complete, { hasUnresolved: true, bidirectional });
     assert.equal(r.shouldAsk, true);
   }
 });
@@ -319,25 +420,25 @@ test("D6 (integration): a grounded rename with a background URL is not asked whe
 
 test("D8: a saturated rubric no longer pins a confident proposer to det − band", () => {
   const det = detStub({ completeness: 0.98, shouldAsk: false, questions: [] });
-  const tight = withPolicy(det, { completeness: 0.05, missing: [], questions: [] });
+  const tight = reconcileAssumption(det, { completeness: 0.05, missing: [], questions: [] });
   assert.equal(
     tight.shouldAsk,
     true,
     "a confident 'unspecified' reading tightens a saturated rubric",
   );
   assert.equal(tight.completeness, 0.98, "and the rubric's number is not dragged onto its scale");
-  const median = withPolicy(det, { completeness: 0.29, missing: [], questions: [] });
+  const median = reconcileAssumption(det, { completeness: 0.29, missing: [], questions: [] });
   assert.equal(median.completeness, 0.98, "no clip to det − 0.25");
   assert.equal(median.provenance.proposalCompleteness, 0.29);
   assert.equal(median.shouldAsk, false, "p(ask) 0.71 is below the confidence gate");
   const low = detStub({ completeness: 0.1, shouldAsk: true });
-  const cleared = withPolicy(low, { completeness: 0.95, missing: [], questions: [] });
+  const cleared = reconcileAssumption(low, { completeness: 0.95, missing: [], questions: [] });
   assert.equal(cleared.shouldAsk, false, "a confident reading can clear below det 0.35 too");
 });
 
 test("bidirectional:false — the model can never clear a deterministic ask", () => {
   const det = detStub({ completeness: 0.5, shouldAsk: true });
-  const r = withPolicy(
+  const r = reconcileAssumption(
     det,
     { completeness: 0.95, missing: [], questions: [] },
     { bidirectional: false, hasUnresolved: false },
@@ -353,55 +454,5 @@ test("preflightRepo (bidirectional, integration): unresolved symbol floor blocks
     llm: true,
     run: () => '{"completeness":0.95,"missing":[],"questions":[]}',
   });
-  assert.deepEqual(r.unresolved.symbols, ["ghostSymbol"]);
-  assert.equal(
-    r.assumption.shouldAsk,
-    false,
-    "a reference may be new; no prerequisite is declared",
-  );
-});
-
-test("clarification precision and abstention on a separate authored prompt sample", () => {
-  const ambiguous = [
-    "could you fix it",
-    "please fix this bug",
-    "resolve that issue",
-    "just improve it",
-    "it needs improvement",
-    "fix the issue now",
-    "please make it work",
-    "implement this thing",
-  ];
-  const ordinary = [
-    "List release notes",
-    "Review yesterday’s changes",
-    "Run the linter",
-    "Continue with the plan",
-    "Haan",
-    "okay thanks",
-    "How are errors displayed?",
-    "Why did the cache expire?",
-    "What changed in the parser?",
-    "Show me the stack trace",
-    "Replace tabs with spaces",
-    "Repair the timeout when saving drafts",
-    "Make it better by adding a subtitle",
-    "Add a note about the CLI",
-    "Plan migration steps",
-    "Export results as JSON",
-    "Update dependency hashes",
-    "Check which releases support HTTP/3",
-    "Describe the repo structure",
-    "List Python dependencies",
-    "Will you run focused tests?",
-    "Review the customer onboarding flow",
-    "Please continue debugging timestamps",
-    "Retry the most recent failing test",
-  ];
-  const ask = (t) => assessTask(t).hardUnderspecified;
-  assert.equal(ordinary.filter(ask).length, 0);
-  assert.equal(ambiguous.filter(ask).length, 0, "wording supplies no observed prerequisites");
-  assert.equal(ask("Make it better by adding keyboard focus"), false);
-  for (const t of ["yes", "continue", "what does this function do", "How are errors reported?"])
-    assert.equal(assessTask(t).shouldAsk, false);
+  assert.equal(r.assumption.shouldAsk, true, "unresolved entity keeps the gate closed");
 });

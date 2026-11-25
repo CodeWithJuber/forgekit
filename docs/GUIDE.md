@@ -2543,4 +2543,4 @@ Set `FORGE_TYPESCRIPT_PATH` to a trusted external TypeScript compiler.
 
 Local runtime and memory state use `FORGE_HOME`.
 
-Enable impact reviews through `FORGE_REVIEW_EDITS`. `FORGE_EDIT_REVIEW_TIMEOUT_MS` controls their timeout. `FORGE_GATE=advisory` chooses advisory behavior. `FORGE_TEST_ENVIRONMENT` identifies the test runtime. `FORGE_NPM_PATH` can name an externally installed npm CLI.
+Set `FORGE_TEST_ENVIRONMENT` to identify the measured test environment. `FORGE_NPM_PATH` can select the absolute path to the installed npm CLI.

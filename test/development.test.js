@@ -13,11 +13,12 @@ function repo(t) {
   execFileSync("git", ["init", "-q", root]);
   return root;
 }
-test("focused documentation change needs only a focused plan, edit and check", (t) => {
+test("an explicit focused workflow retains full verification without evidence", (t) => {
   const root = repo(t);
   const r = developmentPlan("Correct the spelling in README.md", {
     root,
     changedFiles: ["README.md"],
+    mode: "focused",
   });
   assert.equal(r.mode, "focused");
   assert.deepEqual(
@@ -25,7 +26,7 @@ test("focused documentation change needs only a focused plan, edit and check", (
     ["plan", "implement", "test"],
   );
   assert.ok(r.stages.every((s) => s.status === "planned"));
-  assert.equal(r.testing.tier, "cosmetic");
+  assert.equal(r.testing.tier, "high");
 });
 test("repair plan ties actual working tree risks, test and reuse evidence to actions", (t) => {
   const root = repo(t);
@@ -35,14 +36,17 @@ test("repair plan ties actual working tree risks, test and reuse evidence to act
   writeFileSync(join(root, "test", "paymentAuth.test.js"), "");
   const r = developmentPlan("Investigate a failing request", {
     root,
-    evidence: { symbols: [{ file: "src/client.js", line: 8, name: "submit" }] },
+    evidence: {
+      verification: { tests: { status: "FAIL" } },
+      symbols: [{ file: "src/client.js", line: 8, name: "submit" }],
+    },
   });
   assert.equal(r.mode, "repair");
   assert.equal(r.changeInspection, "git");
-  assert.ok(r.security.some((s) => s.category === "money"));
-  assert.ok(r.security.some((s) => s.category === "auth"));
+  assert.deepEqual(r.security, []);
   assert.ok(r.stages.find((s) => s.id === "reuse").refs.includes("src/client.js:8 submit"));
-  assert.ok(r.testing.tests.includes("test/paymentAuth.test.js"));
+  assert.deepEqual(r.testing.tests, []);
+  assert.equal(r.testing.fullSuite, true);
   assert.ok(r.stages.some((s) => s.id === "review"));
   assert.ok(r.repair.action.includes("rerun"));
   assert.equal(
@@ -60,6 +64,7 @@ test("hook never asks Git for changes and a dependency risk keeps substantive st
     root,
     hook: true,
     changedFiles: ["package.json", "../escape.js"],
+    evidence: { manifests: ["package.json"] },
   });
   assert.ok(withFiles.security.some((s) => s.category === "dependencies"));
   assert.notEqual(withFiles.mode, "focused");
@@ -71,7 +76,7 @@ test("module names and git refs are literal data during selection", (t) => {
   mkdirSync(join(root, "test"));
   const name = "module$(touch sentinel)";
   writeFileSync(join(root, "test", "related.test.js"), `import "${name}"`);
-  assert.deepEqual(mapToTests(root, [`src/${name}.js`]), ["test/related.test.js"]);
+  assert.deepEqual(mapToTests(root, [`src/${name}.js`]), []);
   resolveChangedFiles(root, { base: "HEAD$(touch sentinel)", head: "HEAD" });
   assert.equal(existsSync(join(root, "sentinel")), false);
 });

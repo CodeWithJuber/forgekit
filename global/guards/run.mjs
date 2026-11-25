@@ -124,11 +124,6 @@ export function resolveBash({
  */
 const toPosix = (p) => String(p).replaceAll("\\", "/");
 
-export function editReviewTimeout(env = process.env) {
-  const ms = Number(env.FORGE_EDIT_REVIEW_TIMEOUT_MS ?? 60000);
-  return Number.isSafeInteger(ms) && ms > 0 && ms <= 2147483647 ? ms : 60000;
-}
-
 /**
  * Guards the launcher treats specially, keyed by basename.
  *  - `node`: the `.sh` is only a thin launcher over this same-directory Node twin, so the twin
@@ -137,8 +132,6 @@ export function editReviewTimeout(env = process.env) {
  * @type {Record<string, {node?: string, failClosed?: boolean}>}
  */
 export const GUARD_POLICY = {
-  "secret-redact.sh": { node: "secret-redact.mjs" },
-  "pre-edit-impact.sh": { node: "pre-edit-impact.mjs", failClosed: true },
   "protect-paths.sh": { node: "protect-paths.mjs", failClosed: true },
   // dep-gate does network I/O, so it fails OPEN: an install must keep working offline. Only a
   // verdict from the twin (exit 2) blocks.
@@ -349,16 +342,8 @@ export function runGuard(
   }
   // stdin stays inherited exactly as before (the guard reads the hook JSON itself); only
   // stdout is captured, so the token budget can cap what gets injected into context.
-  const rewrite = guard.toLowerCase() === "secret-redact.sh";
   const r = spawn(cmd, cmdArgs, {
-    stdio: ["inherit", rewrite ? "inherit" : "pipe", "inherit"],
-    timeout:
-      guard.toLowerCase() === "pre-edit-impact.sh"
-        ? editReviewTimeout(env)
-        : failClosed
-          ? 4_000
-          : 24_000,
-    killSignal: "SIGKILL",
+    stdio: ["inherit", "pipe", "inherit"],
     env,
     windowsHide: true,
     encoding: "utf8",
@@ -372,7 +357,7 @@ export function runGuard(
   // Token budget: stdout is what gets injected into context, so cap it per the hook event.
   // Exit 2 is a BLOCK verdict — security-critical, never truncated.
   let out = typeof r.stdout === "string" ? r.stdout : "";
-  if (!rewrite && r.status !== 2 && out) {
+  if (r.status !== 2 && out) {
     const budget = loadBudget({ env });
     const cap = (eventName && budget.events[eventName]) || budget.default_bytes;
     out = budgetHookOutput(out, cap);

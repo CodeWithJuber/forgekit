@@ -8,14 +8,15 @@
 // shape differs from classifyIntent: a fact resembling nothing in the bank falls back to
 // the ledger (`ledger-fact`, provenance:"fallback") — the ledger is the home whose decay
 // semantics make an unsure placement safe — it is NEVER "none".
+import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { appendDecision } from "./decide.js";
+import { INTENT_STOP, intentGrams } from "./intent.js";
 import { shadowFact } from "./ledger_bridge.js";
 import { repoLedger } from "./ledger_store.js";
 import { setOverlap } from "./math.js";
-import { defaultStore, add as recallAdd } from "./recall.js";
+import { defaultStore, add as recallAdd, reindex } from "./recall.js";
 import { hasSecret } from "./secrets.js";
-import { INTENT_STOP, intentGrams } from "./text_grams.js";
 import { slug } from "./util.js";
 
 /**
@@ -336,6 +337,12 @@ export function storeFact(root, text, { mode = "auto", route } = {}) {
       const store = defaultStore();
       const res = recallAdd(store, factName(body), body);
       if (!res.ok) return { ok: false, home: r.home, stored: false, reason: res.reason };
+      // Shadow into the PERSONAL ledger beside the global store, then re-index — the
+      // same best-effort pair `forge recall add` performs (repo promotion stays explicit).
+      try {
+        shadowFact(join(store, "ledger"), factName(body), body);
+        reindex(store);
+      } catch {}
       return { ok: true, home: r.home, stored: true, ref: res.slug };
     }
     // ledger-fact (including every T6 fallback): a claim in the repo ledger, where

@@ -18,17 +18,6 @@ function run(input) {
   return { code: r.status ?? 1, out: r.stdout || "" };
 }
 
-test("oversized text is withheld while ordinary sibling data keeps its shape", () => {
-  const r = run({
-    tool_name: "Read",
-    tool_response: { lines: "workspace notes ".repeat(80000), total: 1200000 },
-  });
-  assert.deepEqual(JSON.parse(r.out).hookSpecificOutput.updatedToolOutput, {
-    lines: "[Output withheld: text exceeds the 1 MiB redaction limit.]",
-    total: 1200000,
-  });
-});
-
 test("secret-redact masks a leaked key and emits updatedToolOutput", () => {
   const r = run({
     tool_response: `the key is ${fakeAnthropic("AAAAbbbbCCCCddddEEEEffff")} and more`,
@@ -239,10 +228,9 @@ test("wrapper propagates redactor failure as exit 0 + DEGRADED by default (CR-02
   assert.match(r.err, /DEGRADED/);
 });
 
-test("wrapper delivers the replacement and strict repair notice when scanning fails", () => {
+test("wrapper propagates strict-mode exit 2 through the pipeline (CR-02)", () => {
   const r = runBrokenWrapper({ FORGE_GUARD_STRICT: "1" });
-  assert.equal(r.code, 0);
-  assert.match(JSON.parse(r.out).hookSpecificOutput.additionalContext, /withheld/);
+  assert.equal(r.code, 2, "wrapper must not swallow the child's exit status");
   assert.match(r.err, /DEGRADED/);
 });
 
@@ -252,10 +240,9 @@ test("secret-redact failure is loud, not silent (DEGRADED warning, exit 0)", () 
   assert.match(r.err, /DEGRADED/);
 });
 
-test("strict redaction failure supplies a typed replacement", () => {
+test("secret-redact failure exits 2 under FORGE_GUARD_STRICT=1 (surfaced, not blocking)", () => {
   const r = runBrokenRedactor({ FORGE_GUARD_STRICT: "1" });
-  assert.equal(r.code, 0);
-  assert.match(JSON.parse(r.out).hookSpecificOutput.updatedToolOutput, /withheld/);
+  assert.equal(r.code, 2, "strict mode surfaces the degradation to Claude via exit 2");
   assert.match(r.err, /DEGRADED/);
 });
 

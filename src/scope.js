@@ -8,9 +8,8 @@
 // pyImports / resolveSpec / loadPathAliases / pyModuleIndex from here, so the file graph
 // (scope, rank, the repo map) and the symbol graph (atlas, impact) can never disagree on
 // what a specifier points at — tsconfig path aliases included.
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { extname, join, posix, relative, resolve } from "node:path";
-import { readBounded } from "./private_paths.js";
 import { IGNORE_DIRS, SRC_EXT, toPosix } from "./util.js";
 
 // ---------------------------------------------------------------------------------------
@@ -558,18 +557,13 @@ const isFile = (abs) => {
  * @param {string} root
  * @param {string} rel repo-relative POSIX config path
  * @param {number} depth
- * @param {Map<string,{baseUrl?:string, paths?:Record<string, unknown>, pathsBase?:string}>} cache applied configs by path and depth
  * @returns {{baseUrl?:string, paths?:Record<string, unknown>, pathsBase?:string}|null}
  */
-function readTsConfig(root, rel, depth, cache) {
+function readTsConfig(root, rel, depth) {
   if (depth > MAX_EXTENDS_DEPTH) return null;
-  const key = `${depth}:${rel}`;
-  if (cache.has(key)) return cache.get(key);
-  if (cache.size >= 128) return null;
-  cache.set(key, null);
   let cfg;
   try {
-    cfg = parseJsonc(readBounded(join(root, rel), 1024 * 1024).bytes.toString("utf8"));
+    cfg = parseJsonc(readFileSync(join(root, rel), "utf8"));
   } catch {
     return null;
   }
@@ -585,7 +579,7 @@ function readTsConfig(root, rel, depth, cache) {
     // tsc tries the path as written, and appends `.json` only when that is not a file —
     // so `./tsconfig.base.jsonc` and an extensionless base that exists both load.
     const p = lit.endsWith(".json") || isFile(join(root, lit)) ? lit : `${lit}.json`;
-    const base = readTsConfig(root, p, depth + 1, cache);
+    const base = readTsConfig(root, p, depth + 1);
     if (base) out = { ...out, ...base };
   }
   const co = cfg.compilerOptions;
@@ -597,7 +591,6 @@ function readTsConfig(root, rel, depth, cache) {
       out.pathsBase = dir;
     }
   }
-  cache.set(key, out);
   return out;
 }
 
@@ -610,14 +603,8 @@ function readTsConfig(root, rel, depth, cache) {
  * @returns {PathAlias[]}
  */
 export function loadPathAliases(root) {
-  try {
-    root = realpathSync.native(root);
-  } catch {
-    return [];
-  }
-  const cache = new Map();
   for (const name of ["tsconfig.json", "jsconfig.json"]) {
-    const opts = readTsConfig(root, name, 0, cache);
+    const opts = readTsConfig(root, name, 0);
     if (!opts) continue;
     const base = opts.baseUrl ?? opts.pathsBase ?? ".";
     const inRepo = (t) =>

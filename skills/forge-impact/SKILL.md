@@ -9,9 +9,12 @@ allowed-tools: Bash, Read
 
 ## Install
 
-With the packaged CLI installed, run `forge skills install forge-impact --host codex` in the target project. Choose `claude`, `copilot`, `cursor`, `gemini`, `opencode` or `portable` for another destination. Use `forge skills show forge-impact` to inspect the playbook without installation.
+```bash
+# from a forgekit checkout, or: npm install -g forgekit
+cp -r skills/forge-impact .claude/skills/
+```
 
-To copy the instructions from a ForgeKit checkout by hand, run `mkdir -p .claude/skills && cp -r skills/forge-impact .claude/skills/` or copy the same folder to your host's project skill directory. The bound command requires the ForgeKit CLI.
+Requires the `forge` CLI on PATH.
 
 ## When to use
 

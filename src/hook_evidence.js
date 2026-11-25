@@ -105,16 +105,11 @@ export function failureQuery(hook) {
 }
 
 /** Advisory retrieval must never swallow an existing guard verdict when it fails. */
-export async function hookEvidence(root, query, reuse = undefined, failed = false) {
+export async function hookEvidence(root, query, reuse = undefined) {
   if (!query?.trim()) return "";
   try {
     const { runEvidence } = await import("./evidence.js");
-    const result = await runEvidence(query, {
-      root,
-      hook: true,
-      reuse,
-      mode: failed ? "repair" : undefined,
-    });
+    const result = await runEvidence(query, { root, hook: true, reuse });
     return result.text || "";
   } catch {
     return "";

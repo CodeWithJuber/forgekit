@@ -35,6 +35,7 @@ import {
   interpret,
   isForgeHookCommand,
   loadManifest,
+  MAX_PATCH_FILES,
   merge,
   NO_CONFIRM,
   normalize,
@@ -301,7 +302,6 @@ test("parsePatch: one entry per file, hunks as the old and new text around them"
       ["add", "src/new.js"],
       ["update", "package.json"],
       ["update", "old/name.js"],
-      ["update", "new/name.js"],
       ["delete", "tmp/junk.txt"],
     ],
   );
@@ -314,8 +314,7 @@ test("parsePatch: one entry per file, hunks as the old and new text around them"
     { old_string: '  "private": true', new_string: '  "private": false' },
   ]);
   assert.deepEqual(files[2].edits, [{ old_string: "x", new_string: "y" }]);
-  assert.deepEqual(files[3].edits, files[2].edits);
-  assert.equal(files[4].content, "");
+  assert.equal(files[3].content, "");
   assert.deepEqual(parsePatch("not a patch"), []);
 });
 
@@ -332,7 +331,6 @@ test("normalize: a patch is checked file by file, so path and manifest guards se
       ["Write", join("/r", "src/new.js")],
       ["MultiEdit", join("/r", "package.json")],
       ["MultiEdit", join("/r", "old/name.js")],
-      ["MultiEdit", join("/r", "new/name.js")],
       ["Write", join("/r", "tmp/junk.txt")],
     ],
   );
@@ -345,17 +343,20 @@ test("normalize: a patch is checked file by file, so path and manifest guards se
   });
   assert.deepEqual(
     viaShell.payloads.map((p) => p.tool_name),
-    ["Bash", "Write", "MultiEdit", "MultiEdit", "MultiEdit", "Write"],
+    ["Bash", "Write", "MultiEdit", "MultiEdit", "Write"],
   );
-  // Every path in a larger patch receives a guard payload.
-  const many = Array.from({ length: 11 }, (_, i) => `*** Add File: f${i}.txt\n+x`).join("\n");
+  // Past the cap the rest is reported, not silently skipped.
+  const many = Array.from(
+    { length: MAX_PATCH_FILES + 3 },
+    (_, i) => `*** Add File: f${i}.txt\n+x`,
+  ).join("\n");
   const capped = normalize("codex", "PreToolUse", {
     cwd: "/r",
     tool_name: "apply_patch",
     tool_input: { command: many },
   });
-  assert.equal(capped.payloads.length, 11);
-  assert.equal(capped.unchecked, 0);
+  assert.equal(capped.payloads.length, MAX_PATCH_FILES);
+  assert.equal(capped.unchecked, 3);
 });
 
 // ── the guard chain ────────────────────────────────────────────────────────────────────────
@@ -764,12 +765,12 @@ test("runHook: a guard's denial reaches each agent in its own words", async () =
   assert.ok(seen[0].guards.includes("dep-gate.sh"));
 });
 
-test("runHook: invalid and unavailable pre-tool checks fail closed; disabled hooks stand down", async () => {
+test("runHook: nothing that is not a verdict can fail a tool call", async () => {
   const silent = { stdout: "", stderr: "", exit: 0 };
   const deny = [ran({ status: 2, stderr: "no" })];
-  assert.equal(
-    (await hook({ host: "codex", event: "PreToolUse", input: "{not json" }, deny)).exit,
-    2,
+  assert.deepEqual(
+    await hook({ host: "codex", event: "PreToolUse", input: "{not json" }, deny),
+    silent,
   );
   assert.deepEqual(
     await hook({ host: "nobody", event: "PreToolUse", input: bash("x") }, deny),
@@ -796,7 +797,7 @@ test("runHook: invalid and unavailable pre-tool checks fail closed; disabled hoo
       throw new Error("boom");
     },
   });
-  assert.equal(throwing.exit, 2);
+  assert.deepEqual(throwing, silent);
   assert.equal(hooksDisabled({ FORGE_HOOKS: "off" }), true);
   assert.equal(hooksDisabled({ FORGE_HOOKS: "1" }), false);
   assert.equal(hooksDisabled({}), false);
@@ -894,7 +895,7 @@ test("runHook: Devin reads Claude's file but plays by its own rules", async () =
   assert.deepEqual(r, { stdout: "", stderr: `new package${NO_CONFIRM}`, exit: 2 });
 });
 
-test("runHook: two pre-tool deliveries independently evaluate current permissions", async () => {
+test("runHook: an event delivered by two files runs the guards once and denies twice", async () => {
   const dir = tmp("claims-");
   let runs = 0;
   const run = async () => {
@@ -920,63 +921,29 @@ test("runHook: two pre-tool deliveries independently evaluate current permission
     event: "PreToolUse",
     input: JSON.stringify(bash("npm i x")),
   });
-  assert.equal(runs, 2, "each host checked the current action");
+  assert.equal(runs, 1, "the guards ran once");
   assert.equal(JSON.parse(native.stdout).permissionDecision, "deny");
   assert.deepEqual(
     viaClaude,
     { stdout: "", stderr: "BLOCKED: invented name", exit: 2 },
-    "translated to its own dialect",
+    "replayed in its own dialect",
   );
 });
 
-test("runHook checks every target of a multi-file patch", async () => {
-  const names = Array.from({ length: 12 }, (_, i) => `f${i}.txt`);
-  const many = names.map((name) => `*** Add File: ${name}\n+x`).join("\n");
-  const seen = [];
-  const r = await hook(
-    {
-      env: { FORGE_REVIEW_EDITS: "1" },
-      host: "codex",
-      event: "PreToolUse",
-      input: {
-        session_id: "s",
-        cwd: "/r",
-        tool_name: "apply_patch",
-        tool_input: { command: many },
-      },
-    },
-    [ran()],
-    seen,
-  );
-  assert.equal(r.exit, 0);
-  assert.deepEqual(
-    seen.slice(0, -1).map((e) => e.payload.tool_input.file_path),
-    names.map((name) => join("/r", name)),
-  );
-  assert.deepEqual(seen.at(-1).guards, ["pre-edit-impact.sh"]);
-  assert.deepEqual(
-    seen.at(-1).payload.paths,
-    names.map((name) => join("/r", name)),
-  );
-});
-
-test("render delivers the native post-tool replacement without caching output", async () => {
-  const output = { message: "[REDACTED]" };
-  const rewrite = ran({
-    guard: "secret-redact.sh",
-    stdout: JSON.stringify({ hookSpecificOutput: { updatedToolOutput: output } }),
+test("runHook: a patch past the cap says what was not checked", async () => {
+  const many = Array.from(
+    { length: MAX_PATCH_FILES + 2 },
+    (_, i) => `*** Add File: f${i}.txt\n+x`,
+  ).join("\n");
+  const r = await hook({
+    host: "codex",
+    event: "PreToolUse",
+    input: { session_id: "s", cwd: "/r", tool_name: "apply_patch", tool_input: { command: many } },
   });
-  const verdict = interpret("PostToolUse", rewrite);
-  assert.deepEqual(
-    JSON.parse(render("gemini", "AfterTool", verdict).stdout).hookSpecificOutput.toolResponse,
-    output,
+  assert.match(
+    JSON.parse(r.stdout).hookSpecificOutput.additionalContext,
+    /2 more file\(s\) in this patch were not checked/,
   );
-  assert.deepEqual(
-    JSON.parse(render("claude", "PostToolUse", verdict).stdout).hookSpecificOutput
-      .updatedToolOutput,
-    output,
-  );
-  assert.match(render("codex", "PostToolUse", verdict).stderr, /cannot replace/);
 });
 
 test("runHook, end to end: the real guards block a secret read from every agent", async () => {
@@ -1018,9 +985,12 @@ test("runHook, end to end: the real guards block a secret read from every agent"
 
 // ── the files each agent reads ─────────────────────────────────────────────────────────────
 
-test("hookCommand: reports a missing CLI; a bootstrap pins this exact version", () => {
+test("hookCommand: never fails a machine without the CLI; a bootstrap pins this exact version", () => {
   const cmd = hookCommand("codex", "PreToolUse");
-  assert.ok(cmd.includes("$FORGE_CLI"));
+  assert.equal(
+    cmd,
+    `command -v ${CLI} >/dev/null 2>&1 || exit 0; ${CLI} hooks run codex PreToolUse`,
+  );
   assert.ok(isForgeHookCommand(cmd));
   assert.ok(isForgeHookCommand(hookCommand("copilot", "preToolUse", { shell: "powershell" })));
   assert.equal(isForgeHookCommand("./scripts/my-own-hook.sh"), false);
@@ -1032,7 +1002,10 @@ test("hookCommand: reports a missing CLI; a bootstrap pins this exact version", 
   assert.equal(packageSpec(), `${pkg.name}@${pkg.version}`);
   const boot = hookCommand("claude", "SessionStart", { bootstrap: true });
   assert.ok(boot.includes(`npm install -g --silent ${pkg.name}@${pkg.version}`));
-  assert.ok(boot.includes("forge hooks run claude SessionStart"));
+  assert.ok(
+    boot.endsWith(`|| exit 0; ${CLI} hooks run claude SessionStart`),
+    "still stands down if the install failed",
+  );
   // Only a session start installs; a tool call never waits on npm.
   assert.equal(
     hookCommand("claude", "PreToolUse", { bootstrap: true }),
@@ -1044,10 +1017,8 @@ test("hookCommand: reports a missing CLI; a bootstrap pins this exact version", 
     env: { PATH: "/nonexistent" },
     encoding: "utf8",
   });
-  if (absent.error === undefined) {
-    assert.equal(absent.status, 2);
-    assert.match(absent.stderr, /ForgeKit CLI unavailable/);
-  }
+  if (absent.error === undefined)
+    assert.deepEqual([absent.status, absent.stdout, absent.stderr], [0, "", ""]);
 });
 
 test("planHooks: each agent's file, in its own shape", () => {
@@ -1067,7 +1038,7 @@ test("planHooks: each agent's file, in its own shape", () => {
   ]);
   const codex = doc("codex").hooks.Stop[0].hooks[0];
   assert.ok(
-    codex.commandWindows.includes("Get-Command"),
+    codex.commandWindows.startsWith("if (Get-Command"),
     "Codex takes a Windows command of its own",
   );
   const gemini = doc("gemini");
@@ -1233,61 +1204,6 @@ test("applyHooks / hooksStatus / emitProjectHooks: on, current, stale, off", () 
   assert.equal(readFileSync(join(root, ".cursor", "hooks.json"), "utf8"), "{ nope");
 });
 
-test("host selection reconciles shared settings and preserves another application's hooks", () => {
-  const root = tmp("selection-");
-  const cfg = (hosts) => ({ hooks: { project: true, hosts } });
-  emitProjectHooks({ targetRoot: root, config: cfg(["claude", "cursor"]) });
-  const path = join(root, HOSTS.cursor.file);
-  const cursor = JSON.parse(readFileSync(path, "utf8"));
-  cursor.hooks.stop.unshift({ command: "my-formatter" });
-  writeFileSync(path, JSON.stringify(cursor));
-  for (const alias of ["devin", "windsurf"]) {
-    assert.deepEqual(selectedHosts(cfg([alias])), ["claude"]);
-    emitProjectHooks({ targetRoot: root, config: cfg([alias]) });
-    assert.ok(isForgeHookCommand(readFileSync(join(root, HOSTS.claude.file), "utf8")));
-    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).hooks, {
-      stop: [{ command: "my-formatter" }],
-    });
-  }
-});
-
-test("a malformed requested host config leaves the previous selection intact", () => {
-  const root = tmp("host-rollback-");
-  applyHooks(root, "cursor");
-  const prior = readFileSync(join(root, HOSTS.cursor.file), "utf8");
-  mkdirSync(join(root, ".gemini"), { recursive: true });
-  writeFileSync(join(root, HOSTS.gemini.file), "invalid");
-  assert.throws(
-    () =>
-      emitProjectHooks({
-        targetRoot: root,
-        config: { hooks: { project: true, hosts: ["claude", "gemini"] } },
-      }),
-    /Cannot reconcile/,
-  );
-  assert.equal(readFileSync(join(root, HOSTS.cursor.file), "utf8"), prior);
-  assert.equal(existsSync(join(root, HOSTS.claude.file)), false);
-});
-
-test("a local component runs only its packaged guard and defers to the complete bundle", async () => {
-  const root = tmp("single-guard-");
-  const request = {
-    host: "claude",
-    event: "PreToolUse",
-    component: "protect-paths",
-    input: { cwd: root, tool_name: "Read", tool_input: { file_path: join(root, "README.md") } },
-  };
-  const seen = [];
-  assert.equal((await hook(request, [ran()], seen)).exit, 0);
-  assert.deepEqual(
-    seen.map((s) => s.guards),
-    [["protect-paths.sh"]],
-  );
-  applyHooks(root, "claude");
-  assert.equal((await hook(request, [ran()], seen)).exit, 0);
-  assert.equal(seen.length, 1);
-});
-
 test("forge hooks: on writes every file, status reads them back, off removes them; run answers an agent", () => {
   const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const root = tmp("repo-");
@@ -1331,8 +1247,7 @@ test("forge hooks: on writes every file, status reads them back, off removes the
     "stderr is the reason and only the reason",
   );
   const quiet = run(["run", "codex", "PreToolUse"], "{}");
-  assert.equal(quiet.status, 2);
-  assert.match(quiet.stderr, /missing a tool name/);
+  assert.deepEqual([quiet.status, quiet.stdout, quiet.stderr], [0, "", ""]);
   const off = JSON.parse(run(["off", "--json"]).stdout);
   assert.ok(
     off.rows.every(

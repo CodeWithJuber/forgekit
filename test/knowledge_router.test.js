@@ -15,6 +15,10 @@ import {
 } from "../src/knowledge_router.js";
 import { loadClaims, repoLedger } from "../src/ledger_store.js";
 
+// Default is now ledger-only; these cases exercise the legacy FILE store (the
+// FORGE_LEDGER_ONLY=0 escape hatch). Pin it here so they test that path directly.
+process.env.FORGE_LEDGER_ONLY = "0";
+
 const CLI = fileURLToPath(new URL("../src/cli.js", import.meta.url));
 
 test("routeFact: the first-person signal survives tokenization (deep review D9)", () => {
@@ -156,7 +160,7 @@ test("storeFact: recall home writes the personal store (FORGE_HOME-scoped)", () 
     assert.equal(r.home, "recall");
     assert.equal(r.stored, true);
     const slugged = factName("i prefer detailed commit messages");
-    assert.ok(loadClaims(join(home, "recall", "ledger")).some((c) => c.body.name === slugged));
+    assert.ok(existsSync(join(home, "recall", "facts", `${slugged}.md`)));
     assert.ok(!existsSync(join(root, ".forge")), "recall must not touch the repo ledger");
   } finally {
     delete process.env.FORGE_HOME;

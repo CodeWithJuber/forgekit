@@ -24,15 +24,11 @@ export const COMMANDS = {
     summary:
       "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
     usage:
-      "forge init [--tools <list|all>] [--review-edits | --no-review-edits] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
+      "forge init [--tools <list|all>] [--profile minimal|standard] [--no-settings | --settings-only | --remove-settings]",
     flags: [
       {
-        flag: "--review-edits | --no-review-edits",
-        desc: "Enable or disable a required impact review before each edit in this workspace.",
-      },
-      {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi, opencode) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",
@@ -365,11 +361,7 @@ export const COMMANDS = {
     ],
     examples: ['forge context "update computeTax in src/tax.js" --block'],
   },
-  preflight: {
-    summary: "assumption check — what a task names that the repo doesn't define",
-    usage: 'forge preflight "<task>" [--require-file <path>]... [--json]',
-    examples: ['forge preflight "Review freezeSuite in src/rollout_eval.js" --json'],
-  },
+  preflight: "assumption check — what a task names that the repo doesn't define",
   config: "provider setup — show / switch / add providers, set default model",
   route: {
     summary:
@@ -454,7 +446,7 @@ export const COMMANDS = {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
     usage:
-      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json] | forge impact --review <receipt-id> [--json]",
+      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json]",
     flags: [
       { flag: "--json", desc: "machine-readable report" },
       {
@@ -506,11 +498,7 @@ export const COMMANDS = {
     examples: ["forge rank", "forge rank --top 5 --json"],
   },
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
-  scope: {
-    summary: "decompose files into independent clusters (+ coupled files you didn't name)",
-    usage: "forge scope <file> [file ...] [--json]",
-    examples: ["forge scope src/cost_report.js src/metrics.js --json"],
-  },
+  scope: "decompose files into independent clusters (+ coupled files you didn't name)",
   anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
   handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
   decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
