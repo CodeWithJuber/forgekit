@@ -52,20 +52,28 @@ export function relayKeys(config, value = process.env[config.keyEnv]) {
 
 // Authenticate the entire private queue before a retry can send it to the receiver.
 // This also covers optional or unknown fields added to a serialized request.
-function outboxTag(keys, change) {
-  return createHmac("sha256", keys.outbox).update(JSON.stringify(change)).digest();
+function outboxTag(keys, payload, version) {
+  const mac = createHmac("sha256", keys.outbox);
+  if (version === 2) mac.update("forgekit/outbox/v2\0");
+  return mac.update(payload).digest();
 }
 export function queueRelayChange(keys, change) {
-  return { change, tag: outboxTag(keys, change).toString("hex") };
+  const payload = JSON.stringify(change);
+  return { version: 2, payload, tag: outboxTag(keys, payload, 2).toString("hex") };
 }
 export function pendingRelayChange(keys, stored) {
+  // Existing v1 queues signed their change object in insertion order. New envelopes
+  // retain the exact signed payload, independent of the outer JSON serializer.
+  const legacy = stored && !Object.hasOwn(stored, "version") && stored.change;
+  const payload = legacy ? JSON.stringify(stored.change) : stored?.payload;
   if (
-    !stored?.change ||
+    (!legacy && stored?.version !== 2) ||
+    typeof payload !== "string" ||
     !hash(stored.tag) ||
-    !timingSafeEqual(outboxTag(keys, stored.change), Buffer.from(stored.tag, "hex"))
+    !timingSafeEqual(outboxTag(keys, payload, legacy ? 1 : 2), Buffer.from(stored.tag, "hex"))
   )
     throw new Error("The pending relay upload failed authentication");
-  return stored.change;
+  return JSON.parse(payload);
 }
 
 const objectId = (keys, path) => createHmac("sha256", keys.names).update(path).digest("hex");
