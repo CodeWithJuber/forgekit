@@ -61,10 +61,18 @@ export function proposeMemory(root, name, body) {
 export function listProposals(root) {
   const dir = privateMemoryDir(root, "proposals");
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => /^[a-f0-9]{64}\.json$/.test(f))
-    .sort()
-    .map((f) => loadCandidate(dir, f.slice(0, -5)));
+  const proposals = [];
+  for (const file of readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )) {
+    if (!file.isFile() || !/^[a-f0-9]{64}\.json$/.test(file.name)) continue;
+    try {
+      proposals.push(loadCandidate(dir, file.name.slice(0, -5)));
+    } catch {
+      // A damaged or concurrently reviewed proposal leaves its siblings available.
+    }
+  }
+  return proposals;
 }
 
 export function reviewProposal(root, id, approve) {

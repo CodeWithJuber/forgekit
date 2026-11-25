@@ -21,12 +21,6 @@ if (process.env.FORGE_GATE !== "advisory") {
       intent: batch ? body.intent : editIntent(body.tool_name, body.tool_input),
     });
     if (!result.allow) throw new Error(result.reason);
-    if (!result.id) {
-      const scope = result.plan.fullSuite ? "full suite" : result.plan.tests.join(", ");
-      process.stdout.write(JSON.stringify({ hookSpecificOutput: {
-        hookEventName: "PreToolUse", additionalContext: "Edit impact scope: " + scope,
-      } }));
-    }
   } catch (error) {
     process.stderr.write("ForgeKit pre-edit impact: " + error.message + "\n");
     process.exitCode = 2;
