@@ -22,6 +22,7 @@ import {
   sketch,
   val,
 } from "./ledger.js";
+import { claimToLesson } from "./ledger_read.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { referencedEntities } from "./preflight.js";
 import { hasSecret } from "./secrets.js";
@@ -92,6 +93,7 @@ export function requiredSet(root, task, { atlas = null, claims = [] } = {}) {
   const names = new Set([...entities.symbols, ...entities.files.map((f) => basename(f))]);
   for (const c of claims) {
     if (c.kind !== "lesson" || c.tombstone) continue;
+    if (c.body?.correctionVersion === 2 && claimToLesson(c, 0, root).status !== "active") continue;
     const observations = evidenceEvents(c.evidence);
     if (
       observations.some((e) => e.result !== "confirm") ||

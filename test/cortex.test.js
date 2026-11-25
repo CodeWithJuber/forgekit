@@ -6,16 +6,29 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { workspaceSnapshot } from "../src/cloud_snapshot.js";
+import { requiredSet } from "../src/context.js";
 import {
   confirmCorrection,
   lessonsForContext,
   pendingCorrections,
   recordContradiction,
   recordMistake,
+  startupBlock,
   summary,
 } from "../src/cortex.js";
 import { appendSessionEvent } from "../src/cortex_hook.js";
-import { mergedLessons as load } from "../src/ledger_read.js";
+import { outcomeRecord } from "../src/ledger.js";
+import { lessonClaim } from "../src/ledger_bridge.js";
+import { claimToLesson, mergedLessons as load } from "../src/ledger_read.js";
+import {
+  appendEvidence,
+  getClaimByPrefix,
+  mergeDirs,
+  putClaim,
+  readEvidence,
+  repoLedger,
+  tombstone,
+} from "../src/ledger_store.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-cortex-"));
 const ctx = {
@@ -187,4 +200,88 @@ test("concurrent delivery of the same correction only confirms it once", async (
   const actions = deliveries.map((r) => JSON.parse(r.stdout).action).sort();
   assert.deepEqual(actions, ["confirmed", "duplicate", "duplicate", "duplicate"]);
   assert.equal(load(root, 2)[0].evidenceCount, 1);
+});
+
+test("a shared v2 correction needs checkout evidence or approval of the exact revision", () => {
+  const author = fixture(),
+    peer = fixture();
+  const observe = (root, episodeId, nowDay) =>
+    recordMistake(root, { signals: strong, context: ctx, nowDay, episodeId });
+  observe(author, "first", 1);
+  observe(author, "second", 2);
+  const [original] = load(author);
+  const id = original.provenance.claim;
+  const dst = repoLedger(peer);
+  mergeDirs(dst, repoLedger(author), { nowDay: 3 });
+  const [imported] = load(peer);
+  assert.equal(imported.status, "candidate");
+  assert.equal(imported.evidenceCount, 0);
+  assert.equal(startupBlock(peer, 3), "");
+  assert.equal(lessonsForContext(peer, ctx, { nowDay: 3 }).block, "");
+  assert.equal(confirmCorrection(peer, imported.id, 3).ok, false);
+
+  for (const ref of ["test:report-one", "test:report-two", "episode:second"]) {
+    const oracle = ref.startsWith("test:") ? "test.run" : "cortex.episode";
+    const record = outcomeRecord({ oracle, result: "confirm", t: 1, ref });
+    assert.equal(record.ok, true);
+    assert.equal(appendEvidence(dst, id, record.outcome).ok, true);
+  }
+  const claim = getClaimByPrefix(dst, id);
+  assert.equal(claimToLesson(claim, 3, peer).status, "candidate");
+  assert.equal(lessonsForContext(peer, ctx, { nowDay: 3 }).block, "");
+
+  const gitReceipt = outcomeRecord({
+    oracle: "test.run",
+    result: "confirm",
+    t: 1,
+    ref: "git:0123456789abcdef",
+  }).outcome;
+  const candidates = [{ ...claim, evidence: [...claim.evidence, gitReceipt] }];
+  assert.equal(
+    requiredSet(peer, "Review src/auth/token.ts", { claims: candidates }).some(
+      (r) => r.kind === "lesson",
+    ),
+    false,
+  );
+  assert.equal(confirmCorrection(peer, id, 4).status, "active");
+  assert.equal(confirmCorrection(peer, id, 5).action, "already-published");
+  assert.equal(load(peer)[0].evidenceCount, 1);
+  assert.match(lessonsForContext(peer, ctx, { nowDay: 5 }).block, /validateToken/);
+  assert.equal(
+    requiredSet(peer, "Review src/auth/token.ts", {
+      claims: [{ ...candidates[0], evidence: [...readEvidence(dst, id), gitReceipt] }],
+    }).some((r) => r.kind === "lesson"),
+    true,
+  );
+
+  const revision = lessonClaim(
+    { ...imported, correctedBehavior: "Inspect the output in the local editor." },
+    6,
+  ).claim;
+  assert.notEqual(revision.id, id);
+  putClaim(dst, revision);
+  for (const event of readEvidence(dst, id))
+    assert.equal(appendEvidence(dst, revision.id, event).ok, true);
+  assert.equal(claimToLesson(getClaimByPrefix(dst, revision.id), 6, peer).status, "candidate");
+  tombstone(dst, id, { reason: "Revised lesson", t: 6, author: "maintainer" });
+  assert.equal(confirmCorrection(peer, id, 7).ok, false);
+  assert.equal(confirmCorrection(peer, "0".repeat(64), 7).ok, false);
+  assert.equal(lessonsForContext(peer, ctx, { nowDay: 7 }).block, "");
+  assert.equal(observe(peer, "first-local", 8).action, "created");
+  assert.equal(observe(peer, "second-local", 9).action, "refused");
+  assert.equal(lessonsForContext(peer, ctx, { nowDay: 9 }).block, "");
+});
+
+test("an independent pair of local recoveries can corroborate the same imported content", () => {
+  const author = fixture(),
+    peer = fixture();
+  const observe = (root, episodeId, nowDay) =>
+    recordMistake(root, { signals: strong, context: ctx, nowDay, episodeId });
+  observe(author, "first", 1);
+  observe(author, "second", 2);
+  mergeDirs(repoLedger(peer), repoLedger(author), { nowDay: 3 });
+  assert.equal(observe(peer, "local-first", 4).action, "created");
+  assert.equal(load(peer)[0].status, "candidate");
+  assert.equal(observe(peer, "local-second", 5).status, "active");
+  assert.equal(load(peer)[0].evidenceCount, 1);
 });

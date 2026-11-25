@@ -1,4 +1,5 @@
 // Write lesson observations, revisions and facts through the authoritative PCM ledger.
+import { signCorrectionOutcome } from "./correction_receipt.js";
 import { mintClaim, outcomeRecord } from "./ledger.js";
 import {
   appendEvidence,
@@ -104,7 +105,11 @@ export function recordLessonEvent(root, lesson, ev = {}) {
           ok: false,
           reason: "reason" in o ? o.reason : "invalid outcome",
         };
-      outcome = o.outcome;
+      outcome =
+        lesson.provenance?.correctionVersion === 2
+          ? signCorrectionOutcome(root, minted.claim.id, lesson.id, o.outcome)
+          : o.outcome;
+      if (!outcome) return { ok: false, reason: "Local correction evidence could not be signed" };
     }
     const existing = getClaimByPrefix(dir, minted.claim.id, { attic: true });
     if (existing?.archived || existing?.tombstone)

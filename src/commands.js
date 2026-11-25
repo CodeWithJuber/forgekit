@@ -380,7 +380,12 @@ export const COMMANDS = {
     ],
   },
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
-  cortex: "self-correcting project memory — status / why <symbol>",
+  cortex: {
+    summary: "inspect project memory and review privately observed corrections",
+    usage:
+      "forge cortex status | why <symbol-or-file> | review [--json] | confirm <lesson-id|full-claim-hash> [--json]",
+    examples: ["forge cortex why src/ledger.js", "forge cortex review --json"],
+  },
   deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
   ledger: {
     summary:

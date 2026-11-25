@@ -1,9 +1,15 @@
 // Turn observed corrections into private proposals, and corroborated proposals into ledger evidence.
+import { trustedCorrectionOutcome } from "./correction_receipt.js";
 import { pendingCorrections, withCorrection } from "./cortex_observations.js";
 
 export { pendingCorrections } from "./cortex_observations.js";
 
-import { equivalentLesson, recordLessonEvent, supersedeLessonClaim } from "./ledger_bridge.js";
+import {
+  equivalentLesson,
+  lessonClaim,
+  recordLessonEvent,
+  supersedeLessonClaim,
+} from "./ledger_bridge.js";
 import { mergedLessons } from "./ledger_read.js";
 import { readEvidence, recordUse, repoLedger } from "./ledger_store.js";
 import {
@@ -81,9 +87,22 @@ function propose(id, context, observed, episodeId, nowDay, distilled) {
 // finds the same receipt, even on a later day. A retired or superseded claim stays retired.
 function publishReceipt(root, lesson, nowDay, result, oracle, ref) {
   const known = mergedLessons(root, nowDay).find((l) => l.id === lesson.id);
-  if (known && (known.status === "retired" || !equivalentLesson(known, lesson))) return null;
+  const version2 = lesson.provenance?.correctionVersion === 2;
+  if (known) {
+    const same = version2
+      ? known.provenance.claim === lessonClaim(lesson).claim?.id
+      : equivalentLesson(known, lesson);
+    if (known.status === "retired" || !same) return null;
+  }
   const evidence = known ? readEvidence(repoLedger(root), known.provenance.claim) : [];
-  if (!evidence.some((e) => e.oracle === oracle && e.result === result && e.ref === ref)) {
+  const alreadyRecorded = evidence.some(
+    (e) =>
+      e.oracle === oracle &&
+      e.result === result &&
+      e.ref === ref &&
+      (!version2 || trustedCorrectionOutcome(root, known.provenance.claim, lesson.id, e)),
+  );
+  if (!alreadyRecorded) {
     if (
       !lessonIsSafe(lesson) ||
       !recordLessonEvent(root, lesson, { t: nowDay, result, oracle, ref }).ok
@@ -122,7 +141,9 @@ export function recordMistake(
     const shared = mergedLessons(root, nowDay).find((l) => l.id === id);
     if (shared?.status === "retired" || (row.published && !shared))
       return { action: "abstained", id, observed };
-    if (!row.lesson && !shared) {
+    const needsLocalEvidence =
+      shared?.provenance.correctionVersion === 2 && shared.status === "candidate";
+    if (!row.lesson && (!shared || needsLocalEvidence)) {
       row.lesson = proposed;
       row.needsReview = Boolean(distilled);
       row.observations[key] = observation;
@@ -132,7 +153,7 @@ export function recordMistake(
       row.observations[key] = observation;
       return { action: "pending-review", id, status: "candidate", visibility: "private", observed };
     }
-    const lesson = shared ?? row.lesson;
+    const lesson = needsLocalEvidence ? row.lesson : (shared ?? row.lesson);
     if (lesson.provenance.episodes.includes(episodeId)) {
       if (shared?.status === "active") row.published = true;
       return { action: "duplicate", id, observed };
@@ -156,8 +177,40 @@ export function recordMistake(
   });
 }
 
+function ratifyCorrection(root, lesson, nowDay) {
+  const receipt = receiptKey("operator-confirmation", [
+    lesson.id,
+    lesson.whatWentWrong,
+    lesson.correctedBehavior,
+  ]);
+  const published = publishReceipt(
+    root,
+    lesson,
+    nowDay,
+    "confirm",
+    "human.accept",
+    `human:operator@${receipt}`,
+  );
+  return published
+    ? {
+        ok: true,
+        action: "confirmed",
+        id: lesson.id,
+        status: published.status,
+        visibility: "project",
+      }
+    : { ok: false, reason: "The reviewed correction could not be published" };
+}
+
 export function confirmCorrection(root, id, nowDay) {
   root = sourceWorkspaceRoot(root);
+  if (/^[0-9a-f]{64}$/.test(id)) {
+    const shared = mergedLessons(root, nowDay).find((l) => l.provenance.claim === id);
+    if (shared?.provenance.correctionVersion !== 2 || shared.status === "retired")
+      return { ok: false, reason: "No current v2 correction with that claim ID" };
+    if (shared.status === "active") return { ok: true, action: "already-published", id: shared.id };
+    return withCorrection(root, shared.id, () => ratifyCorrection(root, shared, nowDay));
+  }
   if (!pendingCorrections(root).some((l) => l.id === id)) {
     const shared = mergedLessons(root, nowDay).find((l) => l.id === id);
     if (shared?.provenance.correctionVersion === 2 && shared.status === "active")
@@ -182,24 +235,12 @@ export function confirmCorrection(root, id, nowDay) {
         };
       }
     }
-    const receipt = receiptKey("operator-confirmation", [
-      id,
-      lesson.whatWentWrong,
-      lesson.correctedBehavior,
-    ]);
-    const published = publishReceipt(
-      root,
-      lesson,
-      nowDay,
-      "confirm",
-      "human.accept",
-      `human:operator@${receipt}`,
-    );
-    if (!published) return { ok: false, reason: "The reviewed correction could not be published" };
+    const result = ratifyCorrection(root, lesson, nowDay);
+    if (!result.ok) return result;
     row.needsReview = false;
     row.published = true;
     delete row.previousClaim;
-    return { ok: true, action: "confirmed", id, status: published.status, visibility: "project" };
+    return result;
   });
 }
 

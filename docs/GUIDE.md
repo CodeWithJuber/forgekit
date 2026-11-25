@@ -1217,7 +1217,7 @@ $ forge recall list
 
 ### `forge cortex [status | why <symbol>]` — self-correcting memory
 
-Status of the lessons Cortex has learned from _this repo's_ correction history.
+`forge cortex status` reports project lessons, confirmed and contradicted outcomes, and the number of private proposals. `forge cortex review --json` lists this checkout's pending proposals and their observed source signals. Use `forge cortex confirm LESSON_ID` to accept one and `forge cortex why <symbol-or-file>` to inspect what a host would receive. To adopt an incoming v2 correction, inspect `forge ledger show FULL_CLAIM_HASH` and run `forge cortex confirm FULL_CLAIM_HASH` in the receiving checkout.
 
 ```console
 $ forge cortex
