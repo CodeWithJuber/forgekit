@@ -19,8 +19,10 @@ export function physicalPath(path) {
       return join(realpathSync.native(ancestor), relative(ancestor, target));
     } catch (error) {
       if (error.code !== "ENOENT" || dirname(ancestor) === ancestor) throw error;
-      // A dangling symlink is not a new directory that can be safely created later.
-      if (lstatSync(ancestor, { throwIfNoEntry: false })) throw error;
+      // A concurrent initializer may have created this directory since realpath.
+      // Resolve it again. A genuinely dangling link still fails here.
+      if (lstatSync(ancestor, { throwIfNoEntry: false }))
+        return join(realpathSync.native(ancestor), relative(ancestor, target));
       ancestor = dirname(ancestor);
     }
   }

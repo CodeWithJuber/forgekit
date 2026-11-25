@@ -110,6 +110,7 @@ const verifierOutputs = new Set([
   ".forge/verify-events.jsonl",
   ".forge/ledger/.state-cache.json",
   ".forge/uicheck.json",
+  ".forge/metrics.jsonl",
 ]);
 
 function untrackedForgeInputs(cwd) {
@@ -117,9 +118,10 @@ function untrackedForgeInputs(cwd) {
     .split("\0")
     .filter((path) => {
       if (!path) return false;
-      // Browser and end-to-end receipts are written after the check hashes the tree.
-      const sessionTrail = /^\.forge\/sessions\/[A-Za-z0-9_-]+\.trail$/.test(path);
-      if (!sessionTrail && !verifierOutputs.has(path)) return true;
+      // Host callbacks write these markers and metrics after the check hashes the tree.
+      const sessionOutput =
+        /^\.forge\/sessions\/[A-Za-z0-9_-]+\.(?:base|dirty|trail|blocked|jsonl)$/.test(path);
+      if (!sessionOutput && !verifierOutputs.has(path)) return true;
       const info = lstatSync(join(cwd, path));
       return !info.isFile() || info.nlink !== 1;
     });
