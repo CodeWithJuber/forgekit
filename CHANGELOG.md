@@ -8,8 +8,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking changes
 
-- A signed verification PASS requires a complete report with passing checks. A successful process with uncounted checks reports INCOMPLETE. Native Go uses test events and Gradle uses freshly generated JUnit reports.
-- Required impact review before edits uses explicit enrollment through `forge init --review-edits`. Existing guard installations read this setting on their next callback. Plain init leaves Git verification enrollment to an explicit tool selection.
+- A signed verification PASS requires a complete report with passing checks. The new fingerprint includes untracked ForgeKit inputs. A staged receipt requires local ForgeKit configurations and helpers to match the index. Run verification again to replace an older receipt. A successful process with uncounted checks reports INCOMPLETE. Native Go uses test events and Gradle uses freshly generated JUnit reports.
+- Required impact review before edits uses explicit enrollment through `forge init --review-edits`. An enrolled host must supply a stable session ID before an edit can proceed. Plain init leaves Git verification enrollment to an explicit tool selection.
 - `forge models --json` returns the provider inventory in schema 2. Consumers of the original tiers can request `--schema 1`.
 - Cloud and relay enrollment now honor Git ignore rules by default. To share ignored files, preview the extra paths and re-enroll with `--include-ignored`.
 
