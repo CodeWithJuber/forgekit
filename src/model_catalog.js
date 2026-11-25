@@ -14,9 +14,9 @@
 //     date and separators ignored: `claude-opus-4-8` ↔ `anthropic/claude-opus-4.8`).
 // Fetching goes through src/http_cache.js (freshness from the response's own headers). Every
 // function here is total: an unavailable catalog is `null`, never a throw.
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { cachedGetJson, httpGet } from "./http_cache.js";
+import { modelScope } from "./model_scope.js";
 import { outsideWorkspace } from "./private_paths.js";
 import { stripTrailingSlashes, userStateDir } from "./util.js";
 
@@ -388,21 +388,20 @@ export function fetchCatalog(
   // server picks up a new model instead of holding its first answer until restart. An
   // unavailable catalog is remembered until the same moment, so a broken network is not retried
   // on every call either.
-  const scope = createHash("sha256")
-    .update(JSON.stringify([root, source.url, source.headers]))
-    .digest("hex");
+  const scope = modelScope(root, "http-catalog", [root, source.url, source.headers]);
   const memoKey = transport === httpGet ? scope : null;
   if (memoKey) {
     const hit = _memo.get(memoKey);
     if (hit && at < hit.until) return hit.result;
   }
-  const dir = root
-    ? outsideWorkspace(
-        root,
-        join(userStateDir(), "model-http-cache", scope),
-        "Model cache must be private",
-      )
-    : null;
+  const dir =
+    root && scope
+      ? outsideWorkspace(
+          root,
+          join(userStateDir(), "model-http-cache", scope),
+          "Model cache must be private",
+        )
+      : null;
   let result = null;
   try {
     result = fetchPages(source, { dir, transport, timeoutMs, now: at });

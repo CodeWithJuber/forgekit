@@ -1,6 +1,6 @@
 // Profile inventories describe metadata, not inference entitlement. Only complete, scoped
 // snapshots are cached, outside the checkout. No inference request is made here.
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readHostModelReports } from "./host_models.js";
@@ -13,6 +13,7 @@ import {
   perMillion,
   SAFE_MODEL_ID,
 } from "./model_catalog.js";
+import { modelScope } from "./model_scope.js";
 import { outsideWorkspace } from "./private_paths.js";
 import {
   cleanModelEndpoint,
@@ -209,18 +210,20 @@ function profileInventory(root, p, { refresh, fetchImpl, now }) {
   const { value: key, bearer } = profileCredential(p);
   if (p.envKey && !key && p.type !== "openrouter") return result("credential-missing");
   const src = listing(p, key, bearer);
-  const digest = createHash("sha256")
-    .update(JSON.stringify([p.name, src.url, src.dialect, key]))
-    .digest("hex");
-  const file = outsideWorkspace(
-    root,
-    join(userStateDir(), "model-inventory", `${digest}.json`),
-    "Model inventory cache must be outside this checkout",
-  );
+  const digest = modelScope(root, "inventory", [p.name, src.url, src.dialect, key]);
+  const file =
+    digest &&
+    outsideWorkspace(
+      root,
+      join(userStateDir(), "model-inventory", `${digest}.json`),
+      "Model inventory cache must be outside this checkout",
+    );
   let cache = null;
   try {
-    const data = JSON.parse(readFileSync(file, "utf8"));
-    if (Array.isArray(data.models) && Number.isFinite(data.at)) cache = data;
+    if (file) {
+      const data = JSON.parse(readFileSync(file, "utf8"));
+      if (Array.isArray(data.models) && Number.isFinite(data.at)) cache = data;
+    }
   } catch {}
   const previous = (status) =>
     cache?.denied
@@ -300,11 +303,12 @@ function profileInventory(root, p, { refresh, fetchImpl, now }) {
     models: [...models.values()].sort((a, b) => a.id.localeCompare(b.id)),
   };
   if (persistent) writeSnapshot(snapshot);
-  else rmSync(file, { force: true });
+  else if (file) rmSync(file, { force: true });
   return result("complete", snapshot.models, new Date(now).toISOString(), {
     freshUntil: new Date(until).toISOString(),
   });
   function writeSnapshot(data) {
+    if (!file) return;
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     const tmp = `${file}.${randomUUID()}`;
     try {

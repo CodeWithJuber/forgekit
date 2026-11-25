@@ -225,5 +225,5 @@ export function cloudService({ dataDir, principals }, env = process.env) {
   server.headersTimeout = 15000;
   return server;
 }
-const script = page.toString().match(/<script>([\s\S]+?)<\/script>/)[1];
+const script = page.toString().match(/<script>([\s\S]+?)<\/script>/i)[1];
 const pageScriptHash = createHash("sha256").update(script).digest("base64");

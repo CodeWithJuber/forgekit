@@ -12,22 +12,22 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { SAFE_MODEL_ID } from "./model_catalog.js";
+import { modelScope } from "./model_scope.js";
 import { outsideWorkspace } from "./private_paths.js";
 import { privateWorkspaceFile } from "./workspace_preference.js";
 
 const digest = (s) => createHash("sha256").update(s).digest("hex");
 
 function evidenceDir(root, profile, key) {
-  const scope = digest(
-    JSON.stringify([
-      profile.name,
-      new URL(profile.baseUrl).href,
-      profile.format ?? null,
-      profile.type,
-      profile.envKey || "",
-      digest(key || ""),
-    ]),
-  );
+  const scope = modelScope(root, "model-call", [
+    profile.name,
+    new URL(profile.baseUrl).href,
+    profile.format ?? null,
+    profile.type,
+    profile.envKey || "",
+    key || "",
+  ]);
+  if (!scope) return null;
   return outsideWorkspace(
     root,
     join(privateWorkspaceFile(root, "model-calls").slice(0, -5), scope),
@@ -38,6 +38,7 @@ function evidenceDir(root, profile, key) {
 export function recordModelCall(root, profile, key, row) {
   if (!SAFE_MODEL_ID.test(row.sent)) return;
   const dir = evidenceDir(root, profile, key);
+  if (!dir) return;
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, digest(row.sent) + ".json");
   const tmp = join(dir, "." + randomUUID());
@@ -65,6 +66,7 @@ export function readModelCalls(root, profile, key) {
   let dir;
   try {
     dir = evidenceDir(root, profile, key);
+    if (!dir) return rows;
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/.test(entry.name)) continue;
       const path = join(dir, entry.name);

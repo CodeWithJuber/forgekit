@@ -8,6 +8,7 @@ import { defaultHarnessRouting } from "../src/harness_router.js";
 import { selectHarnessRoute } from "../src/harness_runtime.js";
 import { buildHttpRunner } from "../src/llm.js";
 import { inventoryRoute, modelInventory, workloadRatings } from "../src/model_inventory.js";
+import { modelScope } from "../src/model_scope.js";
 import { activeProvider, addProvider, setProfileModel } from "../src/providers.js";
 
 function repo(t) {
@@ -31,18 +32,36 @@ const response = (data) => ({
   body: JSON.stringify(data),
 });
 
+test("private model cache identifiers bind the installation, purpose and account", (t) => {
+  const root = repo(t);
+  const state = repo(t);
+  env(t, { FORGE_HOME: state });
+  const fields = ["fixture-provider", "fixture-account"];
+  const id = modelScope(root, "inventory", fields);
+  assert.match(id, /^[a-f0-9]{64}$/);
+  assert.equal(modelScope(root, "inventory", fields), id);
+  assert.notEqual(modelScope(root, "model-call", fields), id);
+  assert.notEqual(modelScope(root, "inventory", ["fixture-provider", "rotated"]), id);
+  process.env.FORGE_HOME = repo(t);
+  assert.notEqual(modelScope(root, "inventory", fields), id);
+  writeFileSync(join(process.env.FORGE_HOME, "model-scope.key"), "invalid");
+  assert.equal(modelScope(root, "inventory", fields), null);
+});
+
 test("inventory spans profiles, follows provider pagination and preserves offline account boundaries", (t) => {
   const root = repo(t);
   env(t, { OPENAI_API_KEY: "fixture-a", GEMINI_API_KEY: "fixture-b" });
   let calls = 0;
   const fetchImpl = ({ url, headers }) => {
     calls++;
-    if (url.includes("openai.com")) {
+    const target = new URL(url);
+    if (target.origin === "https://api.openai.com") {
       assert.equal(headers.authorization, "Bearer fixture-a");
       return response({ data: [{ id: "shared" }] });
     }
+    assert.equal(target.origin, "https://generativelanguage.googleapis.com");
     assert.equal(headers["x-goog-api-key"], "fixture-b");
-    return url.includes("pageToken=two")
+    return target.searchParams.get("pageToken") === "two"
       ? response({ models: [{ name: "models/new" }] })
       : response({
           models: [{ name: "models/shared", supportedGenerationMethods: ["generateContent"] }],

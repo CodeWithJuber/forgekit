@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -160,8 +160,12 @@ test("rejects changed provenance, pseudoreplication, shifted anchor sets and inv
 test("offline route monitor reports advisory review through the normal CLI entrypoint", (t) => {
   const root = mkdtempSync(join(tmpdir(), "model-monitor-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const path = join(root, "observations.json");
-  writeFileSync(path, JSON.stringify(specimen(false)));
+  const data = join(root, "data");
+  const alias = join(root, "linked-directory");
+  mkdirSync(data);
+  symlinkSync(data, alias, "junction");
+  writeFileSync(join(data, "observations.json"), JSON.stringify(specimen(false)));
+  const path = join(alias, "observations.json");
   const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
   const result = JSON.parse(
     execFileSync(process.execPath, [cli, "route", "monitor", path, "--json"], {

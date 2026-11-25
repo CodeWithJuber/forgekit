@@ -189,10 +189,13 @@ HANDLERS.route = async (argv) => {
     const args = argv.slice(2).filter((a) => a !== "--json");
     if (args.length !== 1 || args[0].startsWith("-"))
       throw new Error("Usage: forge route monitor <observations.json> [--json]");
-    const { resolve } = await import("node:path");
+    const { basename, dirname, join, resolve } = await import("node:path");
+    const { realpathSync } = await import("node:fs");
     const { readBounded } = await import("../harness_verify.js");
     const { monitorModel } = await import("../model_monitor.js");
-    const data = readBounded(resolve(args[0]), 16 * 1024 * 1024).bytes;
+    const input = resolve(args[0]);
+    const file = join(realpathSync.native(dirname(input)), basename(input));
+    const data = readBounded(file, 16 * 1024 * 1024).bytes;
     console.log(JSON.stringify(monitorModel(JSON.parse(data.toString("utf8"))), null, 2));
     return;
   }
