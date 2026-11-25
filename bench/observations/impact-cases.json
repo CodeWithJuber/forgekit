@@ -1,0 +1,1595 @@
+{
+  "repository": "CodeWithJuber/forgekit",
+  "language": "JavaScript",
+  "holdout": "2026-09-22",
+  "weights": {
+    "calls": 0.125,
+    "imports": 0.28125
+  },
+  "cases": [
+    {
+      "commit": "d95b5c54f713af0cf79be88658bc36e6493ddcb0",
+      "parent": "731bd75be67ae66e4e5ad6f21e4d707c3b76eebb",
+      "date": "2026-07-10",
+      "sources": ["src/math.js", "src/route.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        }
+      ]
+    },
+    {
+      "commit": "f12492ae9e77a900b4857fcc8ff239665f0ddf2c",
+      "parent": "d95b5c54f713af0cf79be88658bc36e6493ddcb0",
+      "date": "2026-07-10",
+      "sources": [
+        "src/anchor.js",
+        "src/lessons.js",
+        "src/providers.js",
+        "src/skillgate.js",
+        "src/substrate.js"
+      ],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.1364,
+          "path": ["calls", "calls", "calls", "imports"],
+          "unweighted": 0.522,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0.4437,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.3719,
+          "path": ["calls", "imports"],
+          "unweighted": 0.7225,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "29532442ede6959c1be1c127f14ad9d540dec8a5",
+      "parent": "d0f11aa991304992fd3695da0439dcf4b8f43723",
+      "date": "2026-08-07",
+      "sources": [
+        "src/atlas.js",
+        "src/cli.js",
+        "src/commands.js",
+        "src/imagine.js",
+        "src/substrate.js"
+      ],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.2252,
+          "path": ["calls", "calls", "imports"],
+          "unweighted": 0.6141,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "ee10a148abfd076fd8c84577e48129bb7a9c2ef3",
+      "parent": "bcaeac46bb0ff43bf6798e973d7f1e861e34f28e",
+      "date": "2026-09-21",
+      "sources": ["src/deja.js", "src/ledger.js", "src/ledger_read.js", "src/ledger_store.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger_store.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "54ff25fea3f7996b2731b489ef5856ceaac595ea",
+      "parent": "99d86ff5711411c1ec25343f55bdf64ea11b0613",
+      "date": "2026-09-21",
+      "sources": ["src/atlas.js", "src/cli.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.2252,
+          "path": ["calls", "calls", "imports"],
+          "unweighted": 0.6141,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "74001c239a4eeea21f7bfd02ce89306c93da8b47",
+      "parent": "b3cab9b1b84b3a6db0fcfd4e23498dfcb88c3a2a",
+      "date": "2026-09-21",
+      "sources": ["src/atlas.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.2252,
+          "path": ["calls", "calls", "imports"],
+          "unweighted": 0.6141,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "413e4be08895c33478cea9b34a73f025ecd5f7f6",
+      "parent": "ee6385f5bc93c065aa78fec05bcb80301163b138",
+      "date": "2026-09-21",
+      "sources": ["src/atlas.js", "src/cli.js", "src/substrate.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.2252,
+          "path": ["calls", "calls", "imports"],
+          "unweighted": 0.6141,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "0b286c3265ffa3be652a01f61baf690c28124f36",
+      "parent": "93f37a892c01c8c3731e0d834b43a1092f69fd00",
+      "date": "2026-09-23",
+      "sources": ["src/atlas.js", "src/scope.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/path_aliases.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.2252,
+          "path": ["calls", "calls", "imports"],
+          "unweighted": 0.6141,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "5aacf5e83eca1bfabccec1c8bb4cb3453cbd4bd1",
+      "parent": "ff80e80500976d6d652c15952c647100efcbfc13",
+      "date": "2026-10-12",
+      "sources": [
+        "src/cli.js",
+        "src/cli/verification.js",
+        "src/commands.js",
+        "src/commit_gate.js",
+        "src/demo.js",
+        "src/docs_check.js",
+        "src/init.js",
+        "src/test_select.js",
+        "src/verify.js"
+      ],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/cli_exit_codes.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/commands.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/commit_gate.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/demo.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/docs_check.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/dogfood.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/hook_budget.test.js",
+          "before": "unassessed",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/hook_launcher.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/hook_manifests.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/init.test.js",
+          "before": "assertion",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/path_aliases.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stop_gate.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/test_select.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/verify.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/verify_claim.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "c98ef20d8bf91274aee45a6a64d875e0a733f19d",
+      "parent": "381bc203d1b1bcc3bbaaac17d0fd287b93151efb",
+      "date": "2026-10-15",
+      "sources": ["src/cli.js", "src/commands.js", "src/coupling.js", "src/gate.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/coupling.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/path_aliases.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/test_select.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        }
+      ]
+    },
+    {
+      "commit": "4b7be37e84836c91515f6b65649972111361b58a",
+      "parent": "a6d88051a6074d077b71a2f0db731053e08f6f6a",
+      "date": "2026-10-15",
+      "sources": ["src/coupling.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/coupling.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/path_aliases.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/test_select.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "c8eb7a822a007986e52080521a35e48689f30f9e",
+      "parent": "530910b426d7f48c128733237bcb78d5b544ceb9",
+      "date": "2026-11-03",
+      "sources": ["src/cortex_hook_main.js", "src/orient.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/cortex_hook_main.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/coupling.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/path_aliases.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/test_select.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    },
+    {
+      "commit": "37213422ec54fb69a372d9a97db2059ac4a7c725",
+      "parent": "8ce8707eae6fe9bf0e360d5d36c9f34bb1353636",
+      "date": "2026-11-03",
+      "sources": ["src/cli.js", "src/cortex_hook_main.js", "src/orient.js"],
+      "tests": [
+        {
+          "test": "test/atlas.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_relations.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/atlas_resolve.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/cortex_hook_main.test.js",
+          "before": "api",
+          "after": "pass",
+          "fixed": 0.6141,
+          "path": ["imports"],
+          "unweighted": 0.85,
+          "calibrated": 0.2032
+        },
+        {
+          "test": "test/coupling.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/eval.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/ledger_read.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/lessons.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/math.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/path_aliases.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/rank.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/route.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/stack.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        },
+        {
+          "test": "test/test_select.test.js",
+          "before": "pass",
+          "after": "pass",
+          "fixed": 0,
+          "path": [],
+          "unweighted": 0,
+          "calibrated": 0
+        }
+      ]
+    }
+  ]
+}
