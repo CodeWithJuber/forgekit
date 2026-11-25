@@ -22,6 +22,10 @@ A v2 correction imported from a teammate, or recorded before authenticated recei
 
 For newly published lessons, the number of distinct confirming receipts must exceed opposing receipts for the lesson to be active. A tie with at least one contradiction places it in quarantine. A successful Git revert counts against a lesson only when the reported Git commit reverses the matching file blobs and the checkout observed the reverted version in a correction episode. Cortex resolves OS aliases for the checkout and rejects linked targets inside it. It compares exact file bytes and can also match an LF Git blob to a CRLF worktree when Git identifies the file as text and its built-in conversion applies. Custom filters, identifier expansion and working-tree encodings receive only the raw byte comparison. Files larger than 1 MiB and unobserved versions have no automatic reversal attribution. A retracted lesson stays retired. Historical lesson claims retain their version’s original scoring and lifecycle.
 
+## Evidence for the decay default
+
+A time-ordered evaluation compared the 45-day half-life with no decay on 1,276 public ForgeKit CI outcomes. The default helped on long-lived checks. On short pull requests the paired interval included zero. The evaluation keeps the current setting and gives the sparse-history, retention and authority limits. [Results and reproduction](../reports/ledger-decay-holdout.md)
+
 ## Organization access on one installation
 
 ForgeKit stores the harness memory database under the operating system user's private state directory. The checkout’s canonical path identifies its repository scope. An operator can authorize individual checkouts to read or publish to a named organization on the same installation. Organization names are case-insensitive.
