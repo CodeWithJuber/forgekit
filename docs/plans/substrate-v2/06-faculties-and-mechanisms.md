@@ -7,9 +7,7 @@
 
 ## §1 Impact-awareness — harden the atlas, make the gate mandatory
 
-**Today:** `src/atlas.js` builds a regex-approximate symbol graph (not conservative: it can miss dependents);
-`impact()` traverses reverse edges with hop-decay; the gate only blocks under
-`FORGE_ENFORCE=1`.
+**Implementation status, November 2026.** `forge atlas build --ast` enables optional TypeScript compiler and Python standard-library syntax analysis. The named-edit gate runs by default in participating before-tool adapters and the native Claude guard. Its per-session receipts bind the edit and checkout. `forge impact --review <id>` computes transitive static dependents and test scope, preserving all tests unless independent observations justify selection. Opaque shell commands and clients without these callbacks use staged verification or CI. The substrate prompt advisory has its own `FORGE_ENFORCE` setting. See [edit reviews](../../INTEGRATIONS.md#review-a-named-edit).
 
 **Plan:**
 

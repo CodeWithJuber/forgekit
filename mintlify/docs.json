@@ -57,7 +57,8 @@
                   "cli/memory",
                   "cli/substrate",
                   "cli/quality",
-                  "cli/config"
+                  "cli/config",
+                  "cli/components"
                 ]
               }
             ]

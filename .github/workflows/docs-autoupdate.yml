@@ -27,12 +27,12 @@ jobs:
       FORGE_NO_HINT: "1"
       BRANCH: docs/auto-update
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
           node-version: 22.14.0
@@ -51,7 +51,7 @@ jobs:
           JS
         id: plan
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         if: steps.plan.outputs.tools == 'true'
         with:
           # Float the minor: an exact patch (3.12.10) has no build for the
@@ -61,8 +61,22 @@ jobs:
       - name: Prepare pinned image and browser tools
         if: steps.plan.outputs.tools == 'true'
         run: |
-          scripts/docs-media/setup.sh "$RUNNER_TEMP/docs-render"
+          bash scripts/docs-media/setup.sh "$RUNNER_TEMP/docs-render"
+          # Recent Ubuntu runners restrict user namespaces for unpackaged binaries.
+          # Grant the verified renderer its own sandbox profile at a root-owned path.
+          sudo install -D -m 0755 "$RUNNER_TEMP/docs-render/headless-shell" /opt/forge-docs/chromium
+          if [[ -x /usr/sbin/apparmor_parser && -d /sys/module/apparmor ]]; then
+            cat > "$RUNNER_TEMP/forge-docs.apparmor" <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile forge_docs_chromium /opt/forge-docs/chromium flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+            sudo /usr/sbin/apparmor_parser --replace "$RUNNER_TEMP/forge-docs.apparmor"
+          fi
           cat "$RUNNER_TEMP/docs-render/env" >> "$GITHUB_ENV"
+          echo 'ARCHIFY_CHROME=/opt/forge-docs/chromium' >> "$GITHUB_ENV"
 
       - name: Render impacted diagrams, demos and previews
         run: |

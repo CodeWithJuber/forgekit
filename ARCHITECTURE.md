@@ -631,16 +631,16 @@ from the tree it describes.
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
   src["src<br/>263 files"]
-  test["test<br/>226 files"]
+  test["test<br/>227 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
-  scripts["scripts<br/>17 files"]
+  scripts["scripts<br/>18 files"]
   bench["bench<br/>11 files"]
   global["global<br/>7 files"]
   examples["examples<br/>2 files"]
-  docs["docs<br/>1 file"]
+  _claude[".claude<br/>1 file"]
   test -- 549 --> src
-  scripts -- 15 --> src
+  scripts -- 16 --> src
   bench -- 14 --> src
   test -- 8 --> global
   src -- 7 --> global

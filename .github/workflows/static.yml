@@ -21,17 +21,15 @@ concurrency:
 
 jobs:
   deploy:
-    outputs:
-      artifact_id: ${{ steps.upload.outputs.artifact_id }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
           node-version: 22
@@ -52,46 +50,23 @@ jobs:
           # Archify commit; a file whose sha256 differs from its validated receipt is refused.
           node scripts/diagrams.mjs site _site/diagrams
       - name: Setup Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Upload artifact
         id: upload
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: "_site"
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
 
-  archive:
-    name: Archive the deployed site on compute
-    needs: deploy
-    if: github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          sparse-checkout: scripts/ci
-      - name: Verify the compute copy before removing the Pages handoff
+      - name: Archive the published site and verify its retention receipt
+        if: github.ref == 'refs/heads/master'
         env:
-          ARTIFACT_ID: ${{ needs.deploy.outputs.artifact_id }}
-          GH_TOKEN: ${{ github.token }}
+          FORGE_ARCHIVE_ENDPOINT: ${{ vars.FORGE_ARCHIVE_ENDPOINT }}
         run: |
           set -euo pipefail
-          [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
-          resource="repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
-          metadata=$(gh api "$resource")
-          digest=$(jq -er --arg id "$ARTIFACT_ID" --arg run "$GITHUB_RUN_ID" '
-            select((.id | tostring) == $id and .name == "github-pages" and
-                   (.workflow_run.id | tostring) == $run and .expired == false)
-            | .digest | select(test("^sha256:[0-9a-f]{64}$"))
-          ' <<< "$metadata")
-          package="$RUNNER_TEMP/github-pages.zip"
-          gh api "$resource/zip" > "$package"
-          printf '%s  %s\n' "${digest#sha256:}" "$package" | sha256sum --check --status
-          bash scripts/ci/put-artifact.sh pages site "$package"
-          gh api --method DELETE "$resource"
+          archive="$RUNNER_TEMP/published-site.zip"
+          (cd _site && zip -q -r "$archive" .)
+          unzip -tq "$archive"
+          bash scripts/ci/put-artifact.sh pages site "$archive"

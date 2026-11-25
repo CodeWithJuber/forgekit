@@ -9,19 +9,14 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
   exit 0
 fi
 
+hook_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
-# Refresh dependencies only when the inputs to npm ci have changed.
-fingerprint=$(node --input-type=module -e '
-  import { createHash } from "node:crypto";
-  import { readFileSync } from "node:fs";
-  const hash = createHash("sha256");
-  for (const file of ["package.json", "package-lock.json", ".npmrc"]) hash.update(readFileSync(file));
-  console.log(hash.update(JSON.stringify([process.version, process.platform, process.arch, process.argv[1]])).digest("hex"));
-' "$(npm --version)")
 marker=node_modules/.forge-install-fingerprint
-if [[ -x node_modules/.bin/biome && -x node_modules/.bin/tsc && -f "$marker" ]] && [[ $(cat "$marker") == "$fingerprint" ]]; then
+npm_version=$(npm --version)
+if [[ -f "$marker" && -x node_modules/.bin/biome && -x node_modules/.bin/tsc ]] &&
+  node "$hook_dir/install-fingerprint.mjs" check "$npm_version"; then
   exit 0
 fi
 npm ci --no-audit --no-fund
-printf '%s\n' "$fingerprint" > "$marker"
+node "$hook_dir/install-fingerprint.mjs" record "$npm_version"

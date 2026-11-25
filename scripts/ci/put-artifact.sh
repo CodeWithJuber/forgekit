@@ -5,7 +5,10 @@ umask 077
 family=${1:?artifact family}
 slot=${2:?artifact slot}
 file=${3:?ZIP archive}
-endpoint=https://n8n.jubershaikh.com/ci-artifacts
+# Only an operator-controlled repository variable can override the service.
+endpoint=${FORGE_ARCHIVE_ENDPOINT:-https://n8n.jubershaikh.com/ci-artifacts}
+[[ "$endpoint" =~ ^https://[a-zA-Z0-9.-]+(:[0-9]+)?(/[a-zA-Z0-9_./-]*)?$ ]]
+endpoint=${endpoint%/}
 [[ "$family" =~ ^[a-z0-9-]+$ && "$slot" =~ ^[a-z0-9-]+$ && -s "$file" ]]
 digest=$(sha256sum < "$file" | cut -d' ' -f1)
 size=$(wc -c < "$file")

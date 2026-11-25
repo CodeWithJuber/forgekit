@@ -84,6 +84,7 @@ resist forged confidence, not just corruption:
 - **Oracle weights are never trusted from records.** `val()` re-reads each oracle's weight
   from the in-code `ORACLES` table at read time; a `w` field stored in an evidence record
   is audit metadata only. A forged record cannot grant itself extra weight.
+- **Checkout-bound v2 corrections.** Before a host receives the text of an active v2 lesson, ForgeKit verifies an installation-key HMAC over the checkout, claim, lesson ID and outcome. An imported correction can earn its own local evidence, or an operator can approve its full claim hash after inspection.
 - **Append-only, hash-deduped evidence logs.** Merge is a conflict-free set union; corrupt
   or unknown-oracle lines are skipped rather than counted. Confidence is earned from valid
   evidence, never asserted by a record.
@@ -127,3 +128,5 @@ provenance, branch protection); *produce* (CI gate: lint / type / test / audit /
 
 **SLSA:** releases publish from CI with npm **provenance** (build attestation). Pin third-party
 GitHub Actions to commit SHAs before adding any.
+
+Automatic public discovery from hooks is opt-in through personal discovery preferences or `FORGE_EVIDENCE_WEB=1`. Public queries can contact GitHub, npm and Stack Overflow. Keep confidential text out of explicit web queries.

@@ -128,7 +128,7 @@ stage tags), `substrateCheck()`, and the reuse/context modules. `forge cost` lea
 `--stages` report; `forge dash` charts it. The per-stage factors it prints are stage
 self-estimates over whatever was logged — diagnostics, not a total.
 
-**Harness (not yet run)** — extend `src/eval.js` (which already does precision/recall for impact):
+**Paired comparator available; production corpus pending.** `forge cost pilot` freezes workload revisions and rubrics and compares operator-supplied records offline. The [P8 reporting instructions](../../../reports/cost-eval.md#run-the-paired-pilot-locally) give the input contract and interval methods. The following work produces the observations it needs.
 
 1. **Replay corpus:** N ≥ 100 real tasks captured from session traces (spec + repo state
    ref + outcome), stratified: repeat-heavy / mixed / cold, selected before any policy is tuned

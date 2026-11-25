@@ -63,6 +63,8 @@
     "docs/market-snapshot.md",
     "docs/UI-JOURNEYS.md",
     "reports/cost-eval.md",
+    "reports/atlas-impact-holdout.md",
+    "reports/ledger-decay-holdout.md",
     "docs/ForgeKit-Full-Documentation.md",
     "docs/INTEGRATIONS.md",
     "docs/DISCOVERY.md",

@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import threading
 
-from native_harness_fixture import HarnessModel, prepare_project, ROOT, TASK, tool
+from native_harness_fixture import NativeEditReview, HarnessModel, prepare_project, ROOT, TASK, tool
 
 PREFIX = "mcp__forge-cortex__forge_harness_"
 
@@ -33,7 +33,20 @@ class LocalModels(HarnessModel):
         history.append(body)
         turn = len(history)
         call = None
-        if turn == 1:
+        if getattr(self.server, "edit", None):
+            review = self.server.edit
+            if review.next_edit(body["messages"]):
+                inventory = [entry["function"] for entry in body.get("tools", [])]
+                writer = next((f for f in inventory if f["name"] in {"Write", "WriteFile", "write_file"}), None)
+                if not writer:
+                    review.error = "No advertised file writer: " + str([f["name"] for f in inventory])
+                else:
+                    properties = writer["parameters"].get("properties", {})
+                    path_key = next((key for key in ("file_path","path","absolute_path") if key in properties), None)
+                    call = tool(writer["name"], {path_key: str(review.file), "content":"reviewed fixture"}, turn)
+            elif review.error:
+                review.error += "; native result: " + str(body["messages"][-1].get("content", ""))[-550:]
+        elif turn == 1:
             first = json.dumps({"messages": body["messages"], "tools": body.get("tools", [])})
             if "forge-cortex" in first and "forge_harness_run" in first:
                 call = tool(PREFIX + "run", {"task": TASK, "acceptance": ["Calculator suite passes"]}, turn)
@@ -58,7 +71,7 @@ class LocalModels(HarnessModel):
         self.wfile.write(b"data: [DONE]\n\n")
 
 
-def verify(kimi, folder, server):
+def verify(kimi, folder, server, version):
     repo, home, khome, bin_dir, state = (folder / p for p in ("repo", "home", "kimi", "bin", "state"))
     for d in (repo, home, khome / "plugins", bin_dir, state):
         d.mkdir(parents=True)
@@ -68,7 +81,7 @@ def verify(kimi, folder, server):
     shim.write_text(f'#!/bin/sh\nexec {shlex.quote(str(node))} {shlex.quote(str(cli))} "$@"\n')
     shim.chmod(0o700)
     url = f"http://127.0.0.1:{server.server_port}/v1"
-    env = {"HOME": str(home), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+    env = {"FORGE_REVIEW_EDITS": "1", "HOME": str(home), "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
            "FORGE_HOME": str(state), "KIMI_CODE_HOME": str(khome), "FORGE_EVIDENCE_WEB": "0",
            "FORGE_NO_CATALOG_FETCH": "1", "KIMI_CODE_TRUST_WORKSPACE": "1",
            "KIMI_DISABLE_TELEMETRY": "1", "KIMI_CODE_NO_AUTO_UPDATE": "1",
@@ -84,13 +97,18 @@ def verify(kimi, folder, server):
             raise RuntimeError(f"{args[0]} failed: {(result.stdout + result.stderr)[-1400:]}")
         return result.stdout.strip()
 
-    if run(kimi, "--version") != "2.6.2":
-        raise RuntimeError("Expected Kimi Code 2.6.2")
+    if run(kimi, "--version") != version:
+        raise RuntimeError(f"Expected Kimi Code {version}")
     record = {"id": "forgekit", "root": str(ROOT), "source": "local-path",
               "enabled": True, "installedAt": "2026-11-14T00:00:00Z"}
     (khome / "plugins" / "installed.json").write_text(json.dumps({"version": 1, "plugins": [record]}))
     (khome / "config.toml").write_text("telemetry = false\nauto_session_title = false\n")
     run("git", "init", "-q")
+    server.edit = NativeEditReview(repo, lambda id: run("forge", "impact", "--review", id, "--json"))
+    run(kimi, "-p", "Create the fixture note.")
+    server.edit.check(f"Kimi Code {version}")
+    server.edit = None
+    server.outer.clear()
     run("forge", "harness", "init", "--hosts", "kimi", "--supervised")
     marker = prepare_project(repo, env, run, node, url)
     run(kimi, "-p", TASK)
@@ -104,18 +122,19 @@ def verify(kimi, folder, server):
         raise RuntimeError("Kimi did not receive a verified run and matching status result")
     if "supervised ForgeKit" not in server.outer[3]["messages"][-1]["content"] or (repo / "native-bypass.txt").exists():
         raise RuntimeError("Native shell write was not blocked")
-    print("Kimi Code 2.6.2 discovered supervised run, executed a gated workspace read, received signed suite evidence, inspected status, and blocked a direct native write.")
+    print(f"Kimi Code {version} discovered supervised run, executed a gated workspace read, received signed suite evidence, inspected status, and blocked a direct native write.")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--kimi", required=True, type=Path)
+    p.add_argument("--expect-version", default="2.6.2")
     args = p.parse_args()
     with tempfile.TemporaryDirectory(prefix="forge-kimi-harness-") as area:
         with ThreadingHTTPServer(("127.0.0.1", 0), LocalModels) as http:
             http.outer, http.inner = [], []
             threading.Thread(target=http.serve_forever, daemon=True).start()
             try:
-                verify(args.kimi.resolve(), Path(area), http)
+                verify(args.kimi.resolve(), Path(area), http, args.expect_version)
             finally:
                 http.shutdown()

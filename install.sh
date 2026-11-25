@@ -87,7 +87,7 @@ install_forge() {
   # User-level rules: Claude Code loads ~/.claude/rules/*.md in every project.
   for f in "$REPO"/global/rules/*.md; do [ -e "$f" ] && link "$f" "$CLAUDE_DIR/rules/$(basename "$f")"; done
   link "$REPO/src/cli.js" "$BIN_DIR/forge"
-  [ "$DRY" = 1 ] || chmod +x "$REPO/src/cli.js" 2>/dev/null || true
+  # The source launcher carries its executable bit in Git.
 
   case ":$PATH:" in *":$BIN_DIR:"*) : ;; *) say "note: add $BIN_DIR to PATH (e.g. echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc)";; esac
 
