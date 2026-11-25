@@ -12,6 +12,7 @@ db = sqlite3.connect(sys.argv[1], timeout=5)
 db.execute("PRAGMA secure_delete=ON")
 db.executescript("""
     CREATE TABLE IF NOT EXISTS deltas (scope TEXT, id TEXT, paths TEXT, PRIMARY KEY(scope,id));
+    CREATE TABLE IF NOT EXISTS journal_usage (scope TEXT PRIMARY KEY, bytes INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS heads (scope TEXT PRIMARY KEY, revision TEXT);
     CREATE TABLE IF NOT EXISTS files (scope TEXT, path TEXT, hash TEXT, data BLOB,
         kind TEXT, redacted INTEGER, PRIMARY KEY(scope,path));
@@ -49,7 +50,7 @@ elif op == "artifact":
     row = db.execute("SELECT data,kind,hash FROM files WHERE scope=? AND path=?",(s,q["path"])).fetchone()
     result = {"content":base64.b64encode(row[0]).decode(), "kind":row[1], "sha256":row[2]} if row else {"error":404}
 elif op == "delete":
-    for table in ("changes","files","deltas"):
+    for table in ("changes","files","deltas","journal_usage"):
         db.execute(f"DELETE FROM {table} WHERE scope=?", (s,))
     # A fresh generation prevents stale in-flight and offline batches from recreating data.
     import uuid
@@ -66,24 +67,47 @@ elif op == "push":
     elif revision != change["parent"]:
         result = {"error":409}
     else:
-        for p in change["removed"]:
-            db.execute("DELETE FROM files WHERE scope=? AND path=?", (s,p))
-        for f in change["files"]:
-            db.execute("INSERT OR REPLACE INTO files VALUES(?,?,?,?,?,?)",
-                       (s,f["path"],f["sha256"],base64.b64decode(f["content"],validate=True),
-                        f["kind"],int(f["redacted"])))
-        count,size = db.execute("SELECT count(*),coalesce(sum(length(data)),0) FROM files WHERE scope=?",(s,)).fetchone()
-        if count > q["maxFiles"] or size > q["maxBytes"]:
-            db.rollback()
-            result = {"error":413}
+        updated = [{"path": f["path"], "sha256": f["sha256"]} for f in change["files"]]
+        paths = json.dumps({"id": ident, "updated": updated, "removed": change["removed"]}, separators=(",", ":"))
+        detail = json.dumps({"modified": len(updated), "removed": len(change["removed"])})
+        # Logical stored bytes in both journal rows, including their keys and timestamp.
+        # Identifiers and serialized JSON are ASCII under this protocol.
+        added = 2 * (len(s) + len(ident)) + len(revision or "") + len(digest) + 8 + len(detail) + len(paths)
+        usage = db.execute("SELECT bytes FROM journal_usage WHERE scope=?", (s,)).fetchone()
+        if usage is None:
+            # Migrate pre-quota scopes once, including ones already above the new limit.
+            # SQLite measures the original serialized rows, without reserializing history.
+            (summary,) = db.execute("""
+                SELECT coalesce(sum(length(scope)+length(id)+coalesce(length(parent),0)+length(digest)
+                       +8+length(CAST(detail AS BLOB))),0) FROM changes WHERE scope=?
+            """, (s,)).fetchone()
+            (manifests,) = db.execute("""
+                SELECT coalesce(sum(length(scope)+length(id)+length(CAST(paths AS BLOB))),0)
+                FROM deltas WHERE scope=?
+            """, (s,)).fetchone()
+            used = summary + manifests
+            db.execute("INSERT INTO journal_usage VALUES(?,?)", (s, used))
         else:
-            db.execute("INSERT OR REPLACE INTO heads VALUES(?,?)",(s,ident))
-            detail = json.dumps({"modified":len(change["files"]),"removed":len(change["removed"])})
-            db.execute("INSERT INTO changes VALUES(?,?,?,?,?,?)",(s,ident,revision,digest,int(time.time()*1000),detail))
-            paths = {"id":ident, "updated":[{"path":f["path"],"sha256":f["sha256"]} for f in change["files"]],
-                     "removed":change["removed"]}
-            db.execute("INSERT INTO deltas VALUES (?,?,?)",(s,ident,json.dumps(paths,separators=(",",":"))))
-            result = {"revision":ident}
+            used = usage[0]
+        if used + added > q["maxHistoryBytes"]:
+            result = {"error":413, "reason":"Workspace journal capacity reached"}
+        else:
+            for p in change["removed"]:
+                db.execute("DELETE FROM files WHERE scope=? AND path=?", (s,p))
+            for f in change["files"]:
+                db.execute("INSERT OR REPLACE INTO files VALUES(?,?,?,?,?,?)",
+                           (s,f["path"],f["sha256"],base64.b64decode(f["content"],validate=True),
+                            f["kind"],int(f["redacted"])))
+            count,size = db.execute("SELECT count(*),coalesce(sum(length(data)),0) FROM files WHERE scope=?",(s,)).fetchone()
+            if count > q["maxFiles"] or size > q["maxBytes"]:
+                db.rollback()
+                result = {"error":413}
+            else:
+                db.execute("INSERT OR REPLACE INTO heads VALUES(?,?)",(s,ident))
+                db.execute("INSERT INTO changes VALUES(?,?,?,?,?,?)",(s,ident,revision,digest,int(time.time()*1000),detail))
+                db.execute("INSERT INTO deltas VALUES(?,?,?)",(s,ident,paths))
+                db.execute("UPDATE journal_usage SET bytes=? WHERE scope=?", (used + added, s))
+                result = {"revision":ident}
 else:
     raise ValueError("Unknown operation")
 db.commit()
