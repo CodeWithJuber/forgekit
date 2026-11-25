@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -105,6 +105,31 @@ test("migrate imports original bytes once, records historical evidence, and rest
   assert.equal(readFileSync(join(dest, lessonPath), "utf8"), raw);
   assert.throws(() => restoreLegacy(root, dest), /EEXIST/);
   assert.equal(verify(repoLedger(root)).ok, true);
+});
+
+test("same-name facts in one legacy snapshot retain the first sorted source and normal recall", (t) => {
+  const { root, base } = fixture(t);
+  const first = ".forge/brain/facts/first.md";
+  const second = ".forge/brain/facts/second.md";
+  putFile(root, second, "# Shared setting\n\nSecond value\n");
+  putFile(root, first, "# Shared setting\n\nFirst value\n");
+  const migrated = JSON.parse(
+    execFileSync(process.execPath, [cli, "ledger", "migrate", "--json"], {
+      cwd: root,
+      encoding: "utf8",
+    }),
+  );
+  assert.deepEqual([migrated.facts, migrated.retained, migrated.verified], [1, 1, true]);
+  assert.equal(readFact(brainStore(root), "shared-setting").text, "First value");
+  assert.equal(loadClaims(repoLedger(root)).filter((c) => c.kind === "fact").length, 1);
+  const retry = migrateLegacy(root);
+  assert.deepEqual([retry.facts, retry.retained], [0, 2]);
+  const restore = join(base, "copies");
+  restoreLegacy(root, restore, { snapshot: migrated.snapshot });
+  assert.equal(
+    readFileSync(join(restore, second), "utf8"),
+    readFileSync(join(root, second), "utf8"),
+  );
 });
 
 test("a pre-existing newer, retired or archived fact stays authoritative through migration", (t) => {
