@@ -19,14 +19,18 @@ import { privateWorkspaceFile } from "./workspace_preference.js";
 const digest = (s) => createHash("sha256").update(s).digest("hex");
 
 function evidenceDir(root, profile, key) {
-  const scope = modelScope(root, "model-call", [
-    profile.name,
-    new URL(profile.baseUrl).href,
-    profile.format ?? null,
-    profile.type,
-    profile.envKey || "",
+  const scope = modelScope(
+    root,
+    "model-call",
+    [
+      profile.name,
+      new URL(profile.baseUrl).href,
+      profile.format ?? null,
+      profile.type,
+      profile.envKey || "",
+    ],
     key || "",
-  ]);
+  );
   if (!scope) return null;
   return outsideWorkspace(
     root,

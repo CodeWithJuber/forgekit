@@ -210,7 +210,7 @@ function profileInventory(root, p, { refresh, fetchImpl, now }) {
   const { value: key, bearer } = profileCredential(p);
   if (p.envKey && !key && p.type !== "openrouter") return result("credential-missing");
   const src = listing(p, key, bearer);
-  const digest = modelScope(root, "inventory", [p.name, src.url, src.dialect, key]);
+  const digest = modelScope(root, "inventory", [p.name, src.url, src.dialect], key);
   const file =
     digest &&
     outsideWorkspace(

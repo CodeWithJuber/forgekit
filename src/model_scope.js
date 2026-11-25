@@ -1,6 +1,6 @@
 // Keep account-scoped cache identifiers unlinkable across installations. A copied
 // cache name alone must not let someone test guesses about a provider credential.
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, scryptSync } from "node:crypto";
 import {
   closeSync,
   constants,
@@ -63,7 +63,7 @@ function installationKey(dir) {
 }
 
 /** Null disables disk caching when private state cannot be read or created. */
-export function modelScope(root, purpose, fields) {
+export function modelScope(root, purpose, fields, credential = "") {
   let key = processKey;
   if (root) {
     const dir = outsideWorkspace(
@@ -77,7 +77,12 @@ export function modelScope(root, purpose, fields) {
       return null;
     }
   }
-  return createHmac("sha256", key)
+  // A custom provider can use a short, human-chosen credential. Scrypt also
+  // protects its cache identifiers if both the private salt and names are copied.
+  const accountKey = credential
+    ? scryptSync(credential, key, 32, { N: 32768, r: 8, p: 3, maxmem: 64 * 1024 * 1024 })
+    : key;
+  return createHmac("sha256", accountKey)
     .update(JSON.stringify([purpose, fields]))
     .digest("hex");
 }

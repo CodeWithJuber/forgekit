@@ -388,7 +388,12 @@ export function fetchCatalog(
   // server picks up a new model instead of holding its first answer until restart. An
   // unavailable catalog is remembered until the same moment, so a broken network is not retried
   // on every call either.
-  const scope = modelScope(root, "http-catalog", [root, source.url, source.headers]);
+  const scope = modelScope(
+    root,
+    "http-catalog",
+    [root, source.url],
+    Object.keys(source.headers ?? {}).length ? JSON.stringify(source.headers) : "",
+  );
   const memoKey = transport === httpGet ? scope : null;
   if (memoKey) {
     const hit = _memo.get(memoKey);
