@@ -438,7 +438,7 @@ export function substrateCheck(
   const lessons = matchingLessons(mergedLessons(root, epochDay(), shortlist?.claims), {
     files: scopedFiles,
     symbols: entities.symbols,
-  });
+  }).filter((l) => l.provenance.correctionVersion !== 2 || l.status === "active");
   const result = {
     okToProceed: !preflight.assumption.shouldAsk,
     ...(shortlist && {
