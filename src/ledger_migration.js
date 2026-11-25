@@ -279,6 +279,10 @@ function apply(ledger, entries, intentFile) {
     }
     const written = putClaim(ledger, claim);
     if (!written.ok) throw new Error(written.reason);
+    // Earlier entries in the sorted snapshot have the same precedence as a
+    // pre-existing ledger identity. Both originals remain in the private backup.
+    known.set(key, claim);
+    eligible.delete(claim.id);
     if (!written.existed) result[lesson ? "lessons" : "facts"]++;
     if (!lesson) continue;
     result.outcomes += appendEvidenceBatch(ledger, claim.id, historicalOutcomes(lesson));
