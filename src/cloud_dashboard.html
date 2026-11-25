@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ForgeKit workspace</title>
+  <style>
+    :root {font: 16px/1.5 Inter, system-ui, sans-serif; color:#152b32; background:#f8faf9}
+    main {max-width:68rem; margin:auto; padding:2rem 1rem}
+    h1,h2 {line-height:1.2}
+    form {display:flex; align-items:end; gap:1rem; flex-wrap:wrap}
+    label {display:grid; gap:.25rem}
+    input,button {font:inherit; padding:.4rem .7rem}
+    button {cursor:pointer}
+    table {border-collapse:collapse; width:100%}
+    th,td {text-align:left; padding:.4rem; border-bottom:1px solid #cbd3d0}
+    pre {background:white; border:1px solid #ccd4d1; padding:1rem; white-space:pre-wrap; overflow-wrap:anywhere}
+    td:first-child {overflow-wrap:anywhere}
+    button.link {border:0; text-decoration:underline; background:none; color:#214d63; text-align:left}
+    img {max-width:100%; height:auto}
+  </style>
+</head>
+<body>
+<main>
+  <h1>ForgeKit workspace</h1>
+  <form id="login">
+    <label>Workspace<input id="workspace" required pattern="[a-zA-Z0-9_\-]{1,64}"></label>
+    <label>Access token<input id="token" type="password" required autocomplete="off"></label>
+    <button type="submit">Open workspace</button>
+    <button type="button" id="close">Clear session</button>
+  </form>
+  <p role="status" id="status"></p>
+  <section id="details" hidden>
+    <h2>Workspace files</h2>
+    <label>Filter by path<input id="filter" type="search"></label>
+    <table>
+      <thead><tr><th>Path</th><th>Bytes</th><th>Type</th></tr></thead>
+      <tbody id="files"></tbody>
+    </table>
+    <button type="button" hidden id="more">Show more files</button>
+    <h2>Recent syncs</h2>
+    <ol id="events"></ol>
+    <h2>Artifact preview</h2>
+    <pre id="preview">Select a file to preview it.</pre>
+    <img id="image" hidden alt="">
+    <span id="download"></span>
+  </section>
+</main>
+<script>
+const element = (id) => document.getElementById(id);
+let token = "", base = "", generation = 0, selection = 0, viewLimit = 100, rows = [];
+let downloadUrl = "", imageUrl = "";
+
+function clearPreview() {
+  selection++;
+  if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+  if (imageUrl) URL.revokeObjectURL(imageUrl);
+  downloadUrl = "";
+  imageUrl = "";
+  element("image").hidden = true;
+  element("image").removeAttribute("src");
+  element("download").replaceChildren();
+  element("preview").textContent = "Select a file to preview it.";
+}
+
+function clearView() {
+  generation++;
+  token = "";
+  base = "";
+  rows = [];
+  viewLimit = 100;
+  clearPreview();
+  element("filter").value = "";
+  element("details").hidden = true;
+  element("files").replaceChildren();
+  element("events").replaceChildren();
+  element("status").textContent = "";
+  element("token").value = "";
+}
+
+async function get(suffix) {
+  const res = await fetch(base + suffix, {
+    headers: { Authorization: "Bearer " + token }, redirect: "error", cache: "no-store"
+  });
+  if (!res.ok) throw Error("Request failed (HTTP " + res.status + ")");
+  return res.json();
+}
+
+function linkButton(text, action) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "link";
+  button.textContent = text;
+  button.onclick = action;
+  return button;
+}
+
+async function showArtifact(file) {
+  clearPreview();
+  const selected = selection;
+  element("preview").textContent = "Loading " + file.path;
+  try {
+    const artifact = await get("/artifact?path=" + encodeURIComponent(file.path));
+    if (selected !== selection) return;
+    if (artifact.sha256 !== file.sha256) throw Error("The file changed. Open the workspace again to refresh.");
+    const bytes = Uint8Array.from(atob(artifact.content), c => c.charCodeAt(0));
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    const fingerprint = Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
+    if (selected !== selection) return;
+    if (fingerprint !== file.sha256) throw Error("Artifact failed SHA-256 verification");
+    downloadUrl = URL.createObjectURL(new Blob([bytes], {type: "application/octet-stream"}));
+    const link = document.createElement("a");
+    link.textContent = "Download artifact";
+    link.download = file.path.split("/").pop();
+    link.href = downloadUrl;
+    element("download").append(link);
+    const textPreview = file.kind === "text" && bytes.length <= 256 * 1024;
+    element("preview").textContent = textPreview ? new TextDecoder().decode(bytes) : file.path;
+    const png = bytes.length > 8 && [137,80,78,71,13,10,26,10].every((v,i) => bytes[i] === v);
+    if (png) {
+      imageUrl = URL.createObjectURL(new Blob([bytes], {type: "image/png"}));
+      const image = element("image");
+      image.alt = "Workspace screenshot " + file.path;
+      image.src = imageUrl;
+      image.hidden = false;
+    }
+  } catch (error) {
+    if (selected === selection) element("preview").textContent = error.message;
+  }
+}
+
+function renderFiles() {
+  const query = element("filter").value.toLowerCase();
+  const matches = rows.filter(f => f.path.toLowerCase().includes(query));
+  element("files").replaceChildren();
+  for (const file of matches.slice(0, viewLimit)) {
+    const row = element("files").insertRow();
+    row.insertCell().append(linkButton(file.path, () => showArtifact(file)));
+    row.insertCell().textContent = String(file.bytes);
+    row.insertCell().textContent = file.kind + (file.redacted ? " (redacted)" : "");
+  }
+  element("more").hidden = matches.length <= viewLimit;
+}
+
+async function showEvent(id) {
+  clearPreview();
+  const selected = selection;
+  try {
+    const delta = await get("/events?id=" + encodeURIComponent(id));
+    if (selected === selection) element("preview").textContent = JSON.stringify(delta, null, 2);
+  } catch (error) {
+    if (selected === selection) element("preview").textContent = error.message;
+  }
+}
+
+element("close").onclick = clearView;
+element("filter").oninput = () => { viewLimit = 100; renderFiles(); };
+element("more").onclick = () => { viewLimit += 100; renderFiles(); };
+element("login").onsubmit = async event => {
+  event.preventDefault();
+  const name = element("workspace").value.trim();
+  const credential = element("token").value;
+  clearView();
+  const session = generation;
+  base = "/v1/workspaces/" + encodeURIComponent(name);
+  token = credential;
+  try {
+    const data = await get("");
+    if (session !== generation) return;
+    element("details").hidden = false;
+    rows = data.files;
+    const bytes = rows.reduce((sum, file) => sum + file.bytes, 0);
+    element("status").textContent = rows.length + " files · " + bytes.toLocaleString() + " bytes · Revision " + (data.revision || "empty");
+    renderFiles();
+    for (const item of data.events) {
+      const line = document.createElement("li");
+      const label = new Date(item.at).toISOString() + " · " + item.modified + " updated · " + item.removed + " removed";
+      line.append(linkButton(label, () => showEvent(item.id)));
+      element("events").append(line);
+    }
+  } catch (error) {
+    if (session === generation) { clearView(); element("status").textContent = error.message; }
+  }
+};
+</script>
+</body>
+</html>

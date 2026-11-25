@@ -68,6 +68,8 @@ function printHelp() {
 // load by the per-command handler declarations below. run() looks a command up here.
 /** @type {Record<string, (argv: string[], cmd: string) => unknown>} */
 const HANDLERS = {
+  relay: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.relay(argv),
+  cloud: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.cloud(argv),
   harness: async (argv) => (await import("./cli/harness.js")).handleHarness(argv),
   ...evidenceHandlers,
   ...memoryHandlers,

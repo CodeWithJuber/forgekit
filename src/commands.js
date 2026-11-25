@@ -9,6 +9,17 @@
 // so migrating a value from string to object never affects the docs reconciler.
 
 export const COMMANDS = {
+  relay: {
+    summary: "synchronize encrypted workspace evidence through a private relay",
+    usage:
+      "forge relay <configure|preview|push|watch|status|list|read|logout|delete|serve> [options]",
+    examples: ["forge relay status", "forge relay list"],
+  },
+  cloud: {
+    summary: "synchronize an enrolled workspace with its private dashboard",
+    usage: "forge cloud <configure|preview|push|watch|status|logout|delete|serve> [options]",
+    examples: ["forge cloud status", "forge cloud preview"],
+  },
   init: {
     summary:
       "scaffold this repo's config — emits the tools it uses (detected hosts, or --tools) from one shared source",
@@ -628,6 +639,8 @@ export const GROUPS = {
     "reuse",
     "rank",
     "collide",
+    "cloud",
+    "relay",
   ],
 };
 

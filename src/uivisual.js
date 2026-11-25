@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { BRAND } from "./brand.js";
+import { outsideWorkspace } from "./private_paths.js";
 import {
   activeTasteStyle,
   fingerprintText,
@@ -66,6 +67,16 @@ export async function resolvePlaywright() {
 }
 
 // ---------------------------------------------------------------------------
+export function launchChromium(pw, root) {
+  const configured = process.env.CHROME_BIN;
+  if (configured && !isAbsolute(configured))
+    throw new Error("CHROME_BIN must be an absolute trusted executable path");
+  const executablePath = configured
+    ? outsideWorkspace(root, configured, "Browser executable must be outside the workspace")
+    : undefined;
+  return pw.chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
+}
+
 // Target resolution — the security guard lives here, BEFORE any browser exists.
 // ---------------------------------------------------------------------------
 
@@ -257,7 +268,7 @@ export async function renderedFingerprint(target, opts = {}) {
     };
   let browser;
   try {
-    browser = await playwright.chromium.launch({ headless: true });
+    browser = await launchChromium(playwright, root);
   } catch (err) {
     // Installed module but no usable browser binary — same graceful-absence class.
     return {

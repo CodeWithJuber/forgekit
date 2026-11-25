@@ -51,7 +51,7 @@ test("every env var src reads is scrubbed (the denylist cannot drift from envVar
 test("canary: a hostile env cannot reach a test process", () => {
   const canary =
     "import{homedir,userInfo}from'node:os';" +
-    "if(process.env.FORGE_LLM||process.env.ANTHROPIC_API_KEY)throw new Error('env leaked');" +
+    "if(process.env.FORGE_LLM||process.env.ANTHROPIC_API_KEY||process.env.CHROME_BIN)throw new Error('env leaked');" +
     "if(homedir()===userInfo().homedir)throw new Error('HOME leaked');";
   const r = spawnSync(
     process.execPath,
@@ -67,6 +67,7 @@ test("canary: a hostile env cannot reach a test process", () => {
         FORGE_LLM: "1",
         ANTHROPIC_API_KEY: ["sk", "ant", "api03", "HOSTILECANARYVALUE"].join("-"),
         FORCE_COLOR: "1",
+        CHROME_BIN: "ambient-browser",
       },
     },
   );
