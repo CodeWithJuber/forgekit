@@ -22,6 +22,21 @@ dpkg-deb --extract "$dest/dejavu-mono.deb" "$dest/fonts"
 tar -xzOf "$browser_pkg" package/bin/chromium.br |
   node --input-type=module -e 'import {createBrotliDecompress} from "node:zlib"; import {pipeline} from "node:stream/promises"; await pipeline(process.stdin,createBrotliDecompress(),process.stdout)' > "$dest/headless-shell"
 chmod 755 "$dest/headless-shell"
+chrome=$dest/headless-shell
+userns_setting=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+if [[ ${RUNNER_ENVIRONMENT:-} == github-hosted && -r $userns_setting ]] && [[ $(< "$userns_setting") == 1 ]]; then
+  # Ubuntu restricts user namespaces for unprofiled binaries. Give the pinned
+  # browser its own root-owned path and allow it to start its renderer sandbox.
+  chrome=/usr/lib/forgekit-docs/headless-shell
+  sudo install -D -o root -g root -m 0755 "$dest/headless-shell" "$chrome"
+  sudo apparmor_parser --replace <<PROFILE
+abi <abi/4.0>,
+include <tunables/global>
+profile forgekit-docs-chromium $chrome flags=(unconfined) {
+  userns,
+}
+PROFILE
+fi
 # Browser metrics and font fallback must not depend on a runner's system fonts.
 cat > "$dest/fonts.conf" <<'FONTS'
 <?xml version="1.0"?>
@@ -40,7 +55,7 @@ python3 -m venv "$dest/venv"
 {
   echo "FORGE_DEMO_FONTS=$dest/fonts/usr/share/fonts/truetype/dejavu"
   echo "FORGE_MEDIA_PYTHON=$dest/venv/bin/python"
-  echo "ARCHIFY_CHROME=$dest/headless-shell"
+  echo "ARCHIFY_CHROME=$chrome"
   echo "FONTCONFIG_FILE=$dest/fonts.conf"
   echo "XDG_CACHE_HOME=$dest/cache"
 } > "$dest/env"

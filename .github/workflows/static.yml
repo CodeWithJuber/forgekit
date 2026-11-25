@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # Allow only one concurrent deployment, but let in-progress production deploys finish.
 concurrency:
@@ -20,13 +18,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    env:
+      # A full rerun uploads a new package. A deploy-only retry reuses this build's name.
+      PAGES_ARTIFACT: github-pages-${{ github.run_attempt }}
     outputs:
       artifact_id: ${{ steps.upload.outputs.artifact_id }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+      artifact_name: ${{ env.PAGES_ARTIFACT }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -57,14 +59,28 @@ jobs:
         id: upload
         uses: actions/upload-pages-artifact@v5
         with:
+          name: ${{ env.PAGES_ARTIFACT }}
           path: "_site"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact_name }}
 
   archive:
     name: Archive the deployed site on compute
-    needs: deploy
+    needs: [build, deploy]
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
@@ -78,15 +94,16 @@ jobs:
           sparse-checkout: scripts/ci
       - name: Verify the compute copy before removing the Pages handoff
         env:
-          ARTIFACT_ID: ${{ needs.deploy.outputs.artifact_id }}
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+          ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
           resource="repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
           metadata=$(gh api "$resource")
-          digest=$(jq -er --arg id "$ARTIFACT_ID" --arg run "$GITHUB_RUN_ID" '
-            select((.id | tostring) == $id and .name == "github-pages" and
+          digest=$(jq -er --arg id "$ARTIFACT_ID" --arg name "$ARTIFACT_NAME" --arg run "$GITHUB_RUN_ID" '
+            select((.id | tostring) == $id and .name == $name and
                    (.workflow_run.id | tostring) == $run and .expired == false)
             | .digest | select(test("^sha256:[0-9a-f]{64}$"))
           ' <<< "$metadata")

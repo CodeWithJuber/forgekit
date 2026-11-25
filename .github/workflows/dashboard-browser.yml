@@ -7,7 +7,9 @@ on:
       - 'src/harness*.js'
       - 'src/cli.js'
       - 'scripts/dashboard-preview.mjs'
-      - 'scripts/docs-media/setup.sh'
+      - 'scripts/og-card.mjs'
+      - 'scripts/docs-media/**'
+      - '.github/workflows/docs-autoupdate.yml'
       - '.github/workflows/dashboard-browser.yml'
   workflow_dispatch: {}
 permissions:
@@ -24,7 +26,14 @@ jobs:
         with:
           package-manager-cache: false
           node-version: 22.14.0
-      - name: Check desktop and mobile against the running dashboard
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Prepare the documentation renderer
         run: |
-          export ARCHIFY_CHROME="$(command -v google-chrome)"
-          node scripts/dashboard-preview.mjs --check
+          scripts/docs-media/setup.sh "$RUNNER_TEMP/docs-render"
+          cat "$RUNNER_TEMP/docs-render/env" >> "$GITHUB_ENV"
+      - name: Check the social card with the pinned browser
+        run: node scripts/og-card.mjs --check
+      - name: Check desktop and mobile against the running dashboard
+        run: node scripts/dashboard-preview.mjs --check
