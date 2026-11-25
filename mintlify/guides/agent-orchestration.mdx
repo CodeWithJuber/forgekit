@@ -5,7 +5,7 @@ description: "Rules for a lead agent running many sub-agents, and model routing 
 
 When a lead agent runs several coding sub-agents, most of the cost is each agent re-reading
 its own context while it waits, not new work. Forge ships an **orchestration rule pack** that
-`forge sync` writes into every tool's config, and a **routing policy** for unattended agents.
+`forge sync` writes into every tool's config, and a **model authorization policy**.
 
 For a supervised run, begin with one agent. A team can run a paired trial for a task class
 before enabling a reviewer or council for routine use. See [Supervised coding runs](/guides/supervised-runs).
@@ -23,7 +23,7 @@ In about 4.5 hours the session used about 857M tokens, and about 98% were cache 
 
 What worked: background runs with completion notifications instead of polling, a cap on
 parallel agents, heavy e2e in CI with only fast checks locally, a fresh small sub-agent per
-task, and models picked by `forge route` with a risk floor and the top tier only on opt-in.
+task, and models chosen from verified outcomes under the deployment authorization.
 A double-charge race in payment code was caught only by a lead reviewing the money diff, so
 the quality gates stay.
 
@@ -67,21 +67,12 @@ The repo's `.forge/forge.config.json` wins over the user-level `forge.config.jso
 per-user state directory), key by key. In a shared repo, prefer per-repo settings so the
 committed `AGENTS.md` matches for everyone.
 
-## Routing for unattended agents
+## Model selection and authorization
 
 ```bash
-forge route "add a refund endpoint" --mode unattended --json
-forge route "map the auth module" --mode unattended --read-only
-forge orchestration set route.mode unattended
+forge models --refresh --json
+forge route "Review the change" --workload review --json
+forge orchestration set route.topTier explicit
 ```
 
-Unattended mode raises the tier on a confident proposer vote, starts code-writing tasks at
-mid, keeps money/auth/secrets/migrations/security tasks on the premium tier, and allows the top
-tier only with `--allow-top` and a top deterministic score. Conservative mode, the default, is
-unchanged. Without the optional Jev proposer everything runs on the deterministic score. See
-[Model routing](/concepts/model-routing) for the steps.
-
-<Warning>
-  These rules are instructions, not hooks: an agent can ignore them. The risk floor is a
-  keyword match and can miss or over-flag; adjust `route.riskCategories` per repo.
-</Warning>
+`forge route` reports a measured model or an explicit deployment. When comparable outcomes are missing, the workload is unrated. The operator can prohibit the configured top deployment, require explicit authorization or allow it to compete on evidence. Use `forge orchestration list --json` to inspect the effective policy. [Model routing](/concepts/model-routing)

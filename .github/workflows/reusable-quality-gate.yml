@@ -21,15 +21,27 @@ jobs:
     name: Full quality gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref }}
           fetch-depth: 0 # the docs CHANGELOG check compares src vs CHANGELOG.md commit times
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
           node-version: 22
       - run: npm ci
+      - name: Check cold and warm Claude web startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          project=$(mktemp -d "$RUNNER_TEMP/forge-session.XXXXXX")
+          cp package.json package-lock.json .npmrc "$project/"
+          cmp package-lock.json "$project/package-lock.json"
+          CLAUDE_CODE_REMOTE=true CLAUDE_PROJECT_DIR="$project" bash .claude/hooks/session-start.sh
+          touch "$project/node_modules/.forge-ci-warm-check"
+          CLAUDE_CODE_REMOTE=true CLAUDE_PROJECT_DIR="$project" bash .claude/hooks/session-start.sh
+          test -e "$project/node_modules/.forge-ci-warm-check"
+          cmp package-lock.json "$project/package-lock.json"
       - run: npm test
       - run: npm run check
       - run: npm run typecheck
@@ -44,4 +56,20 @@ jobs:
         run: node scripts/claims-status.mjs --check
       - name: Diagram sources match their verified renders
         run: node scripts/diagrams.mjs check
-      - run: npm pack --dry-run
+  consumer:
+    name: Packed CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          package-manager-cache: false
+          node-version: 22
+      - run: node scripts/ci/packed-smoke.mjs

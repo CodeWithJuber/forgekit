@@ -1,14 +1,6 @@
 # Agent orchestration
 
-When one lead agent runs several coding sub-agents, most of the cost is not new work. It is
-each agent re-reading its own context while it waits. Forgekit ships two things for this:
-
-1. **An orchestration rule pack**: eight short rules with stable ids. `forge sync` writes them
-   into `AGENTS.md`, and from there into every tool Forgekit configures.
-2. **A routing policy for unattended agents**: `forge route --mode unattended` adds floors and
-   gates on top of the normal model-tier recommendation.
-
-Both are on/off per person (user-level config) and per repo (project config), and the repo wins.
+A lead coordinating multiple agents can use the shipped orchestration rule pack and a model authorization policy. `forge sync` writes enabled instructions to the host rule files. `forge route` ranks eligible provider deployments from verified outcomes. The global and project configuration can govern whether the profile’s top deployment is eligible. A project setting takes precedence.
 
 ## Why: one session, measured
 
@@ -30,7 +22,7 @@ What caused it:
 What fixed it: no polling (background runs plus completion notifications); parallelism capped
 to what the shared resources can serve; the heavy e2e suite moved to CI on a self-hosted
 runner, with only fast checks run locally; a fresh, small-context sub-agent per task; models
-picked with `forge route`, with Jev and a risk floor; the top tier only on explicit opt-in.
+chosen explicitly for these historical runs. Current routing uses a provider-scoped workload comparison.
 
 Quality gates stayed. A double-charge race in payment code was caught only because the lead
 reviewed the money diff. That is why the pack keeps a risk-review rule, and why the routing
@@ -98,7 +90,7 @@ shows which layer decided each value.
     "rules": { "orch.no-polling": true, "orch.lean-lead": false },
     "parallelCap": 2
   },
-  "route": { "mode": "unattended", "topTier": "explicit" }
+  "route": { "topTier": "explicit" }
 }
 ```
 
@@ -109,81 +101,10 @@ Notes:
 - The `minimal` profile leaves the pack out unless a config sets `orchestration.enabled: true`.
 - `disableSections: ["orchestration"]` drops the pack like any other section.
 
-## Routing for unattended agents
+## Model selection and worker scheduling
 
-`forge route` picks the cheapest capable tier. By default it is **conservative**: a model's
-vote for a higher tier is never applied (whitepaper §5.1), because a person watching the run
-can retry cheaply on a stronger tier after a check fails. An agent nobody watches has no cheap
-retry loop. A weak first attempt burns a whole run. So `--mode unattended` (or
-`route.mode: "unattended"` in config) adds four steps:
+`forge models --refresh --json` inspects current provider listings. To compare measured deployments, run `forge route "Review the change" --provider NAME --workload review --json`. The result identifies the exact deployment where comparable evidence supports one. Missing outcomes leave the workload unrated. Earlier versions exposed unattended tier floors, keyword risk categories and model votes. Stored prompt-scoring settings are readable under `legacy` in `forge orchestration list --json`. Explicit review categories belong to the operator. Current model recommendations use measured outcomes.
 
-1. **Vote raise.** If the optional proposer (Jev) votes `premium` with probability at or above
-   `raiseConfidence` (default 0.9), the tier is raised to the premium tier. A `mid` or higher
-   vote at or above `midConfidence` (default 0.5) raises it to at least mid. A vote with no
-   probability (the text proposer) never raises.
-2. **Writes-code floor.** A task that writes code starts at mid. Pass `--read-only` for
-   exploration, which may stay on the cheapest tier.
-3. **Risk floor.** A task that names money/payments, auth/identity, secrets/keys, data
-   migrations or security is never below the premium tier. Keywords match whole words and
-   phrases; the default lists are in `source/orchestration.json`.
-4. **Top-tier gate** (`route.topTier`). `explicit` (default): the top tier only with
-   `--allow-top` **and** Forgekit's own deterministic score at its top cutoff. `never`: never.
-   `auto`: whenever the deterministic score reaches it. A vote or a floor never reaches the top
-   tier; they stop one below it.
+A team brief declares dependencies and an operator-selected worker limit. Ready tasks can proceed independently. The scheduler uses verified prior durations to prioritize a critical path where available. The CLI and harness preserve each worker's evidence and permissions. [Team workflow](AGENT-EVIDENCE.md#when-to-use-multiple-agents)
 
-Conservative mode stays exactly as it was: none of the four steps runs, and existing output is
-unchanged. A `route.mode` set in config applies wherever Forgekit routes, so `forge substrate`
-and the `substrate_check` MCP tool report the same tier as `forge route`; `--mode` overrides it
-for one call.
-
-```bash
-forge route "add a refund endpoint" --mode unattended --json
-forge route "map the auth module" --mode unattended --read-only
-forge route "<task>" --mode unattended --allow-top
-forge orchestration set route.mode unattended          # make it the default for this repo
-forge orchestration set route.topTier never --global
-```
-
-### Reading the result
-
-`--json` gives a lead agent what it needs to pick a model in its own tool:
-
-- `key`: the generic tier key: `haiku`, `sonnet`, `opus` or `fable` (cheap → top). Map it to
-  your tool's model names; the rules never name vendor model ids.
-- `policy.mode`, `policy.base` (the tier before the policy), `policy.steps` (each step that
-  moved the tier, with `from`, `to` and a reason), `policy.risk` (matched categories and
-  keywords), `policy.writesCode`, and `policy.topTier` (`gate`, `allowTop`, `allowed`).
-- `provenance.path` is `llm-raised` when a vote raised the tier, as well as the existing
-  values (`deterministic`, `llm-agreed`, `llm-lowered`, `llm-raise-deferred`, `llm-overruled`).
-
-### Settings
-
-| Key | Default | Values |
-| --- | --- | --- |
-| `route.mode` | `conservative` | `conservative`, `unattended` |
-| `route.topTier` | `explicit` | `never`, `explicit`, `auto` |
-| `route.raiseConfidence` | 0.9 | 0–1 |
-| `route.midConfidence` | 0.5 | 0–1 |
-| `route.writesCodeFloor` | on | on, off |
-| `route.riskFloor` | on | on, off |
-| `route.riskCategories` | money, auth, secrets, migrations, security | edit in the config file: a named category replaces its keyword list, `false` or `[]` turns it off, a new name adds a category |
-
-### Jev stays optional
-
-Without `FORGE_LLM=1` and `TYPESAFE_API_KEY`, there is no vote, and everything above runs on
-the deterministic score: the floors and the gate still apply. Jev never receives a task that
-looks like it holds a secret (the existing `hasSecret` redaction check). `forge route` meters
-each decision as it always has: one line in `.forge/metrics.jsonl` with the tier and a short
-task hash, never the task text. An unattended decision also records `mode` and the names of
-the policy steps that moved it.
-
-## Limits
-
-- The orchestration rule pack guides the lead through its host's project instructions.
-  Trusted host hooks can block specific tool calls on Claude Code, Codex, Kimi Code and other
-  supported clients. The supervised executor enforces its own permissions and budgets.
-  [Host capability matrix](INTEGRATIONS.md) · [Supervised execution](HARNESS.md)
-- The risk floor is a keyword match. It can miss a risky task worded differently, and it can
-  flag a harmless one ("session" in a UI task). Add or remove keywords per repo.
-- The evidence above is one session. It shows where the tokens went in that session; it is not
-  a benchmark of these rules.
+The historical session measurement above describes that session's work. New speed or cost claims need a frozen paired evaluation and the operator's workload. [Evaluation protocol](../reports/cost-eval.md)

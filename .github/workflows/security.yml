@@ -29,7 +29,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0 # gitleaks scans commit history, not just the checkout
       - name: Secret scan (gitleaks binary — no license, scans full history)
@@ -37,13 +37,14 @@ jobs:
           GITLEAKS_VERSION: "8.21.2"
         run: |
           set -euo pipefail
-          curl -sSfL \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz -C /tmp gitleaks
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl -fsSL --output "$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          printf '%s  %s\n' '5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba' "$archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
           # `detect` walks the whole git log (fetch-depth:0 above); non-zero exit on any find.
           # --config is EXPLICIT: the repo's .gitleaks.toml carries the allowlist for the
           # synthetic fixtures and bibliography citation keys, and a scan that silently ran
           # without it reported findings nobody could act on. --verbose prints each finding
           # (path, line, rule; the secret itself stays redacted) so a red gate names what to fix.
-          /tmp/gitleaks detect --source . --config .gitleaks.toml \
+          "$RUNNER_TEMP/gitleaks" detect --source . --config .gitleaks.toml \
             --no-banner --redact --verbose --exit-code 1

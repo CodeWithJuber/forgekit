@@ -6,7 +6,7 @@ between independent calls and sees only its context window, so on its own it doe
 what your team learned, cannot see what an edit affects unless those files are in context, and
 cannot enforce rules on itself. forgekit supplies that state and those checks from outside the
 model, and delivers them as native config to Claude Code, Codex, Cursor, Gemini, Aider, Copilot,
-Windsurf, Zed, Continue, OpenClaw, and Kimi Code at once. Author it once; every tool reads it.
+Windsurf, Zed, Continue, OpenClaw, Kimi Code, and OpenCode at once. Author it once; every tool reads it.
 
 This page is the fast path: install, configure a repo, do a task, and watch the ledger
 start paying off on day two.
@@ -50,7 +50,7 @@ forge init --tools all     # or pick: --tools claude,cursor,gemini (recorded for
 ```
 
 With `--tools all`, Claude Code, Codex, Cursor, Gemini, Aider, Copilot, Windsurf, Zed,
-Continue, OpenClaw, and Kimi Code all read the **same** rules — each from its own native file (plus
+Continue, OpenClaw, Kimi Code, and OpenCode all read the **same** rules — each from its own native file (plus
 MCP server config for Roo Code and VS Code). Without it, init emits Claude Code's files and
 those of any tool the repo already shows (`.cursor/`, `.codex/`,
 `.github/copilot-instructions.md`, …); AGENTS.md-reading tools get the rules regardless.

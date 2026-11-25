@@ -48,23 +48,13 @@ and never triggers an alert or a block.
 
 ## `forge models`
 
-Each tier's model family resolved to a concrete model right now: the newest model of the
-family in the active provider's live catalog (the Anthropic Models API with
-`ANTHROPIC_API_KEY`, a gateway's `/v1/models`, or OpenRouter's list), priced from
-OpenRouter's public catalog — else the cached copy, else the shipped snapshot. Every row says
-where its id and price came from, and a snapshot row says when OpenRouter's catalog lists a
-newer model of the same family (`snapshot stale: …`).
+List all configured provider profiles with evidence of freshness, available metadata and a workload-relative band. Use `--schema 1` for the legacy tier view. [Full model and component reference](/cli/components)
 
 ```bash
-forge models               # tier, family, resolved id, created, price, source
-forge models --json        # the full resolution
+forge models --refresh --schema 2 --json
+forge models --offline --workload repair
+forge config model --exact my-model --profile openai
 ```
-
-<Note>
-  Catalogs are cached under `.forge/cache/` and refreshed by the response's own
-  `Cache-Control` / `Expires` / `ETag` — forge has no TTL of its own.
-  `FORGE_NO_CATALOG_FETCH=1` keeps every lookup offline.
-</Note>
 
 ## `forge dash`
 

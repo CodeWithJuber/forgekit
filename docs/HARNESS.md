@@ -112,13 +112,13 @@ Read `status`, `reason`, `evidence` and `usage` together. For a dedicated regist
 | --- | --- |
 | Default `receipt` | Run `forge verify` on a checkout whose tests you trust. The harness accepts an authenticated passing suite receipt for the current checkout and code state. A subsequent edit invalidates that proof. The receipt identifies the suites and their exit results. |
 | `assertions` | The operator supplies the task, run ID, ordered acceptance list and exactly one assertion per criterion. Supported checks compare exact UTF-8 bytes, SHA-256 or a JSON path and value. Declared project suites require the receipt or isolated executable verifier. |
-| `container` | Supply a pinned OCI image and explicit command, for example `{"mode":"container","runtime":"docker","image":"registry.example.org/team/review@sha256:<64-hex-digest>","command":["/bin/sh","check.sh"],"timeoutMs":30000}`. Substitute an actual preloaded image digest and a check present in the checkout. The verifier runs a temporary copy under a non-root identity with resource limits and network disabled. The image must already contain the dependencies its check needs. A missing runtime, changed input, timeout or failing exit is a failed verification. |
+| `container` | Supply a pinned OCI image and explicit command, for example `{"mode":"container","runtime":"docker","image":"registry.example.org/team/review@sha256:<64-hex-digest>","command":["/bin/sh","check.sh"],"timeoutMs":30000}`. Substitute an actual preloaded image digest and a check present in the checkout. The verifier runs a temporary copy under a non-root identity with resource limits and network disabled. The image must already contain the dependencies its check needs. A missing runtime, changed input, timeout or failing exit is a failed verification. On exit zero, use a supported test runner summary or print one JSON document with `schemaVersion: 1`, `kind: "forge.checks"` and integer counts for `total`, `pass`, `fail`, `cancelled`, `skipped` and `todo`. A custom harness should derive these from its executed assertions. Zero executed passes or unreadable counts yield incomplete evidence. |
 
 Use `--verifier path/to/spec.json` for a single CLI run. For repeated edits through MCP or a background worker, `forge harness verifier set container.json` binds a reviewed container verifier privately to this worktree. Inspect it with `forge harness verifier show` and remove it with `forge harness verifier clear`. The [verifier tests](../test/harness_verify.test.js) include a real Docker check gated by `HARNESS_REAL_CONTAINER=1` and a preloaded pinned image.
 
 ## Gates, approvals and recovery
 
-The default tool registry provides `list_files`, `read_file` and `write_file`. Writes use a matching previous SHA-256, or an explicit expected absence for a new file. The tools enforce scope, protected locations, symlinks, size and schema checks. An extension can add a reviewed read-only reference tool. The package does not expose a general-purpose terminal or deploy action to the model.
+The default tool registry provides `list_files`, `read_file` and `write_file`. Reads return a complete redacted page sized to the active context window. Continue with the returned `nextOffset` and `sha256` as `expectedSha256` until the cursor is null. Writes use a matching previous SHA-256, or an explicit expected absence for a new file. The tools enforce scope, protected locations, symlinks, size and schema checks. An extension can add a reviewed read-only reference tool. The package does not expose a general-purpose terminal or deploy action to the model.
 
 The gate evaluates the requested profile, stage (1–7), action risk and configured level. Levels are denied, restricted, approval, allowed and sandbox. An executor requesting the sandbox level must supply the corresponding containment. Trust and stage movement use evidence scoped to the installed route and actor profile. An approval binds the run, action, canonical arguments and policy, and expires. To handle a pending run:
 
@@ -143,7 +143,7 @@ forge harness memory history CLAIM_ID
 forge harness memory graph CLAIM_ID 2
 ```
 
-An operator can correct or contradict an item and inspect its history. For explicit sharing use `forge harness memory share CLAIM_ID team --team platform` or `forge harness memory share CLAIM_ID personal --personal`. These are scopes of the local memory database. Team replication, corporate identities and multi-user ACLs need a separate deployment. Existing Jira, Confluence, GitLab and document mirrors have their own identity scopes and refresh behavior. [Source configuration](AGENT-EVIDENCE.md)
+An operator can correct or contradict an item and inspect its history. For explicit sharing use `forge harness memory share CLAIM_ID team --team platform` or `forge harness memory share CLAIM_ID personal --personal`. These are scopes of the local memory database. For organization memory, grant this checkout `read` or `write` access with `forge harness memory org-grant NAME read|write`. Select `--organization NAME` on recall, history or explicit sharing. `forge harness memory org-revoke NAME` removes the grant. Local authorization and cloud export have separate scopes. [Memory storage and recovery](MEMORY.md) Existing Jira, Confluence, GitLab and document mirrors have their own identity scopes and refresh behavior. [Source configuration](AGENT-EVIDENCE.md)
 
 ## Skills and extensions
 
@@ -192,6 +192,10 @@ forge harness council trial parallel frozen.json observed.json retry
 forge harness council run workers.json
 ```
 
+A `workflow` shape accepts a directed acyclic graph. Each worker may name `dependsOn` IDs and an optional positive `estimatedMinutes`. The run takes `maxWorkers` as an optional concurrency limit within the workspace ceiling. Ready workers run in longest-remaining-path order using previous successful harness durations plus measured handoff preparation time, or the supplied estimates. Incomplete timing uses dependency depth. An independent branch can finish even if another branch fails. A worker receives the group evidence pack, its named predecessors’ findings, its own run history and verifier feedback. The worker channel omits workspace search results, memory recall, ambient extension hooks and application tools. An author–reviewer pair supplies the author report to the reviewer. A council retains its four independent rounds under the same concurrency limit. Parent and worker resource budgets still apply.
+
+A partial workflow returns the failed or blocked worker IDs alongside the available findings. Reuse the same group ID and immutable specification when retrying. Harness child run IDs are stable, so completed runs can be read again. Resolve a paused child using the normal harness recovery or resume operation before rerunning the group. Native `forge team --run` workers have no durable child-run resume protocol.
+
 Create the frozen suite and observation worksheet with `forge team evaluate`, as described in the [paired pilot](V2-IMPLEMENTATION.md). Only measured, paired observations can enable a shape for routine use in that class. `trial:true` explicitly allows an experimental run before adoption. See the [council fixtures](../test/harness_council.test.js) for complete worker contracts, trial data and the dissent record. Local fixtures exercise all branches. They do not establish a team’s productivity improvement.
 
 ## Coverage of the 38-page plan
@@ -200,7 +204,7 @@ Create the frozen suite and observation worksheet with `forge team evaluate`, as
 | --- | --- |
 | 1–8 | Common run shape, gateway, executor, permission gate, router, verifier, memory, events, audit and queue. CLI and MCP are process entry points. Deployments can connect signed webhook traffic through their own authenticated listener. |
 | 9–12 | Model–tool loop, context and compaction, per-step routing and bounded fallback. Missing usage and ambiguous execution are charged conservatively. The router currently accepts Chat Completions-compatible providers. |
-| 13–18 | Five permission levels, seven stages, scoped proof, memory layers, ledger history and graph recall. Ranking combines lexical results, graph neighbors and recency with reciprocal ranks, certainty and layer-specific time decay. Deduplication uses normalized content and MinHash. Source deltas compare a revision and update a hash tree. |
+| 13–18 | Five permission levels, seven stages, scoped proof, memory layers, ledger history and graph recall. Recall ranks measured FTS relevance, shared observations, verification level, time and recorded use outcomes by empirical midrank. Deduplication uses normalized content and MinHash. Source deltas compare a revision and update a hash tree. |
 | 19–24 | All 13 separately named interception points from the catalogue, bounded event history, private scoped tool execution, declarative skills/plugins, digest review, removal and quarantine. Trust for critical hooks is explicit. |
 | 25–28 | Single-agent default, bounded workers, council synthesis, per-shape trial records, leased SQLite job queue, UTC cron, triggers and signed webhook intake. |
 | 29–33 | Budget thresholds, checkpoints, repairs, cancellation, receipts, hashed phase trace, recovery and retention. Cost is attributed to runs, with UTC-day and project reservation ceilings. Choice of pricing, cache break-even and rollout thresholds requires workload measurements. |
@@ -225,3 +229,47 @@ Run `node --test --import ./test/_setup.js test/harness*.test.js` from a ForgeKi
 | Multi-agent adoption is measured | Observed trial records select keep or revert. A missing trial defaults to one worker and simulated measurements cannot unlock a shape. A live team rollout requires its own observed data. [Council](../test/harness_council.test.js) |
 | Audit covers the registry | A smoke run executes each built-in registered tool and matches tool evidence to its trace. The runtime also records denied and failed attempts. [Loop](../test/harness_loop.test.js) |
 | Drift is caught | Six selected hosts are generated. Kimi MCP, Codex TOML and Cursor hook tampering are detected. Unrelated user configuration survives the read-only comparison. [Drift](../test/harness_drift.test.js) |
+
+## Keep a temporary script for reuse
+
+Capture a local helper that another agent can replay against structured data. A script receives the input JSON filename as its first script argument. It prints one JSON object to stdout. Standalone JavaScript (`.mjs` or `.cjs`) and Python (`.py`) are supported when the selected image provides the interpreter and POSIX shell utilities. Include any runtime dependencies in the image.
+
+For example, save the following as `square.mjs` in your worktree.
+
+```js
+import { readFileSync } from "node:fs";
+const { n } = JSON.parse(readFileSync(process.argv[2], "utf8"));
+console.log(JSON.stringify({ n: n * n }));
+```
+
+Save the specification as `recipe.json`. Replace `<digest>` with the 64 hexadecimal digits of a locally available, operator-reviewed image digest.
+
+```json
+{
+  "path": "square.mjs",
+  "runtime": "docker",
+  "image": "node@sha256:<digest>",
+  "inputSchema": {"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]},
+  "outputSchema": {"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]},
+  "fixtures": [
+    {"input":{"n":2},"expected":{"n":4}},
+    {"input":{"n":-3},"expected":{"n":9}}
+  ]
+}
+```
+
+```sh
+forge skills capture-script square --input recipe.json --json
+forge skills scripts --json
+forge skills verify-script square --digest <capture-digest> --json
+forge skills pin-script square --digest <capture-digest> --json
+forge skills replay-script square --input request.json --json
+```
+
+Put `{"n":5}` in `request.json` for a replay yielding `{"n":25}`. Capture saves the script bytes, schemas, runtime, image and fixtures under a local SHA-256 digest in private per-worktree ForgeKit state. Verification runs each input in a fresh Docker or Podman container and compares the parsed output with the expected object outside the container. Replay requires a pinned digest with a passing verification receipt. A failing verification invalidates that receipt. Changing the original script leaves existing pins reproducible. Capture the new version, verify and pin its new digest to adopt it.
+
+Containers run without network, repository files or host credentials. They receive the captured script and its current input on a read-only mount and discard temporary writes. The runtime requires a locally available digest-pinned image, resource limits and a nonroot user. Unavailable isolation leaves a candidate unverified. Capture accepts one to 32 object fixtures, limits the bundle to 256 KiB and limits each JSON input and output to 64 KiB. The harness schema validator checks declared properties and rejects unknown keys. Fixture coverage determines what a passing comparison establishes. Inputs and fixtures should contain synthetic or shareable data.
+
+## Evaluate agent changes with paired cost evidence
+
+Use `forge cost pilot init suite.json`, `freeze suite.json frozen.json`, `template frozen.json runs.json`, then `compare frozen.json runs.json --json` under the same `forge cost pilot` prefix. Freeze both configurations, tasks, starting revisions, acceptance rubrics and noninferiority margins before collecting traces. The comparison reports USD per externally verified completion with cost and quality intervals. Failed and abandoned tasks contribute spend. The operator supplies consented, held-out records, actual billing and independent verifier outcomes. [P8 reporting instructions](../reports/cost-eval.md#run-the-paired-pilot-locally)

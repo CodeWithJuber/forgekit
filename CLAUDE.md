@@ -3,7 +3,7 @@
 ## Stack
 
 - Node.js >=20, pure ESM (`"type": "module"`), zero runtime dependencies.
-- Linter/formatter: Biome 2.6.3 (dev dependency; `npx biome migrate --write` after an upgrade).
+- Linter/formatter: Biome 2.6.8 (dev dependency; `npx biome migrate --write` after an upgrade).
 - Types: TypeScript via JSDoc annotations — no `.ts` files, checked by `tsc`.
 
 ## Commands
@@ -11,7 +11,7 @@
 - Install: `npm ci`
 - Test: `npm test` (node:test, 1000+ tests)
 - Lint + format: `npm run check` (the npx package is `@biomejs/biome`, not `biome`)
-- Typecheck: `npm run typecheck`
+- Typecheck: `npm run typecheck`. Both the package-wide check and the strict subset in `tsconfig.strict.json` must pass. Grow the strict subset as modules acquire complete types.
 - Build pages: `npm run pages:build`
 
 ## Rules

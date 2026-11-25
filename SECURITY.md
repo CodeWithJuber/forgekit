@@ -127,3 +127,5 @@ provenance, branch protection); *produce* (CI gate: lint / type / test / audit /
 
 **SLSA:** releases publish from CI with npm **provenance** (build attestation). Pin third-party
 GitHub Actions to commit SHAs before adding any.
+
+Automatic public discovery from hooks is opt-in through personal discovery preferences or `FORGE_EVIDENCE_WEB=1`. Public queries can contact GitHub, npm and Stack Overflow. Keep confidential text out of explicit web queries.

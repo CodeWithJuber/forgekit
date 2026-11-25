@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+from native_harness_fixture import NativeEditReview
 import secrets
 import shlex
 import shutil
@@ -33,7 +34,14 @@ class LocalResponses(BaseHTTPRequestHandler):
         self.server.requests.append(body)
         step = getattr(self.server, "supervised_step", 0)
         item = None
-        if step == 1:
+        if getattr(self.server, "edit", None):
+            review = self.server.edit
+            if review.next_edit(body.get("input", [])):
+                item = patch_call(body.get("tools", []), review.calls)
+                if not item:
+                    review.error = "No individually callable patch tool advertised: " + str([
+                        (t.get("type"), t.get("name")) for t in body.get("tools", [])])
+        elif step == 1:
             self.server.supervised_step = 2
             item = shell_call(body.get("tools", []))
         reply = "Fixture complete."
@@ -57,14 +65,17 @@ class LocalResponses(BaseHTTPRequestHandler):
         ]
         if item:
             completed = {**response, "output": [item]}
+            custom = item["type"] == "custom_tool_call"
+            field = "input" if custom else "arguments"
+            event = "response.custom_tool_call_input" if custom else "response.function_call_arguments"
             events = [
                 ("response.created", {"response": {**completed, "status": "in_progress", "output": []}}),
                 ("response.output_item.added", {"output_index": 0,
-                    "item": {**item, "arguments": "", "status": "in_progress"}}),
-                ("response.function_call_arguments.delta", {"output_index": 0, "item_id": item["id"],
-                    "delta": item["arguments"]}),
-                ("response.function_call_arguments.done", {"output_index": 0, "item_id": item["id"],
-                    "arguments": item["arguments"]}),
+                    "item": {**item, field: "", "status": "in_progress"}}),
+                (event + ".delta", {"output_index": 0, "item_id": item["id"],
+                    "delta": item[field]}),
+                (event + ".done", {"output_index": 0, "item_id": item["id"],
+                    field: item[field]}),
                 ("response.output_item.done", {"output_index": 0, "item": item}),
                 ("response.completed", {"response": completed}),
             ]
@@ -72,6 +83,29 @@ class LocalResponses(BaseHTTPRequestHandler):
             body = {"type": kind, "sequence_number": sequence, **fields}
             self.wfile.write(f"event: {kind}\ndata: {json.dumps(body)}\n\n".encode())
         self.wfile.flush()
+
+
+def patch_call(tools, turn):
+    patch = "*** Begin Patch\n*** Add File: native-review.txt\n+reviewed fixture\n*** End Patch"
+    for group in tools:
+        nested = group.get("type") == "namespace"
+        for tool in (group.get("tools", []) if nested else [group]):
+            if tool.get("name") != "apply_patch":
+                continue
+            if tool.get("type") == "custom":
+                args = {"type": "custom_tool_call", "input": patch}
+            else:
+                properties = (tool.get("parameters") or {}).get("properties", {})
+                key = next((k for k in ["patch", "input", "patchText", "patch_text"] if k in properties), None)
+                if not key:
+                    continue
+                args = {"type": "function_call", "arguments": json.dumps({key: patch})}
+            item = {**args, "id": f"fc_review_{turn}", "call_id": f"call_review_{turn}",
+                    "status": "completed", "name": tool["name"]}
+            if nested:
+                item["namespace"] = group["name"]
+            return item
+    return None
 
 
 def shell_call(tools):
@@ -101,7 +135,7 @@ def shell_call(tools):
     return None
 
 
-def verify(codex, folder):
+def verify(codex, folder, version):
     project, home, manuals = (folder / name for name in ["workspace", "home", "external"])
     code_home, bin_dir = home / ".codex", folder / "bin"
     for directory in [project, code_home, manuals, bin_dir]:
@@ -114,7 +148,7 @@ def verify(codex, folder):
         raise SystemExit("Node is required")
     forge.write_text(f'#!/bin/sh\nexec {shlex.quote(node)} {shlex.quote(str(ROOT / "src/cli.js"))} "$@"\n')
     forge.chmod(0o700)
-    env = {"PATH": os.pathsep.join([str(bin_dir), str(Path(node).parent), os.defpath]),
+    env = {"FORGE_REVIEW_EDITS": "1", "PATH": os.pathsep.join([str(bin_dir), str(Path(node).parent), os.defpath]),
            "HOME": str(home), "CODEX_HOME": str(code_home), "FORGE_HOME": str(home / "forge"),
            "FORGE_EVIDENCE_WEB": "0",
            "FORGE_NO_CATALOG_FETCH": "1", "FORGE_NO_HINT": "1", "NO_COLOR": "1",
@@ -124,8 +158,8 @@ def verify(codex, folder):
     run = partial(subprocess.run, cwd=project, env=env, text=True, capture_output=True,
                   stdin=subprocess.DEVNULL, check=True, timeout=60)
     expected = run([codex, "--version"]).stdout.strip()
-    if expected != f"codex-cli {PIN}":
-        raise SystemExit(f"Expected codex-cli {PIN}, found {expected}")
+    if expected != f"codex-cli {version}":
+        raise SystemExit(f"Expected codex-cli {version}, found {expected}")
     run(["git", "init", "-q"])
     location = json.loads(run([forge, "sources", "init"]).stdout)["configPath"]
     Path(location).write_text(json.dumps({"sources": [
@@ -182,6 +216,21 @@ trust_level = "trusted"
                              f"locator={'rows 1-2' in messages})")
         print(f"{expected} delivered the external CSV row and locator to the first loopback request.")
 
+        server.requests.clear()
+        server.edit = NativeEditReview(project, lambda id: run([forge, "impact", "--review", id, "--json"]).stdout)
+        catalog = json.loads(run([codex, "debug", "models", "--bundled"]).stdout)["models"]
+        profile = next((row["slug"] for row in catalog if row.get("apply_patch_tool_type")
+                        and row.get("tool_mode") != "code_mode_only"), None)
+        if not profile:
+            raise SystemExit("No bundled profile advertises an individually callable patch tool")
+        edited = subprocess.run([codex, "exec", "--ephemeral", "--json", "--model", profile, "--sandbox", "workspace-write",
+                                 "--dangerously-bypass-hook-trust", "--disable", "shell_snapshot",
+                                 "Create the fixture note."], cwd=project, env=env, text=True,
+                                capture_output=True, stdin=subprocess.DEVNULL, timeout=90)
+        if edited.returncode:
+            raise SystemExit("Native edit flow did not finish: " + (edited.stdout + edited.stderr)[-1400:])
+        server.edit.check(expected)
+        server.edit = None
         run([forge, "harness", "init", "--hosts", "codex", "--supervised"])
         server.requests.clear()
         server.supervised_step = 1
@@ -214,6 +263,7 @@ trust_level = "trusted"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codex", required=True, type=Path, help="path to the pinned Codex CLI")
+    parser.add_argument("--expect-version", default=PIN, help="client version to validate")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="forge-native-codex-") as temp:
-        verify(args.codex.resolve(), Path(temp))
+        verify(args.codex.resolve(), Path(temp), args.expect_version)

@@ -21,24 +21,44 @@ The matrix covers emitted files and adapter behavior. The native checks below id
 | **declared** | forge writes the file, or relies on documented tool behaviour, and no test exercises it (not execution-tested). |
 | **not supported** | forge does nothing for this property on this tool. |
 
+## Review a named edit
+
+Enable edit review with `forge init --review-edits` or set `FORGE_REVIEW_EDITS=1` for the session. Disable it with `forge init --no-review-edits`. In a trusted host with before-tool hooks active, ForgeKit checks every named file in an edit, including both ends of a move. It returns one review ID for the whole operation. Run the command printed by the hook in the workspace. The command uses the installed Node and ForgeKit paths. Review the result and retry the same edit. The review follows import and call edges between source files in a fresh saved atlas, targets missing from the index and the verification scope. Only an independently enrolled, current test dependency receipt can narrow the suite. Without one, run the full suite. A review records intended impact. Passing evidence comes from `forge verify`.
+
+The ID binds the session, action arguments, target bytes and Git checkout. A change to any bound input requires a fresh review. ForgeKit reads the actual bytes of tracked and nonignored inputs. If the workspace has no Git index, an unsupported nested checkout or exceeds the fingerprint budget, it binds the named targets and retains full-workspace scope. Private local state holds the hashes, relative paths and plan. A client that omits the session ID computes scope on each call. A new workspace without Git receives full-suite scope. `FORGE_GATE=advisory` skips the edit review. Other configured guards continue independently.
+
+Loopback acceptance exercised the denial, scope review and identical successful retry inside Claude Code 2.1.325 (project and plugin), Codex 0.169.0 and 0.172.0-alpha.2, and Kimi Code 2.6.2. The test providers used synthetic file content. The Codex fixture selected a patch-capable profile from the client's bundled catalog. Repeat a compatible client using its executable path and reported version.
+
+```sh
+python3 scripts/test-native-claude-harness.py --claude /path/to/claude --expect-version 2.1.325
+python3 scripts/test-native-codex.py --codex /path/to/codex --expect-version 0.169.0
+python3 scripts/test-native-kimi-harness.py --kimi /path/to/kimi --expect-version 2.6.2
+```
+
+See the `edits` field in `forge hooks status --json` for the detected configuration, callback event names and Git fallback.
+
+An opaque shell command, external program or client without a before-edit callback can write files outside this interception path. Plain init can detect and remember hosts without installing a Git hook. Selecting only hosts with edit callbacks retires an intact init-managed fallback. A personal hook can continue invoking its sibling after retirement. On explicit setup, `forge init --tools aider` installs a strict pre-commit hook when a selected host has no before-edit callback. Mixed selections use the same fallback. ForgeKit reports the eligible hosts and whether Git will actually invoke the hook. This installs only the Git check. To select advisory verification, set `hooks.commitVerification` to `"advisory"` in `.forge/forge.config.json` and rerun init. `FORGE_GATE=advisory` also selects advisory setup or a single advisory commit through an init-managed hook. A separately hardened hook retains its explicit verification requirement. For any host, `forge harden --require-verified` installs the strict check on demand. Stage the intended tree, run `forge verify`, then commit. The hook requires the signed passing test counts, working-tree fingerprint and the same Git index. An unstaged tracked change or an ordinary untracked file prevents the index from qualifying. Ignored dependencies and local ForgeKit state remain part of the test environment. A personal hook receives a sibling script to invoke. If that sibling is also user-owned, or Git uses a linked or shared hook directory, setup reports how to add the command to the existing workflow. Run `forge verify --json` as a required CI check for the final checkout when local hook execution is unavailable.
+
+An enrolled impact hook has its own 60-second processing budget. Set `FORGE_EDIT_REVIEW_TIMEOUT_MS` for a larger checkout. Rebuild a stale or missing static index with `forge atlas build` before requesting graph detail.
+
 ## The matrix
 
 | Tool | Config emission | MCP registration | Automatic hooks | Enforcement (blocking) |
 |---|---|---|---|---|
 | **Claude Code** | `CLAUDE.md` importing `@AGENTS.md`, plus forge's block in `AGENTS.md` — tested (emission); `advisorModel` in `.claude/settings.json` once `forge advisor set` names an advisor (the one key forge owns there) — tested (emission) | `.mcp.json` — tested (emission) | plugin `hooks/hooks.json` or `forge init`-merged `~/.claude/settings.json`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop — tested (execution) for the guard scripts; manifests tested for wiring; project-level `.claude/settings.json` after `forge hooks on`, for machines with no user-level install (it stands down where one exists) — tested (emission and execution) | yes — see [Claude Code enforcement](#claude-code-enforcement) — tested (execution) |
-| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest also points to the packaged MCP config (`forge` on PATH) | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Native 0.169.0 project prompt hook delivered source evidence. Packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
+| **Codex** | root `AGENTS.md` (32 KiB cap checked by `forge sync`) — tested (emission) | `.codex/config.toml` `[mcp_servers.forge-cortex]` — tested (emission); the Codex plugin manifest starts the bundled server with Node and its plugin root | `.codex/hooks.json` after `forge hooks on`, or the plugin’s `hooks/codex.json` invoking bundled Node code. Both cover SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop. Native 0.169.0 project prompt hook delivered source evidence. Packaged command tested (execution) | yes with trusted local hooks — deny before a tool (Codex has no "ask", so an ask blocks and says so); `apply_patch` is checked file by file — tested (execution) for the adapter |
 | **Cursor** | root `AGENTS.md`; warns when a legacy `.cursorrules` would shadow it — tested (emission) | `.cursor/mcp.json` — tested (emission) | `.cursor/hooks.json` after `forge hooks on`: sessionStart, beforeSubmitPrompt, beforeShellExecution, preToolUse, postToolUse, postToolUseFailure, stop — tested (emission); adapter tested (execution). Project hooks also run in Cursor cloud agents, which do not fire sessionStart — declared | yes after `forge hooks on` — deny and ask on shell commands, deny on other tools — tested (execution) for the adapter |
 | **Gemini CLI** | `AGENTS.md` added to `.gemini/settings.json` `context.fileName` — tested (emission) | `.gemini/settings.json` `mcpServers` — tested (emission) | `.gemini/settings.json` `hooks` after `forge hooks on`: SessionStart, BeforeAgent, BeforeTool, AfterTool, AfterAgent — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny before a tool (no "ask": an ask blocks and says so) — tested (execution) for the adapter |
-| **Aider** | `.aider.conf.yml` with `read: AGENTS.md` — tested (emission) | not supported | not supported | not supported in the agent |
+| **Aider** | `.aider.conf.yml` with `read: AGENTS.md` — tested (emission) | not supported | not supported | Git checks a signed passing test run for the staged checkout after setup |
 | **GitHub Copilot** | root `AGENTS.md`, read by the coding agent — tested (emission) | `.vscode/mcp.json` — tested (emission) | `.github/hooks/forge.json` after `forge hooks on`: sessionStart, userPromptSubmitted, preToolUse, postToolUse, postToolUseFailure, agentStop, for the CLI and the cloud agent (which reads it from the default branch) — tested (emission); adapter tested (execution) | yes after `forge hooks on` — deny and ask before a tool (the cloud agent treats ask as deny) — tested (execution) for the adapter |
 | **Windsurf / Devin** | root `AGENTS.md`, with a warning past the tool's size caps — tested (emission) | not supported (the tool's MCP config is global-only) | Devin (the CLI and the desktop app that was Windsurf) reads Claude Code's `.claude/settings.json`, so `forge hooks on` covers it with no file of its own — declared; the adapter's Devin rules are tested (execution). The older Cascade hook format (`.windsurf/hooks.json`) is not written | yes after `forge hooks on` — deny before a tool (no "ask") — tested (execution) for the adapter |
-| **Zed** | root `AGENTS.md`; warns about earlier-precedence files that shadow it — tested (emission) | `.zed/settings.json` `context_servers` — tested (emission) | not supported | not supported in the agent |
-| **Continue** | `.continue/rules/00-forge.md` — tested (emission) | `.continue/mcpServers/forge-cortex.yaml` — tested (emission) | not supported | not supported in the agent |
-| **OpenClaw** | the execution folder's `AGENTS.md` as project context — tested (emission) | `.openclaw/mcp.json` fragment, **not auto-registered**: one `openclaw mcp add` command applies it — tested (emission and command); or install the package as a Codex bundle — declared | not supported (forge installs nothing into OpenClaw's hook system) | not supported in the agent |
+| **Zed** | root `AGENTS.md`; warns about earlier-precedence files that shadow it — tested (emission) | `.zed/settings.json` `context_servers` — tested (emission) | not supported | Git checks a signed passing test run for the staged checkout after setup |
+| **Continue** | `.continue/rules/00-forge.md` — tested (emission) | `.continue/mcpServers/forge-cortex.yaml` — tested (emission) | not supported | Git checks a signed passing test run for the staged checkout after setup |
+| **OpenClaw** | the execution folder's `AGENTS.md` as project context — tested (emission) | `.openclaw/mcp.json` fragment, **not auto-registered**: one `openclaw mcp add` command applies it — tested (emission and command); or install the package as a Codex bundle — declared | not supported (forge installs nothing into OpenClaw's hook system) | Git checks a signed passing test run for the staged checkout after setup |
 | **Kimi Code** | Shared root `AGENTS.md` | Trusted workspace `.kimi-code/mcp.json` | Per-user ForgeKit plugin runs SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure and Stop. A real Kimi 2.6.2 prompt delivered indexed source evidence. | PreToolUse can deny; Stop and UserPromptSubmit can block. Kimi observes post-tool events asynchronously. |
-| **OpenCode** | Shared root `AGENTS.md` | Project MCP entry — tested (emission) | `.opencode/plugins/forgekit.js` after `forge hooks on`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop. Requires a CLI containing this adapter; 1.17.0 returns no verdict for OpenCode events and the plugin fails open — tested (emission and execution) | the plugin throws to deny or ask before a tool and blocks a prompt — tested (adapter execution). Stop observes `session.idle` and queues advisory context; it cannot block completion. Prompt context is attempted through `experimental.chat.system.transform`; OpenCode 1.18.31 invoked the hook but did not deliver the addition to the model, so durable rules reach it through `AGENTS.md` |
-| **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | not supported |
-| **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | not supported |
+| **OpenCode** | Shared root `AGENTS.md` | Project MCP entry — tested (emission) | `.opencode/plugins/forgekit.js` after `forge hooks on`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop. The current emitter requires an explicit pre-tool verdict from a compatible guard CLI. A missing command, empty reply or unrecognized decision blocks the call — tested (emission and execution) | the plugin throws to deny or ask before a tool and blocks a prompt — tested (adapter execution). Stop observes `session.idle` and queues advisory context; it cannot block completion. Prompt context is attempted through `experimental.chat.system.transform`; OpenCode 1.18.31 invoked the hook but did not deliver the addition to the model, so durable rules reach it through `AGENTS.md` |
+| **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | Git checks a signed passing test run for the staged checkout after setup |
+| **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | Git checks a signed passing test run for the staged checkout after setup |
 
 Use `--tools` to choose the hosts that a repository needs. ForgeKit records that choice for
 later `forge sync` runs. Project configuration tests cover the emitted files. The native
@@ -68,6 +88,10 @@ In a trusted checkout, run `forge harness init --hosts claude,codex,kimi --super
 
 For business systems, choose the source independently of the coding host. A scoped Jira project, Confluence space, GitLab project or local document folder can be synced once and queried by another configured client in the same workspace. Use a live record read when the current version matters. [Cloud and self-hosted source setup, local queries and refresh rules](AGENT-EVIDENCE.md)
 
+Project hook commands accept a `FORGE_CLI` executable path. A pre-tool check denies the operation if the launcher is missing or the input cannot be validated. Each pre-tool delivery checks current permissions for every target, including rename destinations. The adapter can replace sensitive output through Claude Code, OpenCode, and Gemini object results. Other hosts receive a diagnostic when their event cannot replace the result. Copilot PowerShell tool calls require a scoped alternative while shell parsing supports POSIX syntax.
+
+A ForgeKit contributor checkout and projects declaring the npm package use a relative Node entry point for the built-in MCP server. Global installs need `forge` on the editor’s PATH. Run `forge doctor` to check launchers and Python with SQLite.
+
 ### Claude Code enforcement
 
 On Claude Code the guards run automatically, and five can stop or pause an action:
@@ -78,6 +102,7 @@ On Claude Code the guards run automatically, and five can stop or pause an actio
 | `cost-budget` | PreToolUse | on every 100th tool call, checks `forge budget`: past the alert threshold it nudges with context; over budget it asks (soft, the default); with `--hard` it denies the call — an opt-in circuit breaker. Falls back to the historic `FORGE_COST_CEILING` check when `forge` is not on PATH | on |
 | `dep-gate` | PreToolUse (shell, edits) | deny an install command or manifest edit that adds a package its own registry lacks or OSV lists as malicious; ask on a high risk score, or when Go, Maven or NuGet lacks the name (a private proxy is normal there); fails open when a registry cannot be reached | on (`FORGE_DEPGATE=0` disables) |
 | completion gate | Stop | block "done" once per session when code changed without test evidence or a doc/state record | on (`FORGE_STOPGATE=0` disables) |
+| edit impact | PreToolUse (named file mutations) | binds the whole edit to a reviewed impact plan and requires a fresh review when its inputs change | on (`FORGE_GATE=advisory` skips this check) |
 | substrate gate | UserPromptSubmit / pre-edit | block a vacuous task or an edit into a very large dependent set | off unless `FORGE_ENFORCE=1` |
 
 `doom-loop`, `secret-redact`, `format-on-edit`, `lean-guard` and the session learner are advisory:
@@ -141,15 +166,14 @@ On 14 November 2026 an isolated Kimi Code 2.6.2 CLI loaded the packaged plugin, 
 
 Local Codex requires hook trust. Review the plugin or project commands in `/hooks` after
 installation or an update. Codex cloud orchestration does not execute these local commands.
-A project hook uses the forge CLI on PATH. The Codex plugin hook uses its bundled copy and
+A project hook accepts FORGE_CLI, a declared project npm installation, or the forge CLI on PATH. The Codex plugin hook uses its bundled copy and
 requires Node on PATH. Cursor cloud agents need a writable environment and do not fire
 sessionStart. Copilot cloud reads hooks from the default branch. See the vendor references
 for [Codex](https://learn.chatgpt.com/docs/hooks), [Cursor](https://cursor.com/docs/hooks)
 and [Copilot](https://docs.github.com/en/copilot/reference/hooks-reference).
 
 An agent without a confirmation step turns a guard's ask into a block. The project commands use
-a POSIX shell or the Codex and Copilot PowerShell entries. A missing forge CLI skips a project
-hook unless bootstrap was enabled on a host with a supported startup event.
+a POSIX shell or the Codex and Copilot PowerShell entries. A missing CLI denies a pre-tool call. An enabled bootstrap can install the pinned package during a supported startup event.
 
 ### Any tool that commits through git
 
@@ -160,13 +184,15 @@ every mode. It is tested in `test/commit_gate.test.js` and `test/harden.test.js`
 
 ## Models and providers
 
+Use `forge models` to enumerate enabled provider profiles. Use `forge models --offline` for a private cached inventory, or `forge models --refresh --schema 2 --json` to query current metadata. An account-scoped listing and a successfully served inference request are distinct evidence. [Model and component reference](MODELS-AND-COMPONENTS.md)
+
 Model availability and prices change faster than releases, so each needs a date and a source.
 
 - **The tiered router** (`forge route`) maps a task to a tier and the tier to a model through the
   native provider adapters in `src/providers.js`: `anthropic` (Messages API), `openrouter` (the same
   Anthropic model ids as `anthropic/<id>`), `litellm` (tier aliases on a gateway you run), and
   `openai` and `gemini` (their OpenAI-compatible chat-completions endpoints, each with its own
-  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-11-03; `forge models`
+  tier-to-model map). Tier prices come from `src/model_tiers.json`, verified 2026-11-03; `forge models --schema 1`
   prints where each resolved id and price came from.
 - **The universal router** (`forge route universal`) reads a separate registry, `data/models.json`:
   14 models from seven organisations. Only the seven Anthropic entries ship a provider id (for the
@@ -177,3 +203,17 @@ Model availability and prices change faster than releases, so each needs a date 
   Registry prices, where present, carry their source and the date checked (2026-09-22); the other
   models' costs come from the February 2026 benchmark runs behind the shipped prior. See
   [UNIVERSAL_ROUTING.md](UNIVERSAL_ROUTING.md).
+
+## Develop a plugin or adapter
+
+`forge integrations template --json` returns a versioned catalog with permission descriptions, exact CLI argument arrays, and supported MCP revisions. `forge integrations template --out plugins` creates the starter in a new project directory. It includes a working read-only reference plugin and its editable source. Review it with `forge harness extensions inspect plugins/team-guide`. Pin its digest only after reviewing the actual content. The copied README covers upgrades and removal. [Starter files](../templates/integration-developer/README.md)
+
+| Task | Entry point | Access and lifecycle |
+| --- | --- | --- |
+| Add a reviewed reference to the supervised harness | Inspect and pin `plugins/team-guide` | A local approval and a project lock pin the package bytes. Changes require a new review. |
+| Call from a non-MCP planner or script | `forge skills show forge-ledger --json`, then `forge skills run forge-ledger --json` | The caller invokes a named CLI operation with typed input. The ledger example reads stats. |
+| Use a stdio MCP client | Launch the installed ForgeKit executable with the `cortex-mcp` argument | The server offers protocol revision 2024-11-05. If a client requests a different dated revision, it receives the supported alternative and can disconnect. Client permissions govern tool use. |
+| Bind an installed stdio server | `forge integrations local team-tools --binary /opt/team/bin/team-mcp` | ForgeKit pins executable bytes and explicitly selected arguments and environment names for the worktree. Review and rebind a changed executable. |
+| Use a hosted service | `forge integrations connect team-docs --url https://docs.example.org/mcp --token-env TEAM_DOCS_READ_TOKEN` | Replace the example hostname and issue the narrowest read token at the service. The optional discovery probe accepts 2025-11-25, 2025-06-18 or 2025-03-26 Streamable HTTP revisions and verifies the returned revision. |
+
+For managed host configurations, review conflicts before using `--adopt`. Removal acts on owned entries and preserves other servers. Service credentials and ACLs enforce HTTP scopes. The inspection report and template declare the intended permissions. [MCP lifecycle and version negotiation](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)

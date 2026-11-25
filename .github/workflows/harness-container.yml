@@ -3,7 +3,9 @@ on:
   pull_request:
     paths:
       - 'src/harness*.js'
+      - 'src/skill_scripts.js'
       - 'test/harness_verify.test.js'
+      - 'test/skill_scripts.test.js'
       - '.github/workflows/harness-container.yml'
   workflow_dispatch:
 permissions:
@@ -13,18 +15,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           package-manager-cache: false
           node-version: 22
       # Docker Official Images Alpine 3.21, linux/amd64 manifest from docker-library/repo-info.
-      - name: Preload the pinned test image
-        run: docker pull alpine@sha256:2d8a11041a92082ba21e364dec73559ce44f1de69b60fa68315f6d3774e59117
-      - name: Verify isolation and failure reporting
+      - name: Preload the pinned test images
+        run: |
+          docker pull alpine@sha256:2d8a11041a92082ba21e364dec73559ce44f1de69b60fa68315f6d3774e59117
+          docker pull node@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+      - name: Verify isolation, failure reporting and saved-script replay
         env:
           HARNESS_REAL_CONTAINER: '1'
           HARNESS_CANARY: synthetic-host-value
-        run: node --test --import ./test/_setup.js test/harness_verify.test.js
+          HARNESS_SCRIPT_IMAGE: node@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
+        run: node --test --import ./test/_setup.js test/harness_verify.test.js test/skill_scripts.test.js

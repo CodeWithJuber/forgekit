@@ -5,7 +5,7 @@
 > [research/cognitive-substrate/sources/painpoints_report.md](../research/cognitive-substrate/sources/painpoints_report.md)
 > (the mid-2026 field report). This document is the *why*.
 
-Status: **proposal** — open a Discussion to argue with it.
+September 2026 proposal. The Kimi emitter and its native harness integration subsequently shipped. The priorities below record the original strategy. [Current integration evidence](INTEGRATIONS.md) · [Combined implementation guide](ForgeKit-Full-Documentation.md)
 
 ## 1. Where we stand (v1.8.0)
 
@@ -114,7 +114,7 @@ The following deeper adapters remain roadmap work, separate from advisory next-s
 ## 7. Prioritized build list
 
 1. **Cost governance:** per-task budgets, spend alerts, circuit breaker. (Pain #1 — the biggest churn driver; nobody ships it because it's against vendors' incentives.) ✅ **Shipped in v1.8.0** — `forge budget set/status/clear/check` plus cost-budget guard enforcement (PR #176).
-2. **`forge doctor --adversarial`:** fuzz our own hooks (sed/heredoc rerouting, malformed hook JSON, the `--dangerously-skip-permissions` hole). Guardrail claims without self-test are hollow. ✅ **Shipped** — 16 probes fire real payloads at the real `protect-paths` guard: 7 rerouting attacks blocked, 2 benign controls allowed, malformed JSON denied fail-closed, 3 wrong-shape robustness warns, 2 permission-bypass probes.
+2. **`forge doctor --adversarial`:** fuzz our own hooks (sed/heredoc rerouting, malformed hook JSON, the `--dangerously-skip-permissions` hole). Guardrail claims without self-test are hollow. ✅ **Shipped** — 16 probes fire real payloads at the real `protect-paths` guard: 7 rerouting attacks blocked, 2 benign controls allowed, malformed JSON denied fail-closed, 3 malformed input shapes denied, 2 permission-bypass probes.
 3. **Multi-agent collision primitives:** presence + lane-ownership conventions. (Pain #7.)
 4. **Loop-breaker with budget axis:** diagnose.js k-rule + JEV nuance triage + cost circuit breaker ("this run burned $X, stop").
 5. **Model-regression monitor:** per-model task-success telemetry on *your* workload, pinned-model CI, degradation alerts. Complete whitespace (pain #3).
