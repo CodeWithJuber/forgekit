@@ -93,11 +93,15 @@ function sqlProcess(mode, payload, path = undefined) {
   const result = spawnSync(bin, ["-I", "-B", worker, mode, ...(path ? [path] : [])], {
     input: JSON.stringify(payload),
     encoding: "utf8",
-    timeout: 5000,
+    // Includes interpreter startup and building a projection on a loaded runner.
+    // The Python worker enforces a separate 1.5 second budget on the SQL query.
+    timeout: 20000,
     maxBuffer: 1024 * 1024,
   });
   if (result.error && "code" in result.error && result.error.code === "ENOENT")
     throw new Error("Mirror SQL requires Python 3 with sqlite3 on PATH");
+  if (result.error && "code" in result.error && result.error.code === "ETIMEDOUT")
+    throw new Error("Mirror SQL worker exceeded its wall-clock limit");
   if (result.error || result.status !== 0)
     throw new Error("Mirror SQL worker unavailable or exceeded its limit");
   const reply = JSON.parse(result.stdout);

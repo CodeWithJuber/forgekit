@@ -34,16 +34,14 @@ test("the published package carries an OpenClaw-compatible Codex bundle", () => 
 
   assert.equal(manifest.name, "forgekit");
   assert.equal(manifest.skills, "./global/tools");
-  assert.equal(manifest.mcpServers, "./.mcp.json");
+  assert.equal(manifest.mcpServers, "./hooks/codex-mcp.json");
   assert.ok(existsSync(join(root, manifest.skills, "cognitive-substrate", "SKILL.md")));
-  assert.deepEqual(mcp.mcpServers["forge-cortex"], {
-    command: "forge",
-    args: ["cortex-mcp"],
-  });
+  assert.equal(mcp.mcpServers["forge-cortex"].command, "node");
+  assert.match(mcp.mcpServers["forge-cortex"].args.join(" "), /PLUGIN_ROOT/);
 
   // OpenClaw installs the packed archive, not this checkout. Keep every bundle root in
   // npm's allowlist so packaging cannot silently drop an otherwise valid bundle.
-  for (const path of [".codex-plugin", ".mcp.json", "global"]) {
+  for (const path of [".codex-plugin", "hooks", "global"]) {
     assert.ok(packageJson.files.includes(path), `${path} must be included in npm packages`);
   }
 });

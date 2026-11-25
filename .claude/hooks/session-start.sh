@@ -11,11 +11,17 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
-# forgekit has ZERO runtime deps; the only install is dev tooling (biome, typescript,
-# @types/node). If Biome is already resolvable, the container is warm — skip the install.
-if [ -x node_modules/.bin/biome ]; then
+# Refresh dependencies only when the inputs to npm ci have changed.
+fingerprint=$(node --input-type=module -e '
+  import { createHash } from "node:crypto";
+  import { readFileSync } from "node:fs";
+  const hash = createHash("sha256");
+  for (const file of ["package.json", "package-lock.json", ".npmrc"]) hash.update(readFileSync(file));
+  console.log(hash.update(JSON.stringify([process.version, process.platform, process.arch, process.argv[1]])).digest("hex"));
+' "$(npm --version)")
+marker=node_modules/.forge-install-fingerprint
+if [[ -x node_modules/.bin/biome && -x node_modules/.bin/tsc && -f "$marker" ]] && [[ $(cat "$marker") == "$fingerprint" ]]; then
   exit 0
 fi
-
-# Prefer `npm install` over `npm ci` so a warm-cached container is reused.
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund
+printf '%s\n' "$fingerprint" > "$marker"

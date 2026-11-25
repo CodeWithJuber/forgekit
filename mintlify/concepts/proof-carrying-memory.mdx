@@ -21,12 +21,11 @@ decays out instead of ossifying.
 
 ## One store, many writers
 
-All memory subsystems converge on one store. `recall`, `remember`/`brain`, `cortex`
-lessons, `reuse` artifacts, and doom-loop `diagnose` results all write content-addressed
-claims into `.forge/ledger/`. The ledger is now the **default and only** store: the legacy
-`lessons/*.md` and recall/brain fact files are no longer written, and every read
-materializes from the ledger. (`FORGE_LEDGER_ONLY=0` restores the legacy file store as a
-one-release escape hatch.)
+Repository facts, Cortex lessons, reuse artifacts and diagnostic results write content-addressed
+claims into `.forge/ledger/`. Personal recall keeps its own ledger in the user's private state.
+For an older checkout, run `forge ledger migrate --json` to save a private, verified snapshot of
+historical Markdown and import missing claims. `forge ledger restore-legacy <new-directory>`
+restores the original file tree and verifies its digests. Use `--personal` for personal recall.
 
 <Frame>
   <img src="/images/diagrams/ledger-flow.svg" alt="Proof-carrying memory: local events write claims and independent oracles append evidence to .forge/ledger/; a merged read view feeds the recall list, lesson injection and the brain index; teammate ledgers merge through git union-merge and forge ledger merge" />

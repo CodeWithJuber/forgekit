@@ -5,15 +5,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { BRAND } from "../src/brand.js";
 import { COMMANDS } from "../src/commands.js";
+import { componentCatalog } from "../src/components.js";
 import {
   mermaidInit,
   normalizeMermaid,
   renderCommandsTable,
+  renderComponentModelContracts,
   renderDocs,
   renderFile,
   renderGroupsTable,
   renderHostHooks,
   renderMcpToolsTable,
+  renderPackageInventory,
   renderRepoMap,
   spliceBlock,
   updateCounts,
@@ -208,4 +211,30 @@ test("an MDX page's block uses JSX-comment markers; renderFile re-renders only t
     writeFileSync(f, readFileSync(f, "utf8").replace(/\n/g, "\r\n"));
   assert.equal(renderFile(root, "mintlify/changelog/overview.mdx").changed, false);
   assert.ok(renderDocs(root, { write: false }).ok, "CRLF alone is not drift");
+});
+
+test("packaged inventory and public component contracts are current and mandatory", () => {
+  const table = renderComponentModelContracts();
+  for (const kind of ["agents", "skills", "hooks"]) {
+    for (const c of componentCatalog(kind)) assert.ok(table.includes(`\`${c.id}\``));
+  }
+  const published = ["docs/MODELS-AND-COMPONENTS.md", "mintlify/cli/components.mdx"];
+  for (const path of published) {
+    const doc = readFileSync(join(BRAND.root, path), "utf8").replace(/\r\n/g, "\n");
+    assert.ok(doc.includes(table));
+    assert.deepEqual(renderFile(BRAND.root, path), { found: true, changed: false });
+  }
+  assert.ok(
+    readFileSync(join(BRAND.root, "README.md"), "utf8")
+      .replace(/\r\n/g, "\n")
+      .includes(renderPackageInventory()),
+  );
+  // A modified section should be repaired without rewriting surrounding content.
+  const root = dir();
+  mkdirSync(join(root, "docs"));
+  const name = published[0],
+    original = readFileSync(join(BRAND.root, name), "utf8");
+  writeFileSync(join(root, name), original.replace("Model inventory schema", "out of date"));
+  assert.deepEqual(renderFile(root, name, { write: true }), { found: true, changed: true });
+  assert.equal(readFileSync(join(root, name), "utf8"), original);
 });

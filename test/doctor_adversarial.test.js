@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { BRAND } from "../src/brand.js";
 import { doctor } from "../src/doctor.js";
-import { adversarialProbes } from "../src/doctor_adversarial.js";
+import { adversarialProbes, probeMalformed } from "../src/doctor_adversarial.js";
 
 const guardsDir = join(BRAND.root, "global", "guards");
 const byLabel = (results) => Object.fromEntries(results.map((r) => [r.label, r]));
@@ -60,11 +60,11 @@ test("malformed hook JSON is denied fail-closed", () => {
   }
 });
 
-test("wrong-shape payloads are warn, not fail (not attacker-reachable)", () => {
-  const m = byLabel(adversarialProbes({ guardsDir }));
+test("wrong-shape pre-tool payloads must be denied", () => {
+  const m = byLabel(probeMalformed(join(guardsDir, "protect-paths.mjs")));
   for (const id of ["empty-stdin", "empty-object", "string-tool-input"]) {
     const r = m[`adv: ${id}`];
-    assert.equal(r.status, "warn", `adv: ${id} is a robustness warn — ${r.note}`);
+    assert.equal(r.status, "ok", `adv: ${id} denied — ${r.note}`);
   }
 });
 

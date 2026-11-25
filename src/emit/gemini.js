@@ -25,7 +25,7 @@ export default {
       ? context.fileName
       : context.fileName
         ? [context.fileName]
-        : [];
+        : ["GEMINI.md"];
     const had = current.includes("AGENTS.md");
     context.fileName = [...new Set([...current, "AGENTS.md"])];
     settings._forge = ctx.shared.markerString(ctx.hash);

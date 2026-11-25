@@ -60,6 +60,25 @@ test("sync emits MCP config into each tool's real format (forge server only, no 
   );
 });
 
+test("declaring ForgeKit locally migrates its built-in server command", () => {
+  const root = fixture();
+  sync({ targetRoot: root, tools: ["claude", "opencode"] });
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ devDependencies: { "@codewithjuber/forgekit": "1.19.2" } }),
+  );
+  sync({ targetRoot: root, tools: ["claude", "opencode"] });
+  const args = ["./node_modules/@codewithjuber/forgekit/src/cli.js", "cortex-mcp"];
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(root, ".mcp.json"), "utf8")).mcpServers["forge-cortex"],
+    { command: "node", args },
+  );
+  assert.deepEqual(
+    JSON.parse(readFileSync(join(root, "opencode.json"), "utf8")).mcp["forge-cortex"].command,
+    ["node", ...args],
+  );
+});
+
 test("OpenCode MCP: local server uses the `mcp` bucket and an array command", () => {
   const root = fixture();
   sync({ targetRoot: root, tools: ["opencode"] });

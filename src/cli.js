@@ -52,7 +52,7 @@ function maybeFirstRunHint(cmd) {
 function printHelp() {
   printVersion();
   console.log(`\n${BRAND.tagline}\n`);
-  console.log(`Usage: ${BRAND.cli} <command> [options]\n`);
+  console.log(`Usage: ${BRAND.cli} [--output=json-v1|jsonl-v1] <command> [options]\n`);
   for (const [group, cmds] of Object.entries(GROUPS)) {
     console.log(`${group}:`);
     for (const name of cmds) {
@@ -87,6 +87,11 @@ const HANDLERS = {
 
 async function run(argv) {
   const [cmd] = argv;
+  if (cmd?.startsWith("--output="))
+    return (await import("./cli_output.js")).runWithOutput(
+      cmd.slice("--output=".length),
+      argv.slice(1),
+    );
   // Top-level help/version — flag AND word forms (`forge help`, `forge version`).
   if (!cmd || cmd === "-h" || cmd === "--help" || (cmd === "help" && !argv[1])) return printHelp();
   if (cmd === "-v" || cmd === "--version" || cmd === "version") return printVersion();
@@ -1201,11 +1206,32 @@ HANDLERS.remember = async (argv) => {
   if (!res.ok) process.exitCode = 1;
   return;
 };
-HANDLERS.brain = async () => {
+HANDLERS.brain = async (argv) => {
+  const json = argv.includes("--json");
+  argv = argv.filter((arg) => arg !== "--json");
+  if (argv[1]) {
+    const { listProposals, reviewProposal } = await import("./memory_proposals.js");
+    if (argv[1] === "conflicts") {
+      const { factConflicts } = await import("./ledger_read.js");
+      const { repoLedger } = await import("./ledger_store.js");
+      console.log(
+        JSON.stringify(Object.fromEntries(factConflicts(repoLedger(process.cwd()))), null, 2),
+      );
+    } else if (argv[1] === "proposals")
+      console.log(JSON.stringify(listProposals(process.cwd()), null, 2));
+    else if (["approve", "reject"].includes(argv[1]) && argv[2])
+      console.log(JSON.stringify(reviewProposal(process.cwd(), argv[2], argv[1] === "approve")));
+    else {
+      console.error("usage: forge brain [proposals | approve <id> | reject <id> | conflicts]");
+      process.exitCode = 1;
+    }
+    return;
+  }
   const b = await import("./brain.js");
   const store = b.brainStore(process.cwd());
   const idx = b.buildIndex(store);
   const items = b.list(store);
+  if (json) return console.log(JSON.stringify({ ...idx, items }, null, 2));
   heading(`${BRAND.brand} brain — portable project memory\n`);
   console.log(
     items.length
@@ -1251,9 +1277,12 @@ HANDLERS.spec = async (argv) => {
   if (!r.ok) process.exitCode = 1;
   return;
 };
-HANDLERS.harden = async () => {
+HANDLERS.harden = async (argv) => {
   const { harden } = await import("./harden.js");
-  const r = harden({ targetRoot: process.cwd() });
+  const r = harden({
+    targetRoot: process.cwd(),
+    requireVerified: argv.includes("--require-verified"),
+  });
   heading(`${BRAND.brand} harden\n`);
   console.log(`  gitleaks:            ${r.gitleaks}`);
   console.log(`  pre-commit gate:     ${r.precommit}`);
@@ -1283,6 +1312,24 @@ HANDLERS.cortex = async (argv) => {
   const root = process.cwd();
   const nowDay = Math.floor(Date.now() / 86400000);
   const sub = argv[1] || "status";
+  if (sub === "review") {
+    const proposals = c.pendingCorrections(root);
+    if (argv.includes("--json")) return console.log(JSON.stringify(proposals, null, 2));
+    if (!proposals.length) return console.log("No pending corrections in this checkout.");
+    for (const p of proposals) {
+      console.log(`
+${p.id} (${p.review.episodes} observed episodes)`);
+      console.log(p.whatWentWrong);
+      console.log(p.correctedBehavior);
+    }
+    return;
+  }
+  if (sub === "confirm") {
+    const result = c.confirmCorrection(root, argv[2], nowDay);
+    if (!result.ok) process.exitCode = 1;
+    if (argv.includes("--json")) return console.log(JSON.stringify(result));
+    return console.log(result.ok ? `${result.action} ${result.id}` : result.reason);
+  }
   if (sub === "why") {
     const key = argv[2];
     if (!key) {
@@ -1298,19 +1345,24 @@ HANDLERS.cortex = async (argv) => {
     console.log(selected.length ? block : `  no lessons for ${key} yet`);
     return;
   }
-  const s = c.summary(root, nowDay);
+  const s = c.summary(root, nowDay, { includePrivate: true });
   heading(`${BRAND.brand} cortex — self-correcting project memory\n`);
   console.log(
     `  lessons: ${s.total}  (active ${s.active} · candidate ${s.candidate} · quarantined ${s.quarantined} · retired ${s.retired})`,
   );
   if (s.topActive.length) {
-    console.log("\n  top active (by confidence):");
+    console.log("\n  top active lessons");
     for (const t of s.topActive)
-      console.log(`    ${bar(t.confidence, 8)} ${t.confidence.toFixed(2)}  ${t.id}`);
+      console.log(`    ${t.id}  ${t.confirmed} confirmed, ${t.contradicted} contradicted`);
   } else {
     console.log("\n  (no active lessons yet — Cortex learns from corrections as you work)");
   }
-  console.log(paint("\n  stored in .forge/lessons/ (git-committable, auditable)", "dim"));
+  console.log(
+    paint(
+      `\n  ${s.provisional} pending locally · forge cortex review\n  Published lessons are stored in the project ledger.`,
+      "dim",
+    ),
+  );
   return;
 };
 HANDLERS.deja = async (argv) => {
@@ -1747,15 +1799,28 @@ HANDLERS.anchor = async (argv) => {
   return; // advisory — never fails the process
 };
 HANDLERS.handoff = async (argv) => {
-  const { writeState } = await import("./handoff.js");
+  const { writeState, resumeState, stateBlock } = await import("./handoff.js");
   const json = argv.includes("--json");
+  if (argv.includes("--resume")) {
+    const result = resumeState(process.cwd());
+    if (!result.ok) process.exitCode = 1;
+    console.log(
+      json
+        ? JSON.stringify(result, null, 2)
+        : result.ok
+          ? stateBlock(process.cwd())
+          : result.reason,
+    );
+    return;
+  }
   const args = argv.slice(1).filter((a) => a !== "--json");
   // Repeatable flags collect rows; positionals are "done" rows. Piped stdin (one row
   // per line) covers agents that assemble the summary programmatically.
-  const fields = { done: [], next: [], gotchas: [], criteria: [] };
+  const fields = { done: [], next: [], gotchas: [], criteria: [], evidence: [] };
   const FLAG = {
     "--next": "next",
     "--gotcha": "gotchas",
+    "--evidence": "evidence",
     "--criteria": "criteria",
   };
   for (let i = 0; i < args.length; i += 1) {
@@ -1770,6 +1835,7 @@ HANDLERS.handoff = async (argv) => {
     } catch {}
   }
   const r = writeState(process.cwd(), fields);
+  if (!r.ok) process.exitCode = 1;
   if (json) return console.log(JSON.stringify(r, null, 2));
   if (!r.ok) {
     console.error(

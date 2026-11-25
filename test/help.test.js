@@ -4,7 +4,6 @@ import { COMMANDS, commandHelp, commandSummary } from "../src/commands.js";
 import { suggest } from "../src/math.js";
 
 test("commandSummary: works for both string and object entries", () => {
-  // doctor is a migrated object entry; brand is still a plain string.
   assert.match(commandSummary("doctor"), /health-check/);
   assert.match(commandSummary("brand"), /brand token map/);
   assert.equal(commandSummary("nope"), "", "unknown → empty string");
@@ -20,7 +19,15 @@ test("commandSummary: every COMMANDS value yields a non-empty summary", () => {
 });
 
 test("commandHelp: normalizes string entries to the full shape", () => {
-  const h = commandHelp("brand"); // string entry
+  const fixture = "legacy-test-fixture";
+  COMMANDS[fixture] = "example summary";
+  let h;
+  try {
+    h = commandHelp(fixture);
+    assert.equal(commandSummary(fixture), "example summary");
+  } finally {
+    delete COMMANDS[fixture];
+  }
   assert.equal(typeof h.summary, "string");
   assert.deepEqual(h.flags, []);
   assert.deepEqual(h.examples, []);
@@ -36,6 +43,17 @@ test("commandHelp: surfaces rich detail from object entries", () => {
     "update documents --to",
   );
   assert.ok(h.examples.length >= 1);
+});
+
+test("every published command provides invocation and at least one relevant example", () => {
+  for (const name of Object.keys(COMMANDS)) {
+    const h = commandHelp(name);
+    assert.ok(h.usage.includes(`forge ${name}`), name);
+    assert.ok(
+      h.examples.some((line) => line === `forge ${name}` || line.startsWith(`forge ${name} `)),
+      name,
+    );
+  }
 });
 
 test("commandHelp: unknown command → null", () => {

@@ -297,3 +297,83 @@ test("recovery after actual writer death reacquires the lease safely and never r
     assert.equal(invoked, inFlight ? 0 : 1);
   }
 });
+
+test("a provider unavailable before transport permits a real resumed turn", async (t) => {
+  const options = fixture(t);
+  const missing = async () => {
+    throw Object.assign(new Error("route_credential_missing"), {
+      code: "route_credential_missing",
+      routeAttempts: [{ status: "route_credential_missing" }],
+      usage: { tokens: 0, costUsd: 0 },
+    });
+  };
+  const paused = await runHarness({ ...options, model: missing });
+  assert.equal(paused.status, "provider_unavailable", paused.reason);
+  assert.equal(paused.usage.turns, 0);
+  const resumed = await runHarness({ ...options, resume: paused.id, model: steps(final()) });
+  assert.equal(resumed.status, "done", resumed.reason);
+  assert.ok(resumed.usage.turns > 0);
+});
+
+test("read pages and continuation cursors survive compaction and reach the provider", async (t) => {
+  for (const contextTokens of [8192, 1024]) {
+    const o = fixture(t);
+    const body = (contextTokens === 8192 ? 'abc\n"€🙂' : "á\n🙂").repeat(
+      contextTokens === 8192 ? 1900 : 225,
+    );
+    writeFileSync(join(o.root, "pages.txt"), body);
+    let received = "";
+    let count = 0;
+    const model = ({ step, messages }) => {
+      if (step !== "code") return final('{"verdict":"continue","next":"continue reading"}');
+      if (count++ === 0) return batch(call("read_file", { path: "pages.txt" }));
+      const latest = messages.find((m) => m.content.startsWith("[Workspace read; untrusted data]"));
+      assert.ok(latest, "the immediately requested page must reach the next code turn");
+      const page = JSON.parse(latest.content.slice(latest.content.indexOf("\n") + 1));
+      assert.ok(page.content.length);
+      assert.ok(!page.content.includes("�"), "offsets cannot split a Unicode scalar");
+      received += page.content;
+      assert.ok(body.startsWith(received));
+      if (page.nextOffset === null) return final("Read all pages");
+      assert.equal(page.nextOffset, received.length);
+      return batch(
+        call("read_file", {
+          path: "pages.txt",
+          offset: page.nextOffset,
+          expectedSha256: page.sha256,
+        }),
+      );
+    };
+    const result = await runHarness({ ...o, model, budget: { contextTokens } });
+    assert.equal(result.status, "done", result.reason);
+    assert.equal(received, body);
+    assert.ok(count > 2, "fixture spans multiple pages");
+  }
+});
+
+test("delegated worker context is limited to its supplied packet, history and verification", async (t) => {
+  const options = fixture(t);
+  let prompts = 0;
+  const unavailable = () => assert.fail("ambient workspace capability reached a delegated worker");
+  const result = await runHarness({
+    ...options,
+    budget: { toolCalls: 0 },
+    request: { ...options.request, channel: "worker", task: "Record the PACKET_OBSERVATION" },
+    hooks: { apply: unavailable },
+    memory: { recall: unavailable, observe: unavailable, finish: unavailable },
+    rules: unavailable,
+    diff: unavailable,
+    working: unavailable,
+    tools: unavailable,
+    model: async (input) => {
+      prompts++;
+      assert.deepEqual(input.tools, []);
+      assert.match(JSON.stringify(input.messages), /PACKET_OBSERVATION/);
+      return final();
+    },
+  });
+  assert.equal(result.status, "done", result.reason);
+  assert.ok(prompts > 0);
+  assert.deepEqual(result.events.find((e) => e.type === "workspace.context").data.sources, []);
+  assert.equal(result.events.find((e) => e.type === "memory.recalled").data.count, 0);
+});

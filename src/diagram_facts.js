@@ -103,7 +103,6 @@ async function codeFacts(codeRoot) {
   return {
     harnessMcpNames: HARNESS_MCP_TOOLS.map((tool) => tool.name),
     hooks: json("hooks/hooks.json"),
-    minConfidence: json("source/substrate.json").llm?.minConfidence,
     nativeTools: NATIVE_CONFIG_TOOLS.length,
     serveFloor: SERVE_FLOOR,
     guardKinds: /** @type {readonly string[]} */ (ALL_KINDS),
@@ -220,7 +219,7 @@ export const FACTS = [
     diagram: "llm-reconcile.workflow",
     at: '"id": "verify"',
     field: "sublabel",
-    value: (c) => `p ≥ ${c.minConfidence} · rubric band + floors · grep`,
+    value: () => "Prerequisites · verified outcomes",
   },
 ];
 

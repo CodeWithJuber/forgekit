@@ -20,7 +20,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, posix, resolve } from "node:path";
 import { BRAND } from "./brand.js";
-import { isE2eRun, sessionPath } from "./cortex_hook.js";
+import { isE2eRun, sessionEventsDir, sessionPath } from "./cortex_hook.js";
 import { redactSecrets } from "./secrets.js";
 import { git, IGNORE_DIRS, NOT_OWN_STATE } from "./util.js";
 import { computeCodeState, evidenceMac } from "./verify.js";
@@ -131,18 +131,23 @@ export function readBaseline(root, sid) {
 
 /** Age out stale per-session artifacts (logs, baselines, markers) in one sweep. */
 export function pruneSessions(root, { maxAgeDays = 7, now = Date.now() } = {}) {
-  const dir = join(root, ".forge", "sessions");
-  let removed = 0;
+  const dirs = [join(root, ".forge", "sessions")];
   try {
-    for (const f of readdirSync(dir)) {
-      try {
-        if (now - statSync(join(dir, f)).mtimeMs > maxAgeDays * 86_400_000) {
-          unlinkSync(join(dir, f));
-          removed += 1;
-        }
-      } catch {}
-    }
+    dirs.push(sessionEventsDir(root));
   } catch {}
+  let removed = 0;
+  for (const dir of dirs) {
+    try {
+      for (const f of readdirSync(dir)) {
+        try {
+          if (now - statSync(join(dir, f)).mtimeMs > maxAgeDays * 86_400_000) {
+            unlinkSync(join(dir, f));
+            removed += 1;
+          }
+        } catch {}
+      }
+    } catch {}
+  }
   return { removed };
 }
 

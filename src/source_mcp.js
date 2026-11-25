@@ -1,6 +1,7 @@
 // Probe a trusted, manually configured enterprise MCP HTTP endpoint. Only these
 // handshake/discovery operations are issued. Provider record IDs never enter the probe.
-const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
+import { httpDiscoveryVersions as VERSIONS } from "./mcp_protocol.js";
+
 const MAX_PAGE_BYTES = 512 * 1024;
 const MAX_PAGES = 12;
 const MAX_TOOLS = 1000;

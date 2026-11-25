@@ -81,6 +81,11 @@ test("bounded file reads redact credentials and guarded writes retain concurrent
     /changed/,
   );
   assert.equal(readFileSync(join(root, create.path), "utf8"), "revision");
+  assert.throws(
+    () => read({ path: create.path, offset: 2, expectedSha256: first.sha256 }, context),
+    /changed between pages/,
+  );
+  assert.throws(() => read({ path: create.path, offset: 20 }, context), /Invalid read offset/);
   const outside = { ...create, path: "other.js" };
   assert.equal(
     decide("write_file", outside, undefined, { profile: "coder", scope: ["src"] }).level,
