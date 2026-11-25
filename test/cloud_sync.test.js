@@ -256,7 +256,13 @@ test("a pending write reserves only its scope, and read workers have an independ
     role: "admin",
     tokenEnv,
   }));
-  const config = { dataDir, principals, maxConcurrentReads: 1, maxConcurrentWrites: 2 };
+  const config = {
+    dataDir,
+    principals,
+    maxConcurrentReads: 1,
+    maxConcurrentWrites: 2,
+    maxHistoryBytes: 450,
+  };
   assert.throws(() => cloudService({ ...config, maxConcurrentReads: 0 }, env), /positive integers/);
   const server = cloudService(config, env);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -290,6 +296,33 @@ test("a pending write reserves only its scope, and read workers have an independ
   const [receipt] = await received;
   receipt.resume();
   assert.equal(receipt.statusCode, 200);
+
+  // Remove only the new accounting row to exercise upgrade from an existing journal.
+  const db = join(dataDir, "cloud.sqlite");
+  execFileSync(installedHarnessPython(dataDir), [
+    "-c",
+    "import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); db.execute('DELETE FROM journal_usage'); db.commit()",
+    db,
+  ]);
+  const push = (change) =>
+    fetch(base + "/sync", {
+      method: "POST",
+      headers: headers("FIRST"),
+      body: JSON.stringify(change),
+    });
+  const original = JSON.parse(change);
+  const replay = await push(original);
+  assert.equal((await replay.json()).replayed, true);
+  const next = { ...original, id: randomUUID(), parent: original.id, removed: ["ordinary.txt"] };
+  const limited = await push(next);
+  assert.equal(limited.status, 413);
+  assert.match((await limited.json()).reason, /journal capacity/);
+  const unchanged = await (await fetch(base, { headers: headers("FIRST") })).json();
+  assert.equal(unchanged.revision, original.id);
+  assert.equal(unchanged.events.length, 1);
+  assert.equal((await fetch(base, { method: "DELETE", headers: headers("FIRST") })).status, 200);
+  const tombstone = (await (await fetch(base, { headers: headers("FIRST") })).json()).revision;
+  assert.equal((await push({ ...next, parent: tombstone })).status, 200);
 
   // Hold the database briefly to keep a normal status read pending deterministically.
   const locker = spawn(
