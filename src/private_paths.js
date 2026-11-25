@@ -1,6 +1,14 @@
 // Compare native paths on both sides: Windows 8.3 names and junctions, and
 // macOS /var and /tmp aliases, can give the same location different spellings.
-import { lstatSync, realpathSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  realpathSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export function physicalPath(path) {
@@ -32,4 +40,28 @@ export function outsideWorkspace(root, path, reason) {
     throw new Error(reason);
   }
   return physical;
+}
+
+export function readBounded(path, limit) {
+  const fd = openSync(
+    path,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1 || st.size > limit || realpathSync.native(path) !== path)
+      throw new Error("Verification input must be a bounded regular file");
+    const bytes = Buffer.alloc(st.size);
+    let pos = 0;
+    while (pos < bytes.length) {
+      const n = readSync(fd, bytes, pos, bytes.length - pos, null);
+      if (!n) throw new Error("File changed during verification");
+      pos += n;
+    }
+    if (readSync(fd, Buffer.alloc(1), 0, 1, null))
+      throw new Error("File changed during verification");
+    return { bytes, mode: st.mode & 0o111 ? 0o555 : 0o444 };
+  } finally {
+    closeSync(fd);
+  }
 }

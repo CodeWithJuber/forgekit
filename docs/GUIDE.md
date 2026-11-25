@@ -34,7 +34,7 @@ Every command is real and wired. Grouped by what it does:
 | **Memory**              | `forge hikmah` · `forge cortex` · `forge recall` · `forge remember` · `forge brain` · `forge ledger` · `forge claim` · `forge handoff` · `forge decide` · `forge know`                                                                                                                                               |
 | **Quality**             | `forge scan` · `forge vet` · `forge spec` · `forge harden` · `forge radar` · `forge hooks`                                                                                                                                                                                                                           |
 | **Config**              | `forge prompts` · `forge discover` · `forge brand` · `forge atlas` · `forge stack` · `forge integrations` · `forge cost` · `forge budget` · `forge models`                                                                                                                                                           |
-| **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide`                                                                                                                 |
+| **Labs (experimental)** | `forge taste` · `forge uicheck` · `forge imagine` · `forge lean` · `forge anchor` · `forge diagnose` · `forge dash` · `forge report` · `forge deja` · `forge reuse` · `forge rank` · `forge collide` · `forge cloud` · `forge relay`                                                                                 |
 <!-- forge:render:command-groups:end -->
 
 Storage in one line: the code graph is `.forge/atlas.json` (plain JSON, not SQLite); the
@@ -2534,3 +2534,7 @@ code reads but this table misses fails CI on the forge repo):
 
 
 The optional PDF layout reader uses the internal `FORGE_DOCLING_SANDBOXED` marker on macOS after starting the bundled worker under a network-denying sandbox. Configure the source's `docling` object with a local model directory to enable this path.
+
+## Options added during this rollout
+
+Cloud transfer deadlines use the encoded request size and `FORGE_CLOUD_MIN_BYTES_PER_SECOND` (65,536 by default). Set `CHROME_BIN` and `FORGE_PLAYWRIGHT` to select an installed browser for visual checks.

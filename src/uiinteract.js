@@ -15,7 +15,7 @@
 // security guard (loopback-only unless --remote) BEFORE any browser is launched.
 import { outcomeRecord } from "./ledger.js";
 import { appendEvidence, loadClaims, repoLedger } from "./ledger_store.js";
-import { DEFAULT_VIEWPORTS, resolvePlaywright, resolveTarget } from "./uivisual.js";
+import { DEFAULT_VIEWPORTS, launchChromium, resolvePlaywright, resolveTarget } from "./uivisual.js";
 import { contentHash, epochDay } from "./util.js";
 
 /** The interaction checks, in the order they run. Pure data so docs + tests can name them. */
@@ -144,10 +144,10 @@ export async function runInteractions(target, opts = {}) {
 
   let browser;
   try {
-    browser = await pw.chromium.launch();
+    browser = await launchChromium(pw, cwd);
     const context = await browser.newContext({
       reducedMotion: "reduce",
-      viewport: DEFAULT_VIEWPORTS?.[0] ?? { width: 1280, height: 800 },
+      viewport: { width: DEFAULT_VIEWPORTS[0][0], height: DEFAULT_VIEWPORTS[0][1] },
     });
     const page = await context.newPage();
     const consoleErrors = [];

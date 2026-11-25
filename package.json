@@ -58,7 +58,11 @@
     "docs/DISCOVERY.md",
     "CHANGELOG.md",
     "LICENSE",
-    "scripts"
+    "scripts",
+    "docs/CLOUD.md",
+    "docs/UNIVERSAL_ROUTING.md",
+    "docs/UI-JOURNEYS.md",
+    "reports/cost-eval.md"
   ],
   "scripts": {
     "test": "node --test --import ./test/_setup.js test/*.test.js",
@@ -72,7 +76,8 @@
     "bump": "node scripts/bump.mjs",
     "forge": "node src/cli.js",
     "pages:build": "node scripts/build-pages.mjs",
-    "pages:build:live": "BUILD_PAGES_LIVE=1 node scripts/build-pages.mjs"
+    "pages:build:live": "BUILD_PAGES_LIVE=1 node scripts/build-pages.mjs",
+    "test:visual": "node scripts/test-visual.mjs"
   },
   "keywords": [
     "ai-agents",
