@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { once } from "node:events";
 import {
   mkdirSync,
   mkdtempSync,
@@ -10,6 +11,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -229,6 +231,85 @@ with sqlite3.connect(sys.argv[5]) as application:
   const after = await (await call(env.READ)).json();
   assert.equal(after.files.length, 0);
   assert.deepEqual(after.events, []);
+  assert.match(after.revision, /^[0-9a-f-]{36}$/);
+  const heads = execFileSync(
+    installedHarnessPython(root),
+    [
+      "-c",
+      "import json,sqlite3,sys; print(json.dumps(sqlite3.connect(sys.argv[1]).execute('SELECT scope, revision FROM heads').fetchall()))",
+      join(dataDir, "cloud.sqlite"),
+    ],
+    { encoding: "utf8" },
+  );
+  assert.deepEqual(JSON.parse(heads), [["first/project", after.revision]]);
   await assert.rejects(pushCloud(other), /409/);
   await removeCloud(other);
+});
+
+test("a pending write reserves only its scope, and read workers have an independent limit", async (t) => {
+  const dataDir = mkdtempSync(join(realpathSync.native(tmpdir()), "forge-cloud-admission-"));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const env = { FIRST: randomBytes(32).toString("hex"), NEXT: randomBytes(32).toString("hex") };
+  const principals = Object.keys(env).map((tokenEnv) => ({
+    tenant: tokenEnv.toLowerCase(),
+    workspace: "project",
+    role: "admin",
+    tokenEnv,
+  }));
+  const config = { dataDir, principals, maxConcurrentReads: 1, maxConcurrentWrites: 2 };
+  assert.throws(() => cloudService({ ...config, maxConcurrentReads: 0 }, env), /positive integers/);
+  const server = cloudService(config, env);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(
+    () =>
+      new Promise((resolve) => {
+        server.closeAllConnections();
+        server.close(resolve);
+      }),
+  );
+  const base = "http://127.0.0.1:" + server.address().port + "/v1/workspaces/project";
+  const headers = (key) => ({
+    authorization: "Bearer " + env[key],
+    "content-type": "application/json",
+  });
+  const change = JSON.stringify({ id: randomUUID(), parent: null, files: [], removed: [] });
+  const incoming = once(server, "request");
+  const upload = request(base + "/sync", { method: "POST", headers: headers("FIRST") });
+  upload.on("error", () => {});
+  t.after(() => upload.destroy());
+  upload.write(change.slice(0, 1));
+  await incoming;
+  assert.equal((await fetch(base, { method: "DELETE", headers: headers("FIRST") })).status, 429);
+  assert.equal(
+    (await fetch(base + "/sync", { method: "POST", headers: headers("NEXT"), body: change }))
+      .status,
+    200,
+  );
+  const received = once(upload, "response");
+  upload.end(change.slice(1));
+  const [receipt] = await received;
+  receipt.resume();
+  assert.equal(receipt.statusCode, 200);
+
+  // Hold the database briefly to keep a normal status read pending deterministically.
+  const locker = spawn(
+    installedHarnessPython(dataDir),
+    [
+      "-u",
+      "-c",
+      "import sqlite3,sys; db=sqlite3.connect(sys.argv[1]); db.execute('BEGIN EXCLUSIVE'); print('ready'); sys.stdin.readline(); db.rollback()",
+      join(dataDir, "cloud.sqlite"),
+    ],
+    { stdio: ["pipe", "pipe", "inherit"] },
+  );
+  t.after(() => locker.kill());
+  await once(locker.stdout, "data");
+  const reading = once(server, "request");
+  const pending = fetch(base, { headers: headers("FIRST") });
+  await reading;
+  const saturated = await fetch(base, { headers: headers("NEXT") });
+  assert.equal(saturated.status, 429);
+  locker.stdin.end("\n");
+  assert.equal((await pending).status, 200);
+  assert.equal((await fetch(base, { headers: headers("NEXT") })).status, 200);
 });

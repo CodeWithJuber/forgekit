@@ -933,15 +933,14 @@ from one is caught too. That covers an untracked embedded repo, a gitlink commit
 `git add inner`, and a submodule's working tree (read with git's own `.gitmodules` parser).
 It is read under the OUTER repository's `verify` config and its own committed `.gitignore`.
 Its forge config and `.git/info/exclude` cannot hide its files, and its `core.fsmonitor`
-command is never run. Gitignored files, the outer repository's or a nested one's, are not
-code state.
+command is never run. Local configuration and helpers under `.forge/` enter the fingerprint even when Git ignores them. The verifier excludes its own generated evidence and caches. Ordinary ignored dependencies remain part of the test environment.
 Interpreter caches (`__pycache__`, `.pytest_cache`, …) and the `generated` paths never count
 as a change. An untracked file that cannot be read makes the state unbindable; it is never
 silently skipped. Code the fingerprint still cannot bind (repositories nested more than three
 deep, a socket) is listed as `unbound`, and the result is then `INCOMPLETE`, never `PASS`,
 unless the repo declares that path outside what it verifies with `verify.external`. That
 declaration excludes it from the fingerprint and is recorded in every verifier event. Stamps
-written before this fingerprint (scheme `manifest-v3`) no longer verify: re-run
+written before this fingerprint (scheme `manifest-v4`) no longer verify: re-run
 `forge verify`.
 
 Every run also appends one event to `.forge/verify-events.jsonl`: the run id, the checkout it
