@@ -1,10 +1,16 @@
 // A client can run the supervised MCP tools without a project-specific hook adapter.
+import { projectForgeLauncher } from "./forge_launcher.js";
 import { detectTools, KNOWN_TOOLS, parseTools, readForgeConfig } from "./repo_config.js";
 
 export const GENERIC_HOST = "generic";
 
 export function genericHarnessServer(root) {
-  return { command: "forge", args: ["cortex-mcp"], env: { FORGE_ROOT: root } };
+  const launcher = projectForgeLauncher(root);
+  return {
+    command: launcher.command,
+    args: [...launcher.args, "cortex-mcp"],
+    env: { FORGE_ROOT: root },
+  };
 }
 
 export function parseHarnessHosts(value) {

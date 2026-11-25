@@ -66,16 +66,15 @@ confidence only from independent oracles, and merges across teammates conflict-f
   assembled `_site/` to GitHub Pages — landing at the site root, status page at
   `/status/`.
 
+## Memory storage
+
+Repository and personal memory now use the ledger as their live store. For older Markdown
+files, `forge ledger migrate` creates a verified, private backup before importing missing
+claims. Restore exact source bytes into a new directory with `forge ledger restore-legacy`.
+Both commands support personal recall. [Memory storage and recovery](docs/MEMORY.md)
+
 ## Next
 
-- **Legacy store retirement** — mostly shipped. The read-path flip (every read surface —
-  cortex injection/status, the substrate advisory, routing, `recall list`, brain's
-  AGENTS.md index — is a merged view (legacy ∪ ledger) via `src/ledger_read.js`) landed
-  first, and the **write default has now flipped too**: `FORGE_LEDGER_ONLY` defaults on, so
-  the legacy formats (`lessons/*.md`, recall/brain fact files) are no longer written and the
-  ledger is the sole store. `FORGE_LEDGER_ONLY=0` is a one-release escape hatch that restores
-  the file store. The only remaining step is deleting the now-dormant legacy write/read code
-  once that escape hatch is removed in a later release.
 - **Evidence before stronger claims** — the 2026-09-26 review's evaluation plan: an impact study
   on unseen repositories with the parser and relations frozen first, and co-edited-file prediction
   and regression-test selection reported separately; the universal router on a new scaffold, time

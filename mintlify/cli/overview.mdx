@@ -36,6 +36,10 @@ noticing. Commands are organized into six groups (the last is experimental).
 For `forge harness`, see [Supervised coding runs](/guides/supervised-runs). For
 `forge sources`, `forge evidence` and `forge develop`, see [Project sources and research](/guides/project-evidence).
 
+Use `forge team` to plan independent read-only workers for a review. `forge relay preview` shows the evidence selected for encrypted synchronization to an enrolled private relay.
+
+Use `forge agents list` to find a role, `forge skills list` to inspect packaged instructions, and `forge hooks list` to see the available hooks. Each has a `show` operation. Use `forge cloud preview` to inspect an enrolled workspace’s export before its first push.
+
 ## Conventions
 
 - **Advisory by default.** Set `FORGE_ENFORCE=1` to turn the substrate into a hard block
@@ -61,7 +65,8 @@ For `forge harness`, see [Supervised coding runs](/guides/supervised-runs). For
 | `FORGE_EMBED_MODEL=<id>`    | Optional model identifier included in HTTP embedding requests and in the cache's provider identity. |
 | `FORGE_EMBED_KEY=<key>`     | Optional bearer token for the configured HTTP embedding endpoint. Keep the value in the environment; do not commit it. |
 | `FORGE_EMBED_TIMEOUT_MS=<ms>` | Optional provider timeout in milliseconds. |
-| `FORGE_LEDGER_ONLY=0`     | Escape hatch. Ledger-only is the DEFAULT — memory (lessons + recall/brain facts) lives only in the content-addressed `.forge/ledger`, and the legacy `lessons/*.md` + fact files are no longer written. Set `0` to restore the legacy file store while external tooling migrates. |
+
+Use `forge ledger migrate` to import historic memory files. `forge ledger restore-legacy <new-directory>` restores the backup. Add `--personal` for personal recall.
 
 <Note>
   `FORGE_EMBED` configures an adapter; Forgekit does not bundle an embedding model or a
@@ -94,8 +99,4 @@ These commands and flags are available and documented in their group pages:
 | `forge test-select`    | Quality  | Smart test selection — which tests this change owes (selection only). |
 | `forge update --to`    | Core     | Pin or downgrade to a specific version.         |
 
-## Workspace synchronization and model configuration
-
-Use `forge cloud preview` to inspect eligible files before enrollment. Use `forge relay preview` for an end-to-end encrypted workspace.
-
-Use `forge components list`, `forge agents list` and `forge skills list` to inspect standalone components. `forge models --json` reports models known to each provider profile.
+Use `forge relay` for enrolled end-to-end encrypted synchronization. `forge --output=json-v1 <command>` produces a versioned command result.

@@ -6,13 +6,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- A signed verification PASS requires a complete report with passing checks. A successful process with uncounted checks reports INCOMPLETE. Native Go uses test events and Gradle uses freshly generated JUnit reports.
+- Required impact review before edits uses explicit enrollment through `forge init --review-edits`. Existing guard installations read this setting on their next callback. Plain init leaves Git verification enrollment to an explicit tool selection.
+- `forge models --json` returns the provider inventory in schema 2. Consumers of the original tiers can request `--schema 1`.
+- Cloud and relay enrollment now honor Git ignore rules by default. To share ignored files, preview the extra paths and re-enroll with `--include-ignored`.
+
+### Fixed
+
+- Workspace verification counts interleaved pnpm reports by package and reads the terminal report of the enclosing test program. Git ignores the checkout-local verifier journal.
+- Dashboard authentication works on CRLF checkouts. Cloud transfer deadlines scale with the bytes sent. Model discovery retains served aliases, budget comparisons use exact decimal totals and preflight identifies unchecked symbols.
+- npm can reside in a different installation from Node. Optional model checks explain a missing model configuration. Impact reviews use cached code dependencies and print a launcher that works in plugin-only installs.
+
 ### Changed
 
-- Workspace cloud and encrypted relay sync use explicit enrollment. Git ignores apply by default. Chromium can record UI journeys and preview dashboard artifacts.
-- Context packets account for bytes and missing spans. The optional compiler workers resolve local code dependencies.
-- The shared ledger preserves retractions and concurrent writes. Private storage supports local observations.
-- Signed verification requires counted passing checks. Git enrollment and required edit review now use explicit selection.
-- Model inventory uses profile and call evidence. Routing compares exact decimal cost totals and paired task outcomes.
+- Verification receipts require observed passing checks. A selected test run records its scope. Context and file reads report missing coverage within the configured budget.
+- Memory proposals and public lookups require explicit promotion or opt-in. Concurrent settings updates retain independent edits and partial budget updates preserve hard limits.
+- Model discovery includes configured provider profiles, observed availability and workload-relative quality bands. Agents, skills and hooks can be inspected independently.
+- Model inventory and call records use installation-specific, keyed cache identifiers. The offline route monitor accepts equivalent directory paths on macOS and Windows.
+- Added opt-in full-workspace sync with a self-hosted dashboard, browser journey receipts and an offline paired-cost evaluation workflow.
+
+- Model recommendations use attributed workload outcomes. The default model inventory covers every configured profile. Use `forge models --schema 1 --json` for historical tier output.
+- Preflight measures declared prerequisites. Test selection requires checkout-bound dependency evidence. Context counts UTF-8 bytes or a named external tokenizer and accounts for partial source coverage.
+- Added dependency-scheduled worker briefs, grant-controlled organization memory, recoverable legacy migration, encrypted relay sync and exact-index verification. Stable v1 CLI envelopes and authenticated run-history triage support automation.
 
 ## [1.19.2] - 2026-11-22
 

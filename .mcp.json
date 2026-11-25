@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "forge-cortex": {
-      "command": "forge",
-      "args": ["cortex-mcp"]
+      "command": "node",
+      "args": ["./src/cli.js", "cortex-mcp"]
     }
   }
 }

@@ -11,7 +11,7 @@
   "license": "MIT",
   "keywords": ["codex", "mcp", "ai-coding", "agents-md", "cognitive-substrate"],
   "skills": "./global/tools",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": "./hooks/codex-mcp.json",
   "hooks": "./hooks/codex.json",
   "interface": {
     "displayName": "Forge",

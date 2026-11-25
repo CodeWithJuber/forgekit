@@ -56,14 +56,6 @@ export function stripTrailingSlashes(s) {
 export const MS_PER_DAY = 86400000;
 export const epochDay = () => Math.floor(Date.now() / MS_PER_DAY);
 
-// Legacy-store retirement (ROADMAP): the PCM ledger is the convergent WRITE store
-// (dual-write via ledger_bridge since P1) and serves the read view (ledger_read). The
-// ledger is now the DEFAULT and only store — legacy files (lessons/*.md, recall/brain
-// fact files) are no longer written or read. Set FORGE_LEDGER_ONLY=0 (the one-release
-// escape hatch) to restore the legacy file store while external tooling migrates.
-export const ledgerOnly = () =>
-  process.env.FORGE_LEDGER_ONLY !== "0" && process.env.FORGE_LEDGER_ONLY !== "false";
-
 export function hasBin(bin) {
   try {
     execFileSync(bin, ["--version"], { stdio: "ignore" });

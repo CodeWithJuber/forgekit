@@ -101,8 +101,12 @@ export const COMMANDS = {
     ],
     examples: ["forge doctor", "forge doctor --fix", "forge doctor --adversarial"],
   },
-  tools:
-    "primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)",
+  tools: {
+    summary:
+      "primary-tool config — gitignore secondary-tool artifacts (.cursor/.gemini/…) for tools this repo doesn't use (`forge tools <name>` sets it, `--reset` clears)",
+    usage: "forge tools [<tool>|--reset] [--json]",
+    examples: ["forge tools --json", "forge tools codex"],
+  },
   update: {
     summary:
       "self-update — `--check` reports if a newer version is available, bare applies it, `--to <version>` pins/downgrades",
@@ -119,15 +123,28 @@ export const COMMANDS = {
     ],
     examples: ["forge update --check", "forge update --to 0.19.0"],
   },
-  taste: "enable one UI-taste tool for this repo (no arg = list)",
+  taste: {
+    summary: "enable one UI-taste tool for this repo (no arg = list)",
+    usage: "forge taste [<style>]",
+    examples: ["forge taste"],
+  },
   atlas: {
     summary: "build / query the code-graph (where-is-Y, has-symbol)",
     usage: "forge atlas build [--ast|--portable] [--json] | query <text> | has <symbol>",
     examples: ["forge atlas build --portable", "forge atlas query freezeSuite"],
   },
-  stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
-  radar:
-    "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
+  stack: {
+    summary:
+      "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
+    usage: "forge stack [--json]",
+    examples: ["forge stack --json"],
+  },
+  radar: {
+    summary:
+      "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
+    usage: "forge radar [--offline|--refresh] [--json]",
+    examples: ["forge radar --offline --json"],
+  },
   harness: {
     summary:
       "run host-neutral supervised tasks with policy, budgets, verification and replayable evidence",
@@ -136,7 +153,15 @@ export const COMMANDS = {
     examples: [
       "forge harness init --hosts claude,codex,kimi,generic --supervised",
       'forge harness run "Fix the retry bug" --accept "Retry tests pass"',
+      'forge harness run "Review the change" --route reviewed --model MODEL_ID --model-profile NAME',
+      'forge harness run "Check the release" --route review --model-profile openai --model YOUR_MODEL',
       "forge harness jobs tick",
+      "forge harness memory org-grant engineering write",
+      "forge harness memory org-grants",
+      "forge harness memory share <item> organization --organization engineering",
+      "forge harness memory recall <query> --organization engineering",
+      "forge harness memory history <item> --organization engineering",
+      "forge harness memory org-revoke engineering",
     ],
   },
   develop: {
@@ -213,8 +238,16 @@ export const COMMANDS = {
       'forge recall add "test command" "Run npm test from the repository root"',
     ],
   },
-  catalog: "Start Here — list every tool, crew, and guard with a one-line why",
-  scan: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
+  catalog: {
+    summary: "Start Here — list every tool, crew, and guard with a one-line why",
+    usage: "forge catalog",
+    examples: ["forge catalog"],
+  },
+  scan: {
+    summary: "vet a skill/MCP for injection/RCE/exfil before install (skill-gate)",
+    usage: "forge scan <SKILL.md|.mcp.json|path>",
+    examples: ["forge scan skills/forge-impact/SKILL.md"],
+  },
   vet: {
     summary:
       "vet a package before install (dep-gate) — is the name on its registry, is it listed malicious, how new and thin is it",
@@ -269,7 +302,12 @@ export const COMMANDS = {
       "forge verify [--base <revision>] [--deep [--llm]] [--json] | forge verify --claim <receipt.json> [--json] | forge verify triage [--json]",
     examples: ["forge verify --base HEAD --json", "forge verify --claim receipt.json"],
   },
-  demo: "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
+  demo: {
+    summary:
+      "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
+    usage: "forge demo [workshop] [--json]",
+    examples: ["forge demo", "forge demo workshop --json"],
+  },
   precommit: {
     summary:
       "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
@@ -300,13 +338,21 @@ export const COMMANDS = {
       "forge test-select --json",
     ],
   },
-  harden: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
+  harden: {
+    summary: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
+    usage: "forge harden [--require-verified]",
+    examples: ["forge harden"],
+  },
   remember: {
     summary: "add a durable fact to this repo's portable memory (forge brain)",
     usage: 'forge remember "<name>" "<fact>"',
     examples: ['forge remember "runner" "Integration checks use the staging fixture"'],
   },
-  brain: "show / rebuild the portable project memory index",
+  brain: {
+    summary: "review memory proposals and rebuild the approved project index",
+    usage: "forge brain | forge brain proposals|approve <id>|reject <id>|conflicts",
+    examples: ["forge brain proposals --json", "forge brain conflicts"],
+  },
   cost: {
     summary: "inspect spend, stage factors and paired evaluation outcomes",
     usage: "forge cost [--stages] | pilot <init|freeze|template|compare> [options]",
@@ -379,14 +425,23 @@ export const COMMANDS = {
       "forge models --profile openai --refresh",
     ],
   },
-  spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
+  spec: {
+    summary: "spec-as-contract — init (OpenSpec) / lock / check drift",
+    usage: "forge spec init | lock | check",
+    examples: ["forge spec check"],
+  },
   cortex: {
     summary: "inspect project memory and review privately observed corrections",
     usage:
       "forge cortex status | why <symbol-or-file> | review [--json] | confirm <lesson-id|full-claim-hash> [--json]",
     examples: ["forge cortex why src/ledger.js", "forge cortex review --json"],
   },
-  deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
+  deja: {
+    summary:
+      "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
+    usage: 'forge deja "<task>" [--json]',
+    examples: ['forge deja "Review the checkout totals" --json'],
+  },
   ledger: {
     summary:
       "evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import",
@@ -416,7 +471,12 @@ export const COMMANDS = {
     ],
     examples: ["forge claim export --pretty", "forge claim export --out claims.json --pretty"],
   },
-  reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
+  reuse: {
+    summary: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
+    usage:
+      'forge reuse stats | query "<task>" | mint "<task>" --file <path> [--ref <evidence>] [--json]',
+    examples: ['forge reuse query "create a weekly cost report" --json', "forge reuse stats"],
+  },
   context: {
     summary:
       "budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed",
@@ -578,25 +638,64 @@ export const COMMANDS = {
     ],
     examples: ["forge rank", "forge rank --top 5 --json"],
   },
-  substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
+  substrate: {
+    summary: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
+    usage: 'forge substrate "<task>" [--json]',
+    examples: ['forge substrate "Update the billing summary in src/cost_report.js" --json'],
+  },
   scope: {
     summary: "decompose files into independent clusters (+ coupled files you didn't name)",
     usage: "forge scope <file> [file ...] [--json]",
     examples: ["forge scope src/cost_report.js src/metrics.js --json"],
   },
-  anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
-  handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
-  decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
-  know: "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
-  diagnose:
-    "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
-  imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
-  lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
+  anchor: {
+    summary: "goal-drift check — are your actual (git) changes still on the stated goal?",
+    usage: 'forge anchor ["<goal>"] [--json] | set "<goal>" | show | clear',
+    examples: ["forge anchor show", 'forge anchor "Keep public API names stable" --json'],
+  },
+  handoff: {
+    summary: "save or resume a bounded session snapshot with portable evidence",
+    usage:
+      "forge handoff <summary> [--next <step>] [--evidence <tracked-path>] | forge handoff --resume [--json]",
+    examples: ["forge handoff --resume --json"],
+  },
+  decide: {
+    summary: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
+    usage:
+      'forge decide ["<decision and reason>"] [--json] | compare <file.json> [--record] [--json]',
+    examples: ["forge decide --json", "forge decide compare alternatives.json --json"],
+  },
+  know: {
+    summary:
+      "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
+    usage: 'forge know "<fact>" [--dry-run] [--json]',
+    examples: [
+      'forge know "The team validates billing imports against last month" --dry-run --json',
+    ],
+  },
+  diagnose: {
+    summary:
+      "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
+    usage:
+      'forge diagnose "<error text>" [--file <path>] [--symbol <name>] [--task "<task>"] [--json]',
+    examples: ['forge diagnose "Expected 3 rows but received 2" --file src/cost_report.js --json'],
+  },
+  imagine: {
+    summary:
+      "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
+    usage: 'forge imagine "<task>" [--run] [--allow-dirty] [--json]',
+    examples: ['forge imagine "Change the format of the billing summary" --json'],
+  },
+  lean: {
+    summary: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
+    usage: 'forge lean "<task>" [--json]',
+    examples: ['forge lean "Update the billing summary" --json'],
+  },
   uicheck: {
     summary:
       "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
     usage:
-      "forge uicheck contrast <fg> <bg> [--large] [--json] | fingerprint <file...> [--theme <file>]... [--mint] [--json] | design <file...> [--theme <file>]... [--taste <name>] [--json] | visual <file-or-url> | interact <file-or-url>",
+      "forge uicheck contrast <fg> <bg> [--large] [--json] | fingerprint <file...> [--theme <file>]... [--mint] [--json] | design <file...> [--theme <file>]... [--taste <name>] [--json] | visual <file-or-url> | interact <file-or-url> | journey <file-or-url> --spec <json-file> [--json]",
     flags: [
       {
         flag: "--large",
@@ -638,8 +737,16 @@ export const COMMANDS = {
     ],
     examples: ["forge dash", "forge dash --port 4243"],
   },
-  report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
-  brand: "print the active brand token map",
+  report: {
+    summary: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
+    usage: "forge report [--out <path>]",
+    examples: ["forge report --out review.html"],
+  },
+  brand: {
+    summary: "print the active brand token map",
+    usage: "forge brand",
+    examples: ["forge brand"],
+  },
   docs: {
     summary:
       "docs↔code drift — check (registry reconcile) / render (regenerate machine-owned tables + diagrams) / sync (diff-driven stale-docs sweep) / impact (reusable doc-reference graph: which docs mention what THIS diff changed)",
@@ -679,6 +786,7 @@ export const COMMANDS = {
     summary: "bind a local Hikmah kernel ledger and recall its verified public lessons",
     usage:
       "forge hikmah on --binary <absolute-path> --store <absolute-path> | recall <query> | status | off",
+    examples: ["forge hikmah status"],
   },
   prompts: {
     summary: "choose a workspace development profile or show a portable prompt and specialist role",
@@ -712,6 +820,8 @@ export const GROUPS = {
     "evidence",
     "team",
     "develop",
+    "agents",
+    "skills",
     "sources",
     "impact",
     "scope",
@@ -724,8 +834,6 @@ export const GROUPS = {
     "demo",
     "precommit",
     "test-select",
-    "agents",
-    "skills",
   ],
   Memory: [
     "hikmah",
@@ -759,13 +867,13 @@ export const GROUPS = {
     "anchor",
     "diagnose",
     "dash",
+    "cloud",
+    "relay",
     "report",
     "deja",
     "reuse",
     "rank",
     "collide",
-    "cloud",
-    "relay",
   ],
 };
 

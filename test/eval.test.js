@@ -62,10 +62,14 @@ const MENTION_ONLY = {
 const SELF = "test/eval.test.js";
 
 const gitGrepFiles = (symbol) => {
-  const r = spawnSync("git", ["grep", "-l", "-w", "-F", "-e", symbol, "--", "src/*", "test/*"], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-  });
+  const r = spawnSync(
+    "git",
+    ["grep", "--untracked", "-l", "-w", "-F", "-e", symbol, "--", "src/*", "test/*"],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+    },
+  );
   if (r.status !== 0 && r.status !== 1) return null; // no git / not a work tree → skip
   return (r.stdout || "")
     .split("\n")

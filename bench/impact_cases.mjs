@@ -31,10 +31,11 @@
 //   - src/eval.js         defines it (:28) (no other same-file caller)
 //   - test/eval.test.js   imports { evalImpact } (:7) and calls it (:34) — the only referencer
 //
-// isStale (src/atlas.js) — 8 files
+// isStale (src/atlas.js) — 9 files
 //   - src/atlas.js             defines it (:1033)
 //   - src/verify.js            imports { isStale } (:11) and calls it (:456)
 //   - src/doctor.js            imports { isStale } (:18) and calls it (:249)
+//   - src/cli/memory.js       checks graph freshness before context packet assembly
 //   - src/substrate.js         imports it ALIASED (`isStale as atlasIsStale`, :11) and calls
 //                              it twice (:177, :269) — an aliased import is still a reference
 //   - src/coupling.js          imports it ALIASED (`isStale as atlasIsStale`, :20) and calls
@@ -50,9 +51,10 @@
 //   - test/ledger.test.js imports { mergeStates } (:14) and calls it
 //   (src/ledger_sync.js:3 also names it in the module header — same file, already labeled.)
 //
-// claimText (src/ledger.js) — 11 files
+// claimText (src/ledger.js) — 12 files
 //   - src/ledger.js       defines it (:610); sketchOf() (:636), termsOf() (:637) and :880 call it
 //   - src/context.js      imports { claimText } (:13) and calls it (:185)
+//   - src/ambient_memory.js indexes claim text; content hashes identify the index and term buckets
 //   - src/dash.js         imports { claimText } (:16) and calls it (:58, :389, :400)
 //   - src/deja.js         imports { claimText } (:19) and calls it (:179)
 //   - src/ledger_store.js imports { claimText } (:26) and calls it (:663)
@@ -66,7 +68,7 @@
 //   (test/dash.test.js:69 mentions the name only inside an assertion message — a string,
 //    not a reference — so it is NOT labeled as a dependent.)
 //
-// contentHash (src/util.js) — 16 files. The widest fan-out in the set, and the case that
+// contentHash (src/util.js) has the widest fan-out in the set. This case
 // used to carry a documented FALSE NEGATIVE: src/atlas.js binds it to an alias,
 // `const hash = contentHash;` at :190, with no call parentheses, and the old import regex
 // captured module paths rather than named bindings, so no edge reached atlas.js. That is
@@ -75,10 +77,13 @@
 // one hop. The case is kept for its fan-out, not for the miss.
 //   - src/util.js         defines it (:65); slug() calls it (:28)
 //   - src/atlas.js        imports { contentHash } (:19), aliases it (:190)
+//   - src/cortex.js and src/cortex_observations.js hash correction identities and private event paths
+//   - src/harden.js binds the managed Git hook to its generated content
 //   - src/cortex_hook.js  imports it (:9) and calls it (:98)
 //   - src/cost_report.js  imports it (:14); routeRef() calls it (:212)
 //   - src/diagnose.js     imports it (:15); failureSignature() calls it (:57)
 //   - src/embed.js        imports it (:35) and calls it (:202)
+//   - src/handoff.js      hashes exported packets and checks their integrity on import
 //   - src/http_cache.js   imports it (:18); cacheFile() calls it (:124)
 //   - src/ledger.js       imports it (:18) and calls it (:136, :141, :947, :962, :963)
 //   - src/ledger_store.js imports it (:43) and calls it (:414, :598)
@@ -88,6 +93,9 @@
 //   - src/public_lookup.js hashes public research cache keys (extracted from evidence.js)
 //   - src/discovery.js hashes public candidate identities
 //   - src/source_local.js hashes file chunk identities
+//   - src/evidence_team.js hashes the proposed decomposition
+//   - src/team_schedule.js hashes the recorded work contract
+//   - src/pre_edit.js binds pre-edit evidence to its exact inputs
 //   - src/source_remote.js hashes remote connection scope
 //   - src/sources.js hashes the workspace and local source scope
 //   (src/ledger_store.js:586 also names it in a doc comment — same file, already labeled.)
@@ -108,13 +116,13 @@ export const IMPACT_CASES = [
   {
     target: "isStale",
     expected: [
-      "src/atlas.js",
-      "src/cli/memory.js",
-      "src/coupling.js",
-      "src/doctor.js",
       "src/pre_edit.js",
-      "src/substrate.js",
+      "src/cli/memory.js",
+      "src/atlas.js",
       "src/verify.js",
+      "src/doctor.js",
+      "src/substrate.js",
+      "src/coupling.js",
       "test/atlas.test.js",
       "test/atlas_resolve.test.js",
       "test/path_aliases.test.js",
@@ -130,16 +138,16 @@ export const IMPACT_CASES = [
     target: "claimText",
     expected: [
       "src/ambient_memory.js",
-      "src/cli.js",
-      "src/cli/memory.js",
+      "src/ledger.js",
       "src/context.js",
-      "src/cortex_mcp.js",
       "src/dash.js",
       "src/deja.js",
       "src/learn_consolidate.js",
-      "src/ledger.js",
       "src/ledger_retention.js",
       "src/ledger_store.js",
+      "src/cli.js",
+      "src/cli/memory.js",
+      "src/cortex_mcp.js",
       "test/ledger.test.js",
     ],
     editedFile: "src/ledger.js",
@@ -147,41 +155,41 @@ export const IMPACT_CASES = [
   {
     target: "contentHash",
     expected: [
-      "src/ambient_memory.js",
-      "src/atlas.js",
-      "src/auto_adoption.js",
       "src/context_packet.js",
+      "src/ambient_memory.js",
+      "src/util.js",
+      "src/atlas.js",
       "src/cortex.js",
-      "src/cortex_hook.js",
       "src/cortex_observations.js",
+      "src/harden.js",
+      "src/cortex_hook.js",
       "src/cost_report.js",
       "src/diagnose.js",
-      "src/discovery.js",
       "src/embed.js",
-      "src/evidence_team.js",
       "src/handoff.js",
-      "src/harden.js",
+      "src/memory_proposals.js",
+      "src/private_memory.js",
+      "src/http_cache.js",
+      "src/ledger.js",
+      "src/ledger_store.js",
+      "src/reuse.js",
+      "src/uiinteract.js",
+      "src/auto_adoption.js",
+      "src/public_lookup.js",
+      "src/discovery.js",
+      "src/evidence_team.js",
+      "src/team_schedule.js",
+      "src/pre_edit.js",
+      "src/source_local.js",
       "src/harness_council.js",
       "src/harness_jobs.js",
       "src/harness_policy.js",
       "src/harness_spend.js",
       "src/harness_tools.js",
       "src/harness_verify.js",
-      "src/http_cache.js",
-      "src/ledger.js",
-      "src/ledger_store.js",
-      "src/memory_proposals.js",
-      "src/pre_edit.js",
-      "src/private_memory.js",
-      "src/public_lookup.js",
-      "src/reuse.js",
-      "src/source_local.js",
+      "test/harness_jobs.test.js",
       "src/source_remote.js",
       "src/sources.js",
-      "src/team_schedule.js",
-      "src/uiinteract.js",
-      "src/util.js",
-      "test/harness_jobs.test.js",
     ],
     editedFile: "src/util.js",
   },

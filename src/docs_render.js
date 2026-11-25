@@ -13,14 +13,19 @@
 // Registry-derived blocks (tables, counts) are enforced as ERRORS; tree-derived output
 // (the repo-map diagram, mermaid theme normalization) is advisory — a moved file should
 // not fail an unrelated PR, but a new command with a stale table must.
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { CHANGELOG_PAGE, renderChangelogPage } from "./changelog_page.js";
-import { commandSummary, GROUPS } from "./commands.js";
-import { HOSTS } from "./hosts.js";
+import { COMMANDS, commandSummary, GROUPS } from "./commands.js";
+import { COMPONENT_CATALOG_VERSION, componentCatalog } from "./components.js";
+import { HOSTS, loadManifest } from "./hosts.js";
 import { TOOLS } from "./mcp_tools.js";
+import { INVENTORY_SCHEMA_VERSION } from "./model_inventory.js";
+import { builtinModelProfiles } from "./providers.js";
+import { KNOWN_TOOLS } from "./repo_config.js";
 import { directedImportGraph } from "./scope.js";
+import { NATIVE_CONFIG_TOOLS } from "./sync.js";
 import { git } from "./util.js";
 
 // Markdown blocks use HTML comments; MDX (the Mintlify site) rejects those, so an MDX block's
@@ -166,6 +171,67 @@ export function renderRepoMap(root, { maxDirs = 9 } = {}) {
   return `\`\`\`mermaid\n${lines.join("\n")}\n\`\`\``;
 }
 
+export function renderPackageInventory() {
+  const hooks = loadManifest();
+  const skills = componentCatalog("skills");
+  const budgets = JSON.parse(readFileSync(join(BRAND.root, "hooks/budget.json"), "utf8"));
+  const emitters = readdirSync(join(BRAND.root, "src/emit")).filter(
+    (name) => name.endsWith(".js") && name !== "_shared.js",
+  );
+  return mdTable(
+    ["Inventory", "Count"],
+    [
+      ["Public CLI commands", Object.keys(COMMANDS).length],
+      ["Native target labels", NATIVE_CONFIG_TOOLS.length],
+      ["Selectable tool keys", KNOWN_TOOLS.length],
+      ["Emitter-directory JS files excluding the shared helper", emitters.length],
+      ["Lifecycle events", Object.keys(hooks).length],
+      [
+        "Lifecycle hook command entries",
+        Object.values(hooks)
+          .flat()
+          .reduce((n, g) => n + g.hooks.length, 0),
+      ],
+      ["Skill packs in `skills/`", skills.filter((s) => s.source.startsWith("skills/")).length],
+      [
+        "Tool skill manifests in `global/tools/`",
+        skills.filter((s) => s.source.startsWith("global/tools/")).length,
+      ],
+      ["Explicit per-event hook byte budgets", Object.keys(budgets.events).length],
+    ],
+  );
+}
+
+/** Public package contracts only. Never read account credentials, user catalogs or a fitted workspace model. */
+export function renderComponentModelContracts() {
+  const code = (value) => `\`${value}\``;
+  const profiles = builtinModelProfiles().map((p) => [
+    code(p.name),
+    p.aliases.map(code).join(", "),
+  ]);
+  const rows = [];
+  for (const collection of ["agents", "skills", "hooks"]) {
+    for (const c of componentCatalog(collection)) {
+      rows.push([
+        collection,
+        code(c.id),
+        c.mode,
+        c.event ? code(c.event) : c.binding ? code(c.binding) : "—",
+      ]);
+    }
+  }
+  return [
+    `Model inventory schema **${INVENTORY_SCHEMA_VERSION}**. Standalone component catalog schema **${COMPONENT_CATALOG_VERSION}**.`,
+    "### Built-in model profiles",
+    mdTable(["Profile", "Legacy routing aliases"], profiles),
+    "### Packaged agents, skills and hooks",
+    mdTable(["Collection", "ID", "Mode", "Event or binding"], rows),
+    "### Host hook adapters",
+    "These rows describe the shipped adapter contract. A native-client test establishes behavior for its specific host version and install mode.",
+    renderHostHooks(),
+  ].join("\n\n");
+}
+
 /** Replace one managed block. Returns the new text plus whether markers were found/changed.
  *  `mdx` selects the JSX-comment markers an .mdx page needs. */
 export function spliceBlock(text, name, body, { mdx = false } = {}) {
@@ -196,9 +262,101 @@ export function normalizeMermaid(text) {
   });
 }
 
+/** Include the working manuals in the downloadable guide, consuming their actual examples.
+ * Full lines identify the section so a heading change cannot silently export the wrong text.
+ */
+function combinedManual(root, file, start, stop) {
+  const lines = readDoc(join(root, file)).text.trim().split("\n");
+  const first = start ? lines.indexOf(start) : 0;
+  const end = stop ? lines.indexOf(stop, first + 1) : lines.length;
+  if (first < 0 || end < 0) throw new Error(`Missing combined guide section in ${file}`);
+  const headingShift = lines[first]?.startsWith("# ") ? 2 : 1;
+  let fenced = false;
+  return lines
+    .slice(first, end)
+    .map((line) => {
+      if (line.startsWith("```")) fenced = !fenced;
+      if (fenced || !/^#{1,6} /.test(line)) return line;
+      return line.replace(/^#{1,6}/, (marks) =>
+        "#".repeat(Math.min(6, marks.length + headingShift)),
+      );
+    })
+    .join("\n")
+    .trimEnd();
+}
+
+function renderCombinedManual(root) {
+  return [
+    combinedManual(root, "docs/DEVELOPMENT-PROMPTS.md", "## Use one agent, skill or hook"),
+    combinedManual(
+      root,
+      "docs/MODELS-AND-COMPONENTS.md",
+      "## Find models for your account and workload",
+      "## Packaged capability reference",
+    ),
+    renderComponentModelContracts(),
+    combinedManual(root, "docs/UNIVERSAL_ROUTING.md", "## Monitor a frozen model for regressions"),
+    combinedManual(
+      root,
+      "docs/HARNESS.md",
+      "## Keep a temporary script for reuse",
+      "## Evaluate agent changes with paired cost evidence",
+    ),
+    combinedManual(root, "docs/INTEGRATIONS.md", "## Develop a plugin or adapter"),
+    combinedManual(root, "docs/UI-JOURNEYS.md"),
+    combinedManual(root, "docs/CLOUD.md"),
+    combinedManual(root, "docs/MEMORY.md"),
+    combinedManual(root, "docs/CORE-CONTRACT.md"),
+    combinedManual(
+      root,
+      "docs/AGENT-EVIDENCE.md",
+      "## When to use multiple agents",
+      "## Jira, Confluence and GitLab",
+    ),
+    combinedManual(
+      root,
+      "docs/GUIDE.md",
+      "### Select tests from measured dependencies",
+      "### `forge stack` — what is THIS repo actually built with?",
+    ),
+    combinedManual(
+      root,
+      "reports/cost-eval.md",
+      "## Run the paired pilot locally",
+      "## Measured factors",
+    ),
+  ].join("\n\n");
+}
+
 // Which generated block lives in which file. Registry-derived blocks are ERRORS when
 // stale (a new command MUST regenerate); the tree-derived repo map is advisory.
 const BLOCK_TARGETS = [
+  {
+    file: "docs/ForgeKit-Full-Documentation.md",
+    name: "consolidated-manuals",
+    render: renderCombinedManual,
+    strict: true,
+  },
+  { file: "README.md", name: "package-inventory", strict: true, render: renderPackageInventory },
+  {
+    file: "landing/index.html",
+    name: "native-target-count",
+    strict: true,
+    render: () => String(NATIVE_CONFIG_TOOLS.length),
+  },
+  {
+    file: "docs/MODELS-AND-COMPONENTS.md",
+    name: "component-model-contracts",
+    strict: true,
+    render: renderComponentModelContracts,
+  },
+  {
+    file: "mintlify/cli/components.mdx",
+    name: "component-model-contracts",
+    strict: true,
+    mdx: true,
+    render: renderComponentModelContracts,
+  },
   {
     file: "README.md",
     name: "commands-table",

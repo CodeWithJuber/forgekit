@@ -454,6 +454,8 @@ export function pruneHarnessRuns(root, { now = Date.now() } = {}) {
         "approval_pending",
         "interrupted",
         "budget_exhausted",
+        "provider_unavailable",
+        "provider_retryable",
         "killed",
       ].includes(row.status)
     ) {

@@ -55,9 +55,9 @@
       "id": "testing",
       "title": "Testing",
       "rules": [
-        "Write tests with the code. For a bug fix, write the failing test first, then fix.",
+        "Add regression coverage when existing checks would miss a change in behavior.",
         "Cover the edge cases the task names: empty, error, boundary. Prefer real inputs over heavy mocking.",
-        "Run the suite + typecheck + lint and show the output before claiming done."
+        "Run the checks affected by the change. Run the full suite when coverage is uncertain or repository policy requires it. Record the command and outcome."
       ]
     },
     {
@@ -71,15 +71,38 @@
     },
     {
       "id": "production",
-      "title": "Production standards (2026)",
+      "title": "Service contracts and runtime boundaries",
       "rules": [
-        "Validate at trust boundaries with a schema (e.g. Zod): parse untrusted input (API, env, file, LLM output) into typed values before use — never trust it raw.",
-        "Keep business logic in use-cases/domain, not controllers; hide the DB/ORM behind a repository interface; return DTOs, never raw DB models.",
-        "Check ownership/authorization on every object access (OWASP API #1 — never trust a user-supplied ID); paginate every list; make retried mutations idempotent.",
-        "Use a typed error model: typed codes, safe public messages, internal detail logged with a requestId. Never swallow errors or leak stack traces to clients.",
-        "Emit structured logs (level, message, requestId, service, durationMs); for services add metrics/traces (OpenTelemetry) and track error rate, p95 latency, and AI token cost.",
-        "Treat AI/LLM output as untrusted (OWASP LLM Top 10): verify it, never execute it directly, never put secrets/PII in prompts, give agent tools least privilege + human approval for destructive actions.",
-        "Prefer boring, typed, maintained tech; contract-first APIs (OpenAPI 3.1) with a new version for every breaking change; don't over-pattern simple code."
+        {
+          "when": [
+            "service"
+          ],
+          "text": "Use the service’s existing validation and error conventions. Verify ownership on object access, bound list responses, and make retried mutations idempotent."
+        },
+        {
+          "when": [
+            "zod"
+          ],
+          "text": "Reuse the project’s Zod schemas when parsing untrusted input."
+        },
+        {
+          "when": [
+            "openapi"
+          ],
+          "text": "Keep the declared OpenAPI contract in sync with endpoint and response changes."
+        },
+        {
+          "when": [
+            "model"
+          ],
+          "text": "Validate model output and verify external actions. Keep credentials and personal data out of prompts."
+        }
+      ],
+      "when": [
+        "service",
+        "zod",
+        "openapi",
+        "model"
       ]
     },
     {
@@ -97,19 +120,114 @@
       "rules": [
         "Build and check mobile AND desktop. Include clear loading/empty/error states; avoid layout shift.",
         "Follow DESIGN.md if present; keep one visual direction per project."
+      ],
+      "when": [
+        "ui"
       ]
     },
     {
       "id": "ai-ux",
       "title": "AI interfaces & design quality",
       "rules": [
-        "Commit to an aesthetic before coding; avoid AI-slop defaults (Inter/Roboto/Arial/system fonts, purple-gradient-on-white, generic card grids). Pick 2–3 typefaces and a 4–6 color palette with semantic roles.",
+        "Use the project’s existing typefaces, spacing and color tokens when extending a screen.",
         "Meet WCAG: body text ≥4.5:1 contrast (large/UI ≥3:1), visible :focus-visible on every interactive element, tap targets ≥24×24px, alt text + form labels, and wrap animations ≥200ms in prefers-reduced-motion.",
         "Empty states are never dead ends: show a plain-language message + a clear next step. Error messages name the field, explain the problem, and suggest a fix — never 'Something went wrong'.",
-        "For AI-driven UIs: show concise rationale, assumptions, tool actions, sources, verification evidence, and uncertainty — without exposing private hidden reasoning traces. Give live preview/feedback over blind prompting, and provide fallback paths when the model fails.",
-        "Pick the interaction pattern deliberately — a co-editing canvas or inline controls beat a wall-of-text chatbot when the user is steering structured output.",
+        {
+          "when": [
+            "model"
+          ],
+          "text": "For AI-driven UIs: show concise rationale, assumptions, tool actions, sources, verification evidence, and uncertainty — without exposing private hidden reasoning traces. Give live preview/feedback over blind prompting, and provide fallback paths when the model fails."
+        },
+        {
+          "when": [
+            "model"
+          ],
+          "text": "Pick the interaction pattern deliberately — a co-editing canvas or inline controls beat a wall-of-text chatbot when the user is steering structured output."
+        },
         "When AI audits a UI, only ASSERT the deterministic (contrast math, missing focus ring/alt/label) — keep hierarchy/taste/pattern-fit advisory so the audit doesn't hallucinate false positives."
+      ],
+      "when": [
+        "ui"
       ]
     }
-  ]
+  ],
+  "conditions": {
+    "ui": {
+      "frameworks": [
+        "Next.js",
+        "Nuxt",
+        "Remix",
+        "Angular",
+        "Svelte",
+        "Vue",
+        "React",
+        "Gatsby",
+        "Astro",
+        "Electron",
+        "React Native"
+      ],
+      "files": [
+        "index.html",
+        "public/index.html",
+        "src/index.html",
+        "app.html",
+        "src/app.html"
+      ]
+    },
+    "service": {
+      "frameworks": [
+        "Express",
+        "NestJS",
+        "Fastify",
+        "Koa",
+        "Hapi",
+        "Django",
+        "Flask",
+        "FastAPI",
+        "Starlette",
+        "Pyramid",
+        "Tornado",
+        "Gin",
+        "Echo",
+        "Fiber",
+        "Actix",
+        "Axum",
+        "Rocket",
+        "Rails",
+        "Sinatra",
+        "Laravel",
+        "Symfony",
+        "Spring"
+      ]
+    },
+    "zod": {
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "openapi": {
+      "files": [
+        "openapi.yaml",
+        "openapi.yml",
+        "openapi.json",
+        "api/openapi.yaml",
+        "api/openapi.yml",
+        "api/openapi.json"
+      ],
+      "dependencies": [
+        "@nestjs/swagger",
+        "openapi-typescript",
+        "swagger-jsdoc"
+      ]
+    },
+    "model": {
+      "dependencies": [
+        "openai",
+        "@anthropic-ai/sdk",
+        "@google/genai",
+        "ai",
+        "ollama"
+      ]
+    }
+  }
 }
