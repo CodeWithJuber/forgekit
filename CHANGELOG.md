@@ -13,6 +13,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `forge models --json` returns the provider inventory in schema 2. Consumers of the original tiers can request `--schema 1`.
 - Cloud and relay enrollment now honor Git ignore rules by default. To share ignored files, preview the extra paths and re-enroll with `--include-ignored`.
 
+- Each self-hosted workspace has a 128 MiB default retained-history quota. Existing history counts on upgrade. Administrators can set `maxHistoryBytes`; a full journal rejects new changes with HTTP 413.
+
 ### Fixed
 
 - Workspace verification counts interleaved pnpm reports by package and reads the terminal report of the enclosing test program. Git ignores the checkout-local verifier journal.

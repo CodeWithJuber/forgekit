@@ -42,7 +42,9 @@ echo 'export type Value = number;' > node_modules/types/index.d.ts
     return readFileSync(join(root, "installs"), "utf8").trim().split("\n").length;
   }
   assert.equal(start(), 1);
+  writeFileSync(join(root, "node_modules", "unrelated-cache"), "keep this");
   assert.equal(start(), 1);
+  assert.equal(readFileSync(join(root, "node_modules", "unrelated-cache"), "utf8"), "keep this");
   rmSync(join(root, "node_modules", "types", "index.d.ts"));
   assert.equal(start(), 2);
   writeFileSync(join(root, ".npmrc"), "offline=true\n");

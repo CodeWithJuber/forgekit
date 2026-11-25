@@ -14,11 +14,9 @@ cd "${CLAUDE_PROJECT_DIR:-.}"
 
 marker=node_modules/.forge-install-fingerprint
 npm_version=$(npm --version)
-if [[ -f "$marker" && -x node_modules/.bin/biome && -x node_modules/.bin/tsc ]]; then
-  if fingerprint=$(node "$hook_dir/install-fingerprint.mjs" "$npm_version") && [[ $(cat "$marker") == "$fingerprint" ]]; then
-    exit 0
-  fi
+if [[ -f "$marker" && -x node_modules/.bin/biome && -x node_modules/.bin/tsc ]] &&
+  node "$hook_dir/install-fingerprint.mjs" check "$npm_version"; then
+  exit 0
 fi
 npm ci --no-audit --no-fund
-fingerprint=$(node "$hook_dir/install-fingerprint.mjs" "$npm_version")
-printf '%s\n' "$fingerprint" > "$marker"
+node "$hook_dir/install-fingerprint.mjs" record "$npm_version"
