@@ -142,10 +142,10 @@
       ],
       "title": "One Claude Code session with forgekit's hooks",
       "receipt": {
-        "specSha256": "a7260561aa9a34e08e290dbc8dcfe33a22a723e005840dec2264750c0d91525c",
-        "svgSha256": "69b05b155334b62decc647c21740d1f5b6df3e006ac69a59c6f8f08636f0ac8b",
-        "artifactSha256": "f475baa310548e2dcad2465a84b16eecc43114888d5d85e68311962c16e05727",
-        "artifactBytes": 813232,
+        "specSha256": "d95564d3a770a92e02a57f5327f5202259fe48b257c83935cc4bbd6c50a151da",
+        "svgSha256": "d66631183d7c3adf8ef05d05714bb30a878ae485c75648990802fbcfe4890455",
+        "artifactSha256": "c3cbd0157759a681a221e391d8c3b8769b22aed179625dea0338b3c4c7477fea",
+        "artifactBytes": 813277,
         "checks": "9/9 showcase"
       }
     },
@@ -188,12 +188,12 @@
       "usedIn": [
         "docs/cognitive-substrate/README.md"
       ],
-      "title": "Rubric first, LLM second: how a proposal can move a verdict",
+      "title": "Evidence and optional model advice",
       "receipt": {
-        "specSha256": "3d1d085d1127292ea789c840e0fe31be64d928e4d43fcd2a58c56e33ae3e2ea9",
-        "svgSha256": "1e1ac675122070d9e5402dbec8f1d8bc3498d5d1c401aee0a4ab40dd10261220",
-        "artifactSha256": "32019c496ff975a51ebb1e8d830b799e1e1c7753fe77f9ae1878f45f52e2a9df",
-        "artifactBytes": 803355,
+        "specSha256": "13083f2ae564caa766dcf6231b0599902994d9fdb0504b236f042e6a1e1170f3",
+        "svgSha256": "3a82eced3caccd94804fd85915730ac6d33576d8e7eed222bcdff00244607188",
+        "artifactSha256": "ea534f852cf3d18da35eac76d74fb1e06af1a89e157dd4d983da490bbe353970",
+        "artifactBytes": 803168,
         "checks": "9/9 showcase"
       }
     },
@@ -204,12 +204,12 @@
         "docs/UNIVERSAL_ROUTING.md",
         "mintlify/concepts/model-routing.mdx"
       ],
-      "title": "forge route universal: a cascade under an explicit objective",
+      "title": "Offline router: compare fitted cascades",
       "receipt": {
-        "specSha256": "a339ab8d07d881ab5006d9f2a62e9c011deeaaafe06b5b67b8fe9a011975abcd",
-        "svgSha256": "60780ff4ae0c49d099556c8075996b2848f2a8b4243548c3dc36f270b05605a7",
-        "artifactSha256": "085c22a5d98e69d78e8d7aecb56680e0e61095a034e8f3c35025bc8ad8da27bb",
-        "artifactBytes": 812305,
+        "specSha256": "92dd4e64255f3627e82fb4c43f359bdd00f41bfa61d9c72b0ff1889e076ce51c",
+        "svgSha256": "ff48d31d762e57da072b6e51b5fde6f690dd669b19687518c1f5fbf80309d14c",
+        "artifactSha256": "d0a1755f60925a9cb6a079fd356f951f410e1f62a8506c33b75a8964b1724b46",
+        "artifactBytes": 812178,
         "checks": "9/9 showcase"
       }
     },

@@ -13,8 +13,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-
 import { protectPathsDecision } from "../global/guards/protect-paths.mjs";
+import { pendingCorrections } from "../src/cortex.js";
+import { sessionFile } from "../src/cortex_hook.js";
 
 const guards = join(dirname(fileURLToPath(import.meta.url)), "..", "global", "guards");
 
@@ -409,15 +410,12 @@ test("cortex.sh stop (detached) processes the REAL session from the Stop payload
       input: JSON.stringify({ cwd: root, session_id: sid, ...payload }),
       encoding: "utf8",
     });
-  for (let i = 0; i < 3; i++)
-    hook("capture", {
-      tool_name: "Edit",
-      tool_input: { file_path: "src/a.js" },
-    });
-  hook("prompt", { prompt: "that's wrong, undo it" });
-  const sessions = join(root, ".forge", "sessions");
-  const log = join(sessions, `${sid}.jsonl`);
-  assert.ok(existsSync(log), "capture/prompt logged the session through the shim");
+  hook("capture", { tool_name: "Bash", tool_input: { command: "make check" }, exitCode: 1 });
+  for (let i = 0; i < 2; i++)
+    hook("capture", { tool_name: "Edit", tool_input: { file_path: "src/a.js" } });
+  hook("capture", { tool_name: "Bash", tool_input: { command: "make check" }, exitCode: 0 });
+  const log = sessionFile(root, sid);
+  assert.ok(existsSync(log), "a capture through the shim reached private session state");
 
   const r = hook("stop");
   assert.equal(r.status, 0, "the Stop shim never fails the session");
@@ -425,15 +423,13 @@ test("cortex.sh stop (detached) processes the REAL session from the Stop payload
   const deadline = Date.now() + 30000;
   while (existsSync(log) && Date.now() < deadline) await sleep(100);
   assert.equal(existsSync(log), false, "the real session's log was consumed and cleared");
-  assert.ok(
-    existsSync(join(root, ".forge", "lessons", "episodes.jsonl")),
-    "episodes were recorded for the real session",
-  );
   assert.equal(
-    existsSync(join(sessions, "default.jsonl")),
-    false,
-    "nothing fell back to the shared 'default' session",
+    pendingCorrections(root).length,
+    1,
+    "the detached Stop observed the actual correction",
   );
+  assert.equal(existsSync(sessionFile(root, "default")), false);
+  assert.equal(existsSync(join(root, ".forge", "lessons", "episodes.jsonl")), false);
 });
 
 // ── B6. The rule set is now a pure function in protect-paths.mjs, so the matrix below runs

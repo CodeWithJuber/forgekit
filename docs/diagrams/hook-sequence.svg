@@ -522,11 +522,11 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex" data-edge-key="6" data-edge-id="pre-tool">
+        <g data-edge-from="agent" data-edge-to="hooks" data-edge-label="PreToolUse: protect-paths · pre-edit-impact · cost-budget · doom-loop · dep-gate · cortex" data-edge-key="6" data-edge-id="pre-tool">
           <path data-composition-edge-from="agent" data-composition-edge-to="hooks" data-composition-edge-id="pre-tool" data-composition-points="566.6666666666667,384;955.3333333333334,384" d="M 566.6666666666667 384 L 955.3333333333334 384" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
         <g>
-          <rect x="570.4" y="364" width="381.2" height="16" rx="3" class="c-mask"/>
-          <text x="761" y="374" class="t-security" font-size="9" text-anchor="middle">PreToolUse: protect-paths · cost-budget · doom-loop · dep-gate · cortex</text>
+          <rect x="523.6" y="364" width="474.8" height="16" rx="3" class="c-mask"/>
+          <text x="761" y="374" class="t-security" font-size="9" text-anchor="middle">PreToolUse: protect-paths · pre-edit-impact · cost-budget · doom-loop · dep-gate · cortex</text>
         </g>
         </g>
 
@@ -578,11 +578,11 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="hooks" data-edge-to="state" data-edge-label="cortex stop: distill lessons into the ledger" data-edge-key="13" data-edge-id="distill">
+        <g data-edge-from="hooks" data-edge-to="state" data-edge-label="Keep proposals private until corroborated" data-edge-key="13" data-edge-id="distill">
           <path data-composition-edge-from="hooks" data-composition-edge-to="state" data-composition-edge-id="distill" data-composition-points="969.3333333333334,636;1358,636" d="M 969.3333333333334 636 L 1358 636" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="1043.2666666666667" y="616" width="240.8" height="16" rx="3" class="c-mask"/>
-          <text x="1163.6666666666667" y="626" class="t-backend" font-size="9" text-anchor="middle">cortex stop: distill lessons into the ledger</text>
+          <rect x="1051.0666666666668" y="616" width="225.20000000000002" height="16" rx="3" class="c-mask"/>
+          <text x="1163.6666666666667" y="626" class="t-backend" font-size="9" text-anchor="middle">Keep proposals private until corroborated</text>
         </g>
         </g>
 

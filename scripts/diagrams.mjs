@@ -1,4 +1,17 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { once } from "node:events";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 /**
  * The project's diagrams, rendered by Archify (https://github.com/tt-a1i/archify, MIT) from
  * typed JSON sources — node stdlib + git only, like the rest of scripts/.
@@ -36,18 +49,7 @@
  *
  * Exit codes: 0 ok · 1 a check, validation or render failed · 2 usage error.
  */
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -265,6 +267,21 @@ async function exportSvg(archifyDir, html, target) {
   const chrome = process.env.ARCHIFY_CHROME || vc.findChrome();
   if (!chrome) throw new Error("no Chrome/Chromium found — set ARCHIFY_CHROME");
   const downloads = mkdtempSync(path.join(tmpdir(), "forge-diagram-svg-"));
+  // Chromium profiles may restrict file navigation. Serve only this generated document.
+  const document = readFileSync(html);
+  const server = createServer((req, res) => {
+    if (req.method !== "GET" || req.url !== "/diagram") return res.writeHead(404).end();
+    res
+      .writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+      .end(document);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    server.close();
+    throw new Error("Diagram preview needs a loopback port");
+  }
   const browser = new vc.ChromeVisualBrowser(chrome);
   try {
     const sid = await browser.sessionPromise;
@@ -280,7 +297,7 @@ async function exportSvg(archifyDir, html, target) {
       deviceScaleFactor: 1,
       mobile: false,
     });
-    await send("Page.navigate", { url: pathToFileURL(html).href });
+    await send("Page.navigate", { url: `http://127.0.0.1:${address.port}/diagram` });
     const evaluate = async (expression) =>
       (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }))
         .result?.value;
@@ -302,6 +319,7 @@ async function exportSvg(archifyDir, html, target) {
     if (!file) throw new Error(`${html}: the SVG export did not arrive`);
     copyFileSync(path.join(downloads, file), target);
   } finally {
+    server.close();
     await browser.close();
     rmSync(downloads, { recursive: true, force: true });
   }

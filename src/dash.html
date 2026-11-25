@@ -660,6 +660,12 @@
     td.num {
       text-align: right;
     }
+    #model-inventory {
+      overflow-x: auto;
+    }
+    #model-inventory td {
+      overflow-wrap: anywhere;
+    }
     tr.tomb .text {
       text-decoration: line-through;
       color: var(--muted);
@@ -980,6 +986,9 @@
             ><svg class="icon" aria-hidden="true"><use href="#i-hosts"></use></svg>Coding hosts</a
           >
           <div class="nav-label">Insights</div>
+          <a class="navlink" href="#models"
+            ><svg class="icon" aria-hidden="true"><use href="#i-hosts"></use></svg>Models</a
+          >
           <a class="navlink" href="#memory"
             ><svg class="icon" aria-hidden="true"><use href="#i-memory"></use></svg>Project
             memory</a
@@ -1197,6 +1206,24 @@
             <article class="panel" id="history-panel">
               <h2>Activity over time</h2>
               <div id="history-out"></div>
+            </article>
+          </section>
+          <section id="view-models" class="stack" hidden>
+            <article class="panel">
+              <div class="panel-head"><h2>Provider model inventory</h2></div>
+              <p class="hint">Run <code>forge models --refresh</code> to refresh provider listings. Native coding clients manage their own model.</p>
+              <form id="model-filter" class="toolbar">
+                <label for="model-workload">Workload</label>
+                <input id="model-workload" value="repo-verified" maxlength="80" pattern="[A-Za-z0-9_.\-]{1,80}" required />
+                <label for="model-capability">Capability</label>
+                <input id="model-capability" maxlength="80" placeholder="Any" />
+                <label for="model-availability">Availability</label>
+                <select id="model-availability"><option value="">Any</option><option>listed</option><option>public-listed</option><option>configured-only</option><option>observed-only</option><option>recently-callable</option><option>stale</option><option>denied</option><option>unknown</option></select>
+                <label for="model-age">Maximum age</label>
+                <input id="model-age" placeholder="e.g. 4h" />
+                <button type="submit">Show ratings</button>
+              </form>
+              <div id="model-inventory" aria-live="polite">Loading…</div>
             </article>
           </section>
           <section id="view-tools" class="stack" hidden>
@@ -1697,6 +1724,7 @@
       ],
       memory: ["Project memory", "Search saved decisions and review the evidence behind them."],
       usage: ["Usage", "Explore recorded session costs, token savings and activity."],
+      models: ["Models", "Account listings and model performance on matched, verified tasks."],
       tools: ["Code tools", "Trace dependencies and review package recommendations."],
     };
     let currentPage = "overview";
@@ -2103,6 +2131,65 @@
           $("memory-out").textContent = "Project memory could not be read. Refresh to retry.";
       }
     }
+    let inventoryRequest = 0;
+    async function refreshModels() {
+      const request = ++inventoryRequest;
+      const target = $("model-inventory");
+      try {
+        const query = new URLSearchParams({workload:$("model-workload").value});
+        for (const [key,id] of [["capability","model-capability"],["availability","model-availability"],["maxAge","model-age"]]) {
+          if ($(id).value.trim()) query.set(key,$(id).value.trim());
+        }
+        const inv = await getJson("/api/models?" + query);
+        if (request !== inventoryRequest) return;
+        target.replaceChildren();
+        for (const p of inv.profiles) {
+          const section = document.createElement("details");
+          section.open = true;
+          const title = document.createElement("summary");
+          title.textContent = [p.profile, p.status, p.checkedAt, p.models.length + " models"].filter(Boolean).join(" · ");
+          section.append(title);
+          if (p.models.length) {
+            const table = document.createElement("table");
+            const heading = table.createTHead().insertRow();
+            for (const label of ["Model", "Availability", "Workload band", "Evidence"]) {
+              const cell = document.createElement("th");
+              cell.textContent = label;
+              heading.append(cell);
+            }
+            const body = table.createTBody();
+            for (const m of p.models) {
+              const row = body.insertRow();
+              for (const item of [m.id, m.availability, m.rating.band]) row.insertCell().textContent = item;
+              const extra = document.createElement("details");
+              const summary = document.createElement("summary");
+              summary.textContent = m.rating.n + " matched tasks";
+              extra.append(summary);
+              for (const [name, value] of [
+                ["Capabilities",m.capabilities?.join(", ")],
+                ["Last listed",m.availabilityEvidence.checkedAt],["Last call",m.lastCall?.at],
+                ["Last latency",m.lastCall && m.lastCall.latencyMs+" ms"],
+                ["Last provider-reported cost",m.lastCall?.costUsd != null ? "USD "+m.lastCall.costUsd : null],
+                ["Input/output per million tokens",m.price && "USD "+m.price.input+"/"+m.price.output+" ("+m.price.source+")"],
+                ["Workload mean attempt cost",m.workloadAttemptCost && "USD "+m.workloadAttemptCost.meanUsd+" ("+m.workloadAttemptCost.n+" operator reports)"],
+              ]) { const line = document.createElement("p"); line.textContent = name + " · " + (value ?? "unknown"); extra.append(line); }
+              row.insertCell().append(extra);
+            }
+            section.append(table);
+          }
+          target.append(section);
+        }
+        if (!inv.profiles.length) target.textContent = "No provider profiles configured.";
+        for (const host of inv.nativeHosts) {
+          const line = document.createElement("p");
+          line.textContent = host.host + " · host-managed · last reported model " + (host.reportedModel ?? "unknown") + (host.observedAt ? " at " + host.observedAt : "");
+          target.append(line);
+        }
+      } catch {
+        if (request === inventoryRequest) target.textContent = "Model inventory unavailable. Check the filters. Recently callable requires a maximum age.";
+      }
+    }
+    $("model-filter").addEventListener("submit", (event) => { event.preventDefault(); void refreshModels(); });
     async function refresh() {
       if (refreshing) {
         refreshingAgain = true;
@@ -2163,6 +2250,7 @@
             pull("/api/timeline", renderTimeline, "timeline-out"),
           ]);
         if (currentPage === "tools") await pull("/api/radar", renderRadar, "radar-out");
+        if (currentPage === "models") await refreshModels();
         if (currentPage === "usage") await pull("/api/history", renderHistory, "history-out");
       } finally {
         refreshing = false;
