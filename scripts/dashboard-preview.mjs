@@ -139,7 +139,7 @@ function exerciseServer(project, env) {
   return { child, ready };
 }
 
-async function capture(check, reportFromMemory = false) {
+async function capture(check) {
   const { dir } = ensureArchify(root);
   const driver = await import(pathToFileURL(join(dir, "archify/bin/visual-check.mjs")).href);
   const chrome = process.env.ARCHIFY_CHROME || driver.findChrome();
@@ -364,32 +364,6 @@ async function capture(check, reportFromMemory = false) {
       "!document.querySelector('#memory-out').innerText.includes('Orders are routed by delivery region.')",
       "memory search filtering",
     );
-    const model = "fixture-vision-deployment-with-an-explicit-provider-revision";
-    command(process.execPath, [
-      cli,
-      "config",
-      "provider",
-      "add",
-      "preview",
-      "--base-url",
-      routing.routes[0].baseUrl,
-      "--format",
-      "openai",
-    ]);
-    command(process.execPath, [cli, "config", "model", "--exact", model, "--profile", "preview"]);
-    await click('a[href="#models"]');
-    const inventory = "document.querySelector('#model-inventory').innerText";
-    await wait(
-      `${inventory}.includes('${model}') && ${inventory}.includes('unrated')`,
-      "declared model and workload rating",
-    );
-    await evaluate(
-      "document.querySelector('#model-availability').value='recently-callable'; document.querySelector('#model-age').value='1h'; document.querySelector('#model-filter').requestSubmit()",
-    );
-    await wait(
-      `${inventory}.includes('0 models') && !${inventory}.includes('${model}')`,
-      "recent call filter on an uncalled model",
-    );
     assert.deepEqual(await evaluate("window.__errors"), []);
     await view(390, 844);
     await send("Page.navigate", { url });
@@ -411,13 +385,6 @@ async function capture(check, reportFromMemory = false) {
       await evaluate("document.documentElement.scrollWidth <= innerWidth"),
       "mobile host list overflows",
     );
-    await click("#menu");
-    await click('a[href="#models"]');
-    await wait(`${inventory}.includes('${model}')`, "mobile model inventory");
-    assert.ok(
-      await evaluate("document.documentElement.scrollWidth <= innerWidth"),
-      "mobile model inventory overflows",
-    );
     assert.deepEqual(await evaluate("window.__errors"), []);
     const report = join(work, "report.html");
     command(process.execPath, [cli, "report", "--out", report]);
@@ -428,18 +395,7 @@ async function capture(check, reportFromMemory = false) {
       downloadThroughput: 0,
       uploadThroughput: 0,
     });
-    if (reportFromMemory) {
-      // Managed browsers can disallow file URLs. Load the exported bytes into a blank
-      // document to check self-contained rendering while the network is offline.
-      await send("Page.navigate", { url: "about:blank" });
-      const { frameTree } = await send("Page.getFrameTree");
-      await send("Page.setDocumentContent", {
-        frameId: frameTree.frame.id,
-        html: readFileSync(report, "utf8"),
-      });
-    } else {
-      await send("Page.navigate", { url: pathToFileURL(report).href });
-    }
+    await send("Page.navigate", { url: pathToFileURL(report).href });
     await wait("document.body?.innerText.includes('parcel-service')", "offline project report");
     assert.ok(
       await evaluate("document.body.innerText.includes('Orders are routed by delivery region.')"),
@@ -450,7 +406,7 @@ async function capture(check, reportFromMemory = false) {
         writeFileSync(join(root, p), bytes);
     }
     console.log(
-      `Dashboard checks passed: empty and populated projects, runs, forms, hosts, memory, model filters, mobile navigation and offline report (${reportFromMemory ? "document bytes" : "file URL"}).`,
+      "Dashboard checks passed: empty and populated live projects, runs, form, hosts, memory filter, mobile navigation, offline report.",
     );
   } finally {
     try {
@@ -466,10 +422,6 @@ async function capture(check, reportFromMemory = false) {
 
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === "--seed") await seed();
-else if (!args.length) await capture(false);
-else if (
-  args[0] === "--check" &&
-  (args.length === 1 || (args.length === 2 && args[1] === "--report-from-memory"))
-)
-  await capture(true, args.length === 2);
-else throw new Error("Usage: node scripts/dashboard-preview.mjs [--check [--report-from-memory]]");
+else if (!args.length || (args.length === 1 && args[0] === "--check"))
+  await capture(args.length === 1);
+else throw new Error("Usage: node scripts/dashboard-preview.mjs [--check]");

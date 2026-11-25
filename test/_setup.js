@@ -31,7 +31,14 @@ const SCRUB =
 // that test/radar.test.js passes to its spawned CLI.
 // DISABLE_TELEMETRY is Claude Code's, not prefix-matchable: src/advisor.js reads it as one of
 // the variables that keep the advisor tool off, so a developer's export must not reach a test.
-const SCRUB_EXACT = ["CLAUDECODE", "FORCE_COLOR", "NO_COLOR", "COLORTERM", "DISABLE_TELEMETRY"];
+const SCRUB_EXACT = [
+  "CLAUDECODE",
+  "FORCE_COLOR",
+  "NO_COLOR",
+  "COLORTERM",
+  "DISABLE_TELEMETRY",
+  "CHROME_BIN",
+];
 
 for (const key of Object.keys(process.env)) if (SCRUB.test(key)) delete process.env[key];
 for (const key of SCRUB_EXACT) delete process.env[key];
