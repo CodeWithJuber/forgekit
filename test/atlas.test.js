@@ -267,6 +267,12 @@ test("impact takes the max-product path through a diamond, not the first-found o
   assert.ok(d, "D is in the blast radius");
   assert.equal(d.confidence, 0.6521, "max-product confidence wins over first-found");
   assert.equal(d.hopDistance, 2, "the winning path is the two-hop calls chain");
+  const custom = impact(atlas, "S", { edgeWeights: { calls: 0 } });
+  const direct = custom.impacted.find((hit) => hit.id === d.id);
+  assert.deepEqual(direct.edgeKinds, ["contains"]);
+  assert.equal(direct.confidence, 0.3825);
+  assert.throws(() => impact(atlas, "S", { edgeWeights: { calls: Infinity } }), /probabilities/);
+  assert.equal(impact(atlas, "S").impacted.find((hit) => hit.id === d.id).confidence, d.confidence);
 });
 
 test("SCC-aware propagation: impacting one cycle member reaches all co-members", () => {
