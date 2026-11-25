@@ -11,8 +11,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
+import { npmCliPath } from "../src/npm_runtime.js";
+import { countVerdict, observedTestCounts } from "../src/test_counts.js";
 import {
   CODE_STATE_SCHEME,
   classifySuiteFailure,
@@ -27,12 +29,103 @@ import {
   signProvenance,
   verify,
 } from "../src/verify.js";
+import { fakeGithubPat } from "./_fixtures.js";
+
+test("recursive pnpm counts complete reports per package even when their lines interleave", () => {
+  const projects = ["packages/left", "packages/right"];
+  const report = (prefix, passed, failed = 0, skipped = 0) =>
+    [
+      `tests ${passed + failed + skipped}`,
+      "suites 0",
+      `pass ${passed}`,
+      `fail ${failed}`,
+      "cancelled 0",
+      `skipped ${skipped}`,
+      "todo 0",
+      "duration_ms 14.7",
+    ].map((line) => prefix + " " + line);
+  const scoped = (left, right, names = projects) => {
+    const lines = names.map((p) => `${p} test$ node --test`);
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      if (left[i]) lines.push(`${projects[0]} test: ${left[i]}`);
+      if (right[i]) lines.push(`${projects[1]} test: ${right[i]}`);
+    }
+    return observedTestCounts(lines.join("\n"), projects);
+  };
+  const left = report("ℹ", 1),
+    right = report("#", 1);
+  assert.deepEqual(scoped(left, right), {
+    total: 2,
+    pass: 2,
+    fail: 0,
+    cancelled: 0,
+    skipped: 0,
+    todo: 0,
+  });
+  assert.equal(countVerdict(scoped(left, report("#", 0, 1))), "FAIL");
+  for (const other of [[], report("#", 0), report("#", 0, 0, 1), right.slice(0, -1)]) {
+    assert.equal(countVerdict(scoped(left, other)), "INCOMPLETE");
+  }
+  assert.equal(countVerdict(scoped(left, [], [projects[0]])), "INCOMPLETE");
+  assert.equal(countVerdict(scoped(left.slice(0, 4), left.slice(4))), "INCOMPLETE");
+  assert.equal(countVerdict(scoped(["Tests: 2 passed, 2 total"], ["Tests 1 passed (1)"])), "PASS");
+});
+
+test("the npm JS launcher runs a suite in a path with spaces and rejects a project-owned launcher", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "forge npm runtime "));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "node --test" } }));
+  writeFileSync(join(root, "runtime.test.cjs"), 'require("node:test")("counted", () => {});\n');
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const output = execFileSync(process.execPath, [npmCliPath(root), "test"], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+  });
+  assert.match(output, /(?:#|ℹ) pass 1\b/);
+  const local = join(root, "bin", "npm-cli.js");
+  mkdirSync(join(root, "bin"));
+  writeFileSync(local, "");
+  assert.throws(() => npmCliPath(root, local), /outside the workspace/);
+});
+
+test("a split Node/npm installation resolves a validated external npm CLI", (t) => {
+  const outside = mkdtempSync(join(tmpdir(), "forge-split-npm-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const root = join(outside, "repo");
+  mkdirSync(root);
+  const target = npmCliPath(root);
+  const noNearbyNode = join(outside, "isolated", "bin", "node");
+  assert.equal(
+    npmCliPath(root, undefined, {
+      execPath: noNearbyNode,
+      env: { npm_execpath: target, PATH: "" },
+    }),
+    target,
+  );
+  const system = join(outside, "system");
+  mkdirSync(system);
+  try {
+    symlinkSync(target, join(system, "npm"));
+  } catch (e) {
+    if (e.code === "EPERM") return t.skip("symlinks unavailable");
+    throw e;
+  }
+  assert.equal(
+    npmCliPath(root, undefined, {
+      execPath: noNearbyNode,
+      env: { PATH: [root, system].join(delimiter) },
+    }),
+    target,
+  );
+});
 
 // A fake executable so a suite's exit code (and thus verify's verdict) is deterministic,
 // regardless of what npm/pytest do on this machine.
 const fakeBin = (dir, name, exitCode, { executable = true } = {}) => {
   const p = join(dir, name);
-  writeFileSync(p, `#!/bin/sh\nexit ${exitCode}\n`);
+  writeFileSync(p, `#!/bin/sh\nprintf '%s\\n' '1 passed in 0.01s'\nexit ${exitCode}\n`);
   if (executable) chmodSync(p, 0o755);
   return p;
 };
@@ -64,6 +157,27 @@ const gitRepo = () => {
   g("config", "core.fileMode", "false");
   return root;
 };
+
+test("review evidence reports omitted and redacted inputs independently of the checkout digest", (t) => {
+  const root = gitRepo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const marker = fakeGithubPat();
+  writeFileSync(join(root, "notes.txt"), `draft note ${marker}\n`);
+  writeFileSync(join(root, ".env"), "synthetic-private-note");
+  writeFileSync(join(root, "large.txt"), Buffer.alloc(256 * 1024, 65));
+  const result = verify({ targetRoot: root });
+  assert.ok(result.added.includes("draft note"));
+  assert.ok(!result.added.includes(marker));
+  assert.ok(!result.added.includes("synthetic-private-note"));
+  assert.equal(result.reviewCoverage.secretDetected, true);
+  assert.deepEqual(
+    new Set(result.reviewCoverage.omitted.map((row) => row.file)),
+    new Set([".env", "large.txt"]),
+  );
+  assert.ok(result.provenance.codeState.dirtyHash);
+  writeFileSync(join(root, "large.txt"), Buffer.alloc(256 * 1024, 66));
+  assert.notEqual(computeCodeState(root).dirtyHash, result.provenance.codeState.dirtyHash);
+});
 
 // A git repo whose package.json carries `scripts.test` — the shape verify's runner
 // detection and the masked-script check both read.
@@ -209,15 +323,15 @@ test("verify: pnpm repo targets pnpm — with pnpm off PATH it is INCOMPLETE, ne
   assert.ok(r.tests.output.includes("executor unavailable"), r.tests.output);
 });
 
-test("verify: go-only repo is INCOMPLETE with the real label — no built-in executor", () => {
+test("verify: a Go declaration with no runnable checks cannot earn a receipt", () => {
   const root = gitRepo();
   writeFileSync(join(root, "go.mod"), "module example.com/app\n\ngo 1.22\n");
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "INCOMPLETE");
-  assert.equal(r.tests.ran, false, "go test is detected but never executed by forge");
+  assert.notEqual(r.tests.passed, true);
   assert.equal(r.ok, false);
   assert.ok(r.tests.output.includes("go test ./..."), r.tests.output);
-  assert.ok(r.tests.output.includes("no built-in executor"), r.tests.output);
+  assert.ok(r.tests.executed.length || r.tests.notExecuted.length);
   assert.deepEqual(r.tests.detected, ["go test ./..."]);
 });
 
@@ -271,7 +385,8 @@ test("verify: polyglot — passing Node suite + non-executable go suite ⇒ INCO
     "the Node suite ran and passed",
   );
   assert.ok(
-    r.tests.notExecuted.some((l) => l.includes("go test")),
+    r.tests.notExecuted.some((l) => l.includes("go test")) ||
+      r.tests.executed.some((s) => s.label.includes("go test") && s.status === "INCOMPLETE"),
     "the go suite is recorded as not executed",
   );
 });
@@ -339,6 +454,7 @@ test("verify: a suite killed by a signal ⇒ INCOMPLETE, not FAIL (ME-02)", () =
   for (const [e, expected] of [
     [{ code: "ENOENT" }, "INCOMPLETE"],
     [{ code: "EACCES" }, "INCOMPLETE"],
+    [{ code: "ENOBUFS", status: 0 }, "INCOMPLETE"],
     [{ code: "ENOEXEC" }, "INCOMPLETE"],
     [{ code: "ETIMEDOUT" }, "INCOMPLETE"],
     [{ status: null, signal: "SIGTERM" }, "INCOMPLETE"],
@@ -921,7 +1037,11 @@ test("Q02: the review's fixture verifies FAIL — the member's own failure decid
   writeFileSync(join(root, "tools", "npm"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "FAIL", JSON.stringify(r.tests.executed));
-  assert.equal(r.tests.executed.find((s) => s.cwd === ".")?.status, "PASS", "the stub exits 0");
+  assert.equal(
+    r.tests.executed.find((s) => s.cwd === ".")?.status,
+    "INCOMPLETE",
+    "the stub supplies no test results",
+  );
   assert.equal(r.tests.executed.find((s) => s.cwd === "packages/bad")?.status, "FAIL");
   assert.equal(r.tests.coverage.basis["packages/bad"], "measured");
 });
@@ -1013,12 +1133,16 @@ test("F08: a nested suite forge cannot execute leaves its package uncovered → 
   skip: NO_NPM_SPAWN,
 }, () => {
   const root = fixtureWithTestScript("node --test");
+  writeFileSync(join(root, "ok.test.cjs"), "require('node:test')('root', () => {});");
   mkdirSync(join(root, "services", "api"), { recursive: true });
   writeFileSync(join(root, "services", "api", "go.mod"), "module x\n\ngo 1.22\n");
   const r = verify({ targetRoot: root });
   assert.equal(r.tests.status, "INCOMPLETE");
   assert.deepEqual(r.tests.coverage.uncovered, ["services/api"]);
-  assert.ok(r.tests.notExecuted.some((l) => l.includes("services/api")));
+  assert.ok(
+    r.tests.notExecuted.some((l) => l.includes("services/api")) ||
+      r.tests.executed.some((s) => s.cwd === "services/api" && s.status === "INCOMPLETE"),
+  );
 });
 
 test("F09: an explicit passing script + a runner devDependency is a complete PASS", {
@@ -1090,7 +1214,7 @@ test("A01: verify records an immutable, MAC'd verifier event", { skip: NO_NPM_SP
 test("F10: interpreter caches written by a test run are not a code mutation", {
   skip: NO_NPM_SPAWN,
 }, () => {
-  const root = fixtureWithTestScript("node write-cache.cjs");
+  const root = fixtureWithTestScript("node --test write-cache.cjs");
   writeFileSync(
     join(root, "write-cache.cjs"),
     [
@@ -1181,7 +1305,7 @@ test("verify: onProgress heartbeat fires per suite (does not disturb the verdict
   );
 });
 
-test("a skipped baseline test produces a signed SUSPECT verdict despite a green suite", {
+test("a skipped baseline test yields incomplete suite evidence and a signed integrity finding", {
   skip: NO_NPM_SPAWN,
 }, (t) => {
   const root = fixtureWithTestScript("node --test accounts.test.cjs");
@@ -1197,9 +1321,9 @@ test("a skipped baseline test produces a signed SUSPECT verdict despite a green 
   writeFileSync(file, source.replace('test("rejects', 'test.skip("rejects'));
   git("commit", "-qam", "skip the rejection check");
   const result = verify({ targetRoot: root, base: "test-baseline" });
-  assert.equal(result.tests.executed[0].status, "PASS");
+  assert.equal(result.tests.executed[0].status, "INCOMPLETE");
   assert.equal(result.ok, false);
-  assert.equal(result.tests.status, "SUSPECT");
+  assert.equal(result.tests.status, "INCOMPLETE");
   assert.ok(result.testIntegrity.findings.some((f) => f.file === "accounts.test.cjs"));
   const [event] = readVerifyEvents(root);
   assert.equal(event.authenticated, true);
@@ -1213,4 +1337,28 @@ test("a skipped baseline test produces a signed SUSPECT verdict despite a green 
     skipped: 1,
     todo: 0,
   });
+});
+
+test("a zero exit requires measured passing tests, including when the runner reports failure", {
+  skip: NO_NPM_SPAWN,
+}, (t) => {
+  const root = fixtureWithTestScript("node report.cjs");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const report = join(root, "report.cjs");
+  for (const [summary, expected] of [
+    ["no summary available", "INCOMPLETE"],
+    ["no tests ran in 0.01s", "INCOMPLETE"],
+    ["3 skipped in 0.01s", "INCOMPLETE"],
+    ["Tests: 1 failed, 2 passed, 3 total", "FAIL"],
+    ["Tests: 2 passed, 2 total", "PASS"],
+    ["Tests: 2 passed, 2 total\nTests: 0 total", "INCOMPLETE"],
+    ["Tests: 2 passed, 2 total\nTests: 1 total", "INCOMPLETE"],
+    ["Tests: 1 failed, 1 total\n# tests 1", "INCOMPLETE"],
+  ]) {
+    writeFileSync(report, `console.log(${JSON.stringify(summary)});`);
+    const result = verify({ targetRoot: root });
+    assert.equal(result.tests.status, expected, summary);
+    assert.equal(result.ok, expected === "PASS");
+    assert.equal(result.provenance.event.suites[0].exitCode, 0);
+  }
 });

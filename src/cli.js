@@ -946,6 +946,28 @@ HANDLERS.scan = async (argv) => {
   return;
 };
 HANDLERS.vet = async (argv) => {
+  const at = argv.indexOf("--lockfile");
+  if (at >= 0) {
+    const { vetLockfile } = await import("./lockfile_vet.js");
+    const arg = argv[at + 1];
+    const report = await vetLockfile(arg && !arg.startsWith("--") ? arg : "package-lock.json");
+    if (argv.includes("--json")) console.log(JSON.stringify(report, null, 2));
+    else {
+      console.log(
+        `${report.lockfile}: ${report.status} (${report.packages.length} locked package versions)`,
+      );
+      if (report.reason) console.log(report.reason);
+      for (const row of report.packages.filter((r) => r.status !== "clear")) {
+        console.log(`  ${row.name}@${row.version ?? "?"}  ${row.status}  ${row.reason || ""}`);
+        for (const v of row.advisories)
+          console.log(
+            `    ${v.id}  ${v.url}  ${v.fixedVersions.length ? `fixed in ${v.fixedVersions.join(", ")}` : "no applicable fixed version reported"}`,
+          );
+      }
+    }
+    process.exitCode = report.status === "affected" ? 1 : report.status === "unknown" ? 2 : 0;
+    return;
+  }
   // dep-gate: vet packages BEFORE they are installed (mizan — every verdict ships its evidence;
   // missing evidence never blocks). The same rule set the PreToolUse guard runs.
   const { depgateDecision, parseVetArg, vetPackages, VET_PREFIXES } = await import("./depgate.js");
@@ -1236,7 +1258,7 @@ HANDLERS.precommit = async (argv) => {
   // pre-commit hook execs this, and it can be run by hand before committing. Exit code
   // carries the decision (1 = refuse the commit); fail-open inside commitGate.
   const { commitGate, renderCommitGate } = await import("./commit_gate.js");
-  const r = commitGate(process.cwd());
+  const r = commitGate(process.cwd(), { requireVerified: argv.includes("--require-verified") });
   if (argv.includes("--json")) {
     console.log(JSON.stringify(r, null, 2));
     if (!r.allow) process.exitCode = 1;

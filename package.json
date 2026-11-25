@@ -72,7 +72,7 @@
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.strict.json",
     "coverage": "node --test --experimental-test-coverage --import ./test/_setup.js test/*.test.js",
     "bump": "node scripts/bump.mjs",
     "forge": "node src/cli.js",

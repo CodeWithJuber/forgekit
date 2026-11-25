@@ -156,6 +156,7 @@ export const IMPACT_CASES = [
       "src/diagnose.js",
       "src/discovery.js",
       "src/embed.js",
+      "src/harden.js",
       "src/harness_council.js",
       "src/harness_jobs.js",
       "src/harness_policy.js",

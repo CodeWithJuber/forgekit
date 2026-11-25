@@ -187,11 +187,16 @@ export const COMMANDS = {
   vet: {
     summary:
       "vet a package before install (dep-gate) — is the name on its registry, is it listed malicious, how new and thin is it",
-    usage: 'forge vet <ecosystem:name[@version]>… | --cmd "<install command>" [--json]',
+    usage:
+      'forge vet <ecosystem:name[@version]>… | --cmd "<install command>" | --lockfile [path] [--json]',
     flags: [
       {
         flag: '--cmd "<command>"',
         desc: "vet every package an install command line would fetch (the PreToolUse guard's view)",
+      },
+      {
+        flag: "--lockfile [path]",
+        desc: "query OSV for exact public npm package versions in a lockfile (default package-lock.json)",
       },
       { flag: "--json", desc: "print the evidence and verdict per package as JSON" },
     ],
@@ -224,15 +229,24 @@ export const COMMANDS = {
       "forge hooks off",
     ],
   },
-  verify:
-    "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
+  verify: {
+    summary:
+      "independent verification gate — tests + hallucinated-symbol + provenance (--deep: multi-lens consensus)",
+    usage:
+      "forge verify [--base <revision>] [--deep [--llm]] [--json] | forge verify --claim <receipt.json> [--json] | forge verify triage [--json]",
+    examples: ["forge verify --base HEAD --json", "forge verify --claim receipt.json"],
+  },
   demo: "scripted scenario — a throwaway repo goes green → broken → green while forge verify watches (the README hero, runnable)",
-  precommit:
-    "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
+  precommit: {
+    summary:
+      "commit-level gate — staged code w/o docs + secret scan (FORGE_COMMIT_GATE=block|warn|0)",
+    usage: "forge precommit [--require-verified] [--json]",
+    examples: ["forge precommit --json"],
+  },
   "test-select": {
     summary:
       "smart test selection — the tier contract as a command: which tests this change owes (selection only, never runs them)",
-    usage: `forge test-select [--changed <a,b>] [--base <ref> --head <ref>] [--json]`,
+    usage: `forge test-select [--changed <a,b> | --base <ref> --head <ref>] [--evidence <absolute-path>] [--json] | forge test-select --state [--json] | forge test-select --register <absolute-path>`,
     flags: [
       {
         flag: "--changed <a,b>",
@@ -242,6 +256,9 @@ export const COMMANDS = {
         flag: "--base <ref> --head <ref>",
         desc: "select for a ref range (git diff base...head) instead of the working tree",
       },
+      { flag: "--evidence <path>", desc: "use an external dependency-evidence manifest" },
+      { flag: "--register <path>", desc: "register dependency evidence for this workspace" },
+      { flag: "--state", desc: "show the inputs used to identify this verification state" },
       { flag: "--json", desc: "machine-readable plan" },
     ],
     examples: [

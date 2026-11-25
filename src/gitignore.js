@@ -95,6 +95,7 @@ export const FORGE_PRIVATE_DIRS = [
   "atlas.cache.json",
   "metrics.jsonl",
   "provenance.json",
+  "verify-events.jsonl",
 ];
 
 /**

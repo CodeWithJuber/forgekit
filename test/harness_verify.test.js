@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { test } from "node:test";
-import { createHarnessVerifier } from "../src/harness_verify.js";
+import { createHarnessVerifier, isolatedOutcome } from "../src/harness_verify.js";
 import { verify } from "../src/verify.js";
 
 const image = "alpine@sha256:2d8a11041a92082ba21e364dec73559ce44f1de69b60fa68315f6d3774e59117";
@@ -134,7 +134,8 @@ test("pinned OCI runtime runs a real project check in a disposable offline copy"
   const root = repo(),
     script = join(root, "check.sh");
   writeFileSync(join(root, ".env"), "private_credential=do-not-copy\n");
-  writeFileSync(join(root, "config.json"), '{"value":42}\n');
+  mkdirSync(join(root, "config"), { mode: 0o700 });
+  writeFileSync(join(root, "config", "data.json"), '{"value":42}\n', { mode: 0o600 });
   writeFileSync(
     script,
     [
@@ -143,11 +144,12 @@ test("pinned OCI runtime runs a real project check in a disposable offline copy"
       "test ! -e .git && test ! -e .env && test ! -S /var/run/docker.sock",
       "! env | grep -E '^(GITHUB_TOKEN|HARNESS_CANARY)='",
       'test "$(ls /sys/class/net)" = lo',
-      "grep 42 config.json",
-      "echo temporary > config.json",
-      "test ! -w /input/config.json",
+      "grep -q 42 config/data.json",
+      "echo temporary > config/data.json",
+      "test ! -w /input/config/data.json",
       "test ! -w /etc",
-      "echo isolation-passed",
+      "echo isolation-passed >&2",
+      'echo \'{"schemaVersion":1,"kind":"forge.checks","counts":{"total":8,"pass":8,"fail":0,"cancelled":0,"skipped":0,"todo":0}}\'',
     ].join("\n"),
   );
   const run = createHarnessVerifier({
@@ -160,9 +162,22 @@ test("pinned OCI runtime runs a real project check in a disposable offline copy"
   const pass = await run({ root });
   assert.equal(pass.ok, true, pass.output);
   assert.match(pass.output, /isolation-passed/);
-  assert.match(readFileSync(join(root, "config.json"), "utf8"), /42/);
+  assert.match(readFileSync(join(root, "config", "data.json"), "utf8"), /42/);
   writeFileSync(script, "echo deliberately-broken; exit 3\n");
   const fail = await run({ root });
   assert.equal(fail.ok, false);
   assert.match(fail.output, /deliberately-broken/);
+});
+
+test("isolated checks need observed executions or a typed operator contract", () => {
+  const counts = { total: 1, pass: 1, fail: 0, cancelled: 0, skipped: 0, todo: 0 };
+  const report = (edits) =>
+    JSON.stringify({ schemaVersion: 1, kind: "forge.checks", counts: { ...counts, ...edits } });
+  assert.equal(isolatedOutcome("all OK", "").status, "INCOMPLETE");
+  assert.equal(isolatedOutcome(report({ total: 0, pass: 0 }), "").status, "INCOMPLETE");
+  assert.equal(isolatedOutcome(report({ pass: 0, fail: 1 }), "").status, "FAIL");
+  assert.equal(isolatedOutcome(report({}), "").status, "PASS");
+  assert.equal(isolatedOutcome(report({}), "1 failed in 0.01s").status, "FAIL");
+  assert.equal(isolatedOutcome(report({ pass: 0, fail: 1 }), "Tests: 0 total").status, "FAIL");
+  assert.equal(isolatedOutcome(report({}), "# tests 1").status, "INCOMPLETE");
 });
