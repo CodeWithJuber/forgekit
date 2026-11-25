@@ -220,13 +220,13 @@ export async function checkPreEdit({ cwd, session, paths, intent }) {
       }),
     ),
   ].sort();
+  if (typeof session !== "string" || !session.trim())
+    return {
+      allow: false,
+      reason:
+        "Required edit review needs a stable session ID from the host. Restore session identity and retry the edit.",
+    };
   const state = fingerprint(root, files);
-  // Some clients omit session identity. Compute impact on each delivery without sharing an approval.
-  if (typeof session !== "string" || !session.trim()) {
-    const plan = await impactPlan(root, files, state.checkout);
-    if (digest(state) !== digest(fingerprint(root, files))) throw changed();
-    return { allow: true, files, plan };
-  }
   const request = {
     version: 1,
     workspace: digest(root),

@@ -1,19 +1,11 @@
 // Record the latest call result under its exact transport, credential scope and wire model.
 // The inventory never scans prompts, request bodies or transcripts.
 import { createHash, randomUUID } from "node:crypto";
-import {
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SAFE_MODEL_ID } from "./model_catalog.js";
 import { modelScope } from "./model_scope.js";
-import { outsideWorkspace } from "./private_paths.js";
+import { outsideWorkspace, readBounded } from "./private_paths.js";
 import { privateWorkspaceFile } from "./workspace_preference.js";
 
 const digest = (s) => createHash("sha256").update(s).digest("hex");
@@ -74,10 +66,8 @@ export function readModelCalls(root, profile, key) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !/^[0-9a-f]{64}\.json$/.test(entry.name)) continue;
       const path = join(dir, entry.name);
-      const st = lstatSync(path);
-      if (!st.isFile() || st.nlink !== 1 || st.size > 2048) continue;
       try {
-        const row = JSON.parse(readFileSync(path, "utf8"));
+        const row = JSON.parse(readBounded(path, 2048).bytes.toString("utf8"));
         if (
           typeof row.sent === "string" &&
           SAFE_MODEL_ID.test(row.sent) &&
