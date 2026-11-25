@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.19.4] - 2026-11-25
+
 ### Fixed
 
 - GitHub Pages uploads the site before starting a separate deployment job, so a failed deployment can reuse the uploaded site.
@@ -3907,7 +3909,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...HEAD
+[1.19.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...v1.19.4
 [1.19.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.2...v1.19.3
 [1.19.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.1...v1.19.2
 [1.19.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.0...v1.19.1
