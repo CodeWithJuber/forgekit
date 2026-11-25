@@ -134,7 +134,14 @@ async function body(req) {
     throw fail(400, "Malformed JSON");
   }
 }
-export function cloudService({ dataDir, principals, transport = "cloud" }, env = process.env) {
+export function cloudService(
+  { dataDir, principals, transport = "cloud", maxConcurrentReads = 4, maxConcurrentWrites = 2 },
+  env = process.env,
+) {
+  for (const limit of [maxConcurrentReads, maxConcurrentWrites]) {
+    if (!Number.isSafeInteger(limit) || limit < 1)
+      throw new Error("Cloud concurrency limits must be positive integers");
+  }
   if (!["cloud", "relay"].includes(transport)) throw new Error("Unknown cloud transport");
   const relay = transport === "relay";
   if (!dataDir || !isAbsolute(dataDir) || !Array.isArray(principals) || !principals.length)
@@ -183,7 +190,8 @@ export function cloudService({ dataDir, principals, transport = "cloud" }, env =
       role: p.role,
     };
   });
-  let activeWrites = 0;
+  const activeWrites = new Set();
+  let activeReads = 0;
   const server = createServer(async (req, res) => {
     const json = (code, v) => {
       res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -246,26 +254,30 @@ export function cloudService({ dataDir, principals, transport = "cloud" }, env =
         query = { op: "delete" };
       } else if (req.method === "POST" && action === "sync") {
         if (peer.role === "reader") throw fail(403, "Writer authorization required");
-        if (activeWrites) throw fail(429, "Another upload is active");
-        activeWrites++;
-        try {
+        query = { op: "push" };
+      } else throw fail(405, "Unsupported method");
+      const writing = query.op === "push" || query.op === "delete";
+      if (writing) {
+        if (activeWrites.has(peer.scope)) throw fail(429, "A write is active in this workspace");
+        if (activeWrites.size >= maxConcurrentWrites)
+          throw fail(429, "Cloud writer capacity reached");
+        activeWrites.add(peer.scope);
+      } else {
+        if (activeReads >= maxConcurrentReads) throw fail(429, "Cloud reader capacity reached");
+        activeReads++;
+      }
+      try {
+        if (query.op === "push") {
           const change = await body(req);
           validateChange(change, relay);
-          const result = await storage(python, database, {
-            scope: peer.scope,
-            op: "push",
-            change,
-            maxFiles: MAX_FILES + Number(relay),
-            maxBytes: MAX_TOTAL,
-          });
-          json(result.error ?? 200, result);
-          return;
-        } finally {
-          activeWrites--;
+          query = { ...query, change, maxFiles: MAX_FILES + Number(relay), maxBytes: MAX_TOTAL };
         }
-      } else throw fail(405, "Unsupported method");
-      const result = await storage(python, database, { scope: peer.scope, ...query });
-      json(result.error ?? 200, result);
+        const result = await storage(python, database, { scope: peer.scope, ...query });
+        json(result.error ?? 200, result);
+      } finally {
+        if (writing) activeWrites.delete(peer.scope);
+        else activeReads--;
+      }
     } catch (e) {
       if (!res.headersSent)
         json(e.status || 500, { error: e.status ? e.message : "Cloud operation failed" });
