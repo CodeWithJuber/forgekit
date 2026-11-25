@@ -1,9 +1,25 @@
 // forge atlas — a portable code graph. Build once, then query definitions, membership,
 // reverse dependents, and impact radius without asking a model to rediscover the repo.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { extname, join, relative } from "node:path";
 import { adjudicate, asText, buildRunner, llmEnabled } from "./adjudicate.js";
+import { createAtlasParsers, syntaxGraph, syntaxLanguage } from "./atlas_parsers.js";
 import { CALL_RE } from "./extract.js";
 import {
   jsImports,
@@ -22,7 +38,7 @@ import { contentHash, IGNORE_DIRS, toPosix } from "./util.js";
 // from an older version is rebuilt, never trusted (v2 stored unresolved import specifiers;
 // v3 filed every tsconfig path-alias import as an external package; v4 symbols carried no
 // definition extent, `endLine`).
-export const ATLAS_VERSION = 5;
+export const ATLAS_VERSION = 8;
 
 const JS_RULES = [
   {
@@ -46,11 +62,21 @@ const JS_RULES = [
 const JVM_METHOD_RE =
   /^[ \t]*(?:(?:public|private|protected|internal|static|final|async|virtual|override|abstract|sealed|partial)[ \t]+){0,6}[\w<>[\],.?]+[ \t]+([A-Za-z_]\w*)[ \t]*\(/gm;
 
+const TS_RULES = [
+  ...JS_RULES,
+  {
+    re: /^[ \t]*(?:export\s+)?(?:declare\s+)?(?:interface|type)\s+([A-Za-z_$][\w$]*)/gm,
+    kind: "type",
+  },
+];
+
 export const RULES = {
   ".js": JS_RULES,
   ".jsx": JS_RULES,
-  ".ts": JS_RULES,
-  ".tsx": JS_RULES,
+  ".ts": TS_RULES,
+  ".tsx": TS_RULES,
+  ".mts": TS_RULES,
+  ".cts": TS_RULES,
   ".mjs": JS_RULES,
   ".cjs": JS_RULES,
   ".py": [
@@ -200,6 +226,8 @@ const FAMILY_BY_EXT = {
   ".jsx": "js",
   ".ts": "js",
   ".tsx": "js",
+  ".mts": "js",
+  ".cts": "js",
   ".mjs": "js",
   ".cjs": "js",
   ".py": "py",
@@ -234,7 +262,13 @@ const OTHER_FILE_CAP = 20000;
  * @param {number} cap
  */
 function inventory(root, cap) {
-  const inv = { files: /** @type {string[]} */ ([]), source: 0, other: 0, skipped: 0 };
+  const inv = {
+    files: /** @type {string[]} */ ([]),
+    source: 0,
+    other: 0,
+    skipped: 0,
+    unindexedExtensions: Object.create(null),
+  };
   walk(root, inv, cap);
   return inv;
 }
@@ -255,7 +289,7 @@ function walk(dir, inv, cap) {
     const path = join(dir, name);
     let st;
     try {
-      st = statSync(path);
+      st = lstatSync(path);
     } catch {
       continue;
     }
@@ -263,9 +297,14 @@ function walk(dir, inv, cap) {
       walk(path, inv, cap);
       continue;
     }
+    if (!st.isFile()) continue;
     const ext = extname(name);
     const isSource = Boolean(RULES[ext]);
-    if (!isSource && !((DOC_EXTS.has(ext) && !DOC_SKIP.test(name)) || isConfigFile(name))) continue;
+    if (!isSource && !((DOC_EXTS.has(ext) && !DOC_SKIP.test(name)) || isConfigFile(name))) {
+      const category = ext || "(no extension)";
+      inv.unindexedExtensions[category] = (inv.unindexedExtensions[category] ?? 0) + 1;
+      continue;
+    }
     if (isSource ? inv.source >= cap : inv.other >= OTHER_FILE_CAP) {
       inv.skipped += 1;
       continue;
@@ -1115,48 +1154,221 @@ function readCache(root) {
     if (!existsSync(cachePath(root))) return {};
     const parsed = JSON.parse(readFileSync(cachePath(root), "utf8"));
     // An older extractor's per-file output is not reusable (different edge shapes).
-    return parsed?.version === ATLAS_VERSION ? parsed.entries || {} : {};
+    return parsed?.version === ATLAS_VERSION && parsed.entries ? parsed : {};
   } catch {
     return {};
   }
 }
 
-export function build({ root = process.cwd(), cap = 20000 } = {}) {
+// Limits apply before extraction, including to files that grow while being read.
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_LINE_LENGTH = 128 * 1024;
+function readIndexInput(path) {
+  let fd;
+  try {
+    fd = openSync(
+      path,
+      constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0),
+    );
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return { reason: "not a regular file" };
+    if (stat.size > MAX_FILE_BYTES) return { reason: "file byte limit" };
+    const buf = Buffer.alloc(stat.size + 1);
+    let used = 0;
+    while (used < buf.length) {
+      const n = readSync(fd, buf, used, buf.length - used, null);
+      if (!n) break;
+      used += n;
+    }
+    if (used !== stat.size) return { reason: "file changed during read" };
+    const text = buf.toString("utf8", 0, used);
+    for (let start = 0; start < text.length; ) {
+      const nl = text.indexOf("\n", start);
+      if ((nl < 0 ? text.length : nl) - start > MAX_LINE_LENGTH)
+        return { reason: "line length limit" };
+      if (nl < 0) break;
+      start = nl + 1;
+    }
+    return { text };
+  } catch {
+    return { reason: "file unreadable" };
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function publishIndex(path, value) {
+  const temp = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, JSON.stringify(value), { flag: "wx" });
+    renameSync(temp, path);
+  } finally {
+    rmSync(temp, { force: true });
+  }
+}
+
+// A compiler site replaces only the syntax guess at the same source position.
+// Keep unresolved positions explicit. Duplicate declarations at the same line
+// remain ambiguous instead of being collapsed to the first matching node.
+function applyCompilerSites(nodes, raw, sites) {
+  if (!sites.length) return { raw, edges: [] };
+  const ids = new Map(),
+    modules = new Map(),
+    files = new Map();
+  const key = (d) => JSON.stringify([d.file, d.name, d.line]);
+  for (const n of nodes) {
+    files.set(n.id, n.file);
+    if (n.kind === "module") modules.set(n.file, n.id);
+    else ids.set(key(n), ids.has(key(n)) ? null : n.id);
+  }
+  const at = (f, p, k) => JSON.stringify([f, p, k]);
+  const positions = new Set();
+  const edges = [];
+  for (const s of sites) {
+    positions.add(at(s.from.file, s.position, s.kind));
+    const source = s.from.name ? ids.get(key(s.from)) : modules.get(s.from.file);
+    const target = s.to && ids.get(key(s.to));
+    if (!source) continue;
+    if (target || s.spelling)
+      edges.push({
+        source,
+        target: target ?? s.spelling,
+        kind: s.kind,
+        confidence: target ? 1 : 0,
+        line: s.line,
+        position: s.position,
+        evidence: "typescript-checker",
+        ...(target ? { resolved: true } : { unresolved: true }),
+      });
+  }
+  return {
+    raw: raw.filter((e) => !positions.has(at(files.get(e.source), e.position, e.kind))),
+    edges,
+  };
+}
+
+export function build({
+  root = process.cwd(),
+  cap = 20000,
+  parser = undefined,
+  persist = true,
+} = {}) {
   const inv = inventory(root, cap);
   // Incremental: reuse the prior per-file extraction when the content hash is unchanged, so a
   // rebuild only re-parses edited files instead of re-running every regex over the whole repo.
-  const prev = readCache(root);
-  const cache = {};
+  const prior = persist ? readCache(root) : {};
+  const parserMode = parser ?? prior.parserMode ?? "portable";
+  if (!["ast", "portable"].includes(parserMode)) throw new Error("Unknown atlas parser mode");
+  const parsers = parserMode === "ast" ? createAtlasParsers(root) : null;
+  const signatures = parsers
+    ? Object.fromEntries(
+        ["typescript", "python"].map((kind) => [kind, hash(parsers.identity(kind))]),
+      )
+    : {};
+  const prev = prior.entries ?? {};
+  const byFile = Object.create(null);
+  const backends = Object.create(null);
+  let reusedFiles = 0;
+  const cache = Object.create(null);
   const symbols = [];
   const nodes = [];
   const rawEdges = [];
   const fileHashes = {};
   const rels = [];
+  const omitted = [];
   for (const f of inv.files) {
     const rel = toPosix(relative(root, f));
-    let text;
-    try {
-      text = readFileSync(f, "utf8");
-    } catch {
+    const input = readIndexInput(f);
+    if (input.reason !== undefined) {
+      omitted.push({ file: rel, reason: input.reason });
       continue;
     }
+    const text = input.text;
     const h = hash(text);
-    const reused = prev[rel]?.hash === h ? prev[rel].data : null;
-    const data =
-      reused ||
-      (({ symbols, nodes, edges }) => ({ symbols, nodes, edges }))(extractFile(f, root, text));
-    cache[rel] = { hash: h, data };
-    symbols.push(...data.symbols);
-    nodes.push(...data.nodes);
-    rawEdges.push(...data.edges);
+    const kind = syntaxLanguage(rel);
+    if (kind === "typescript") parsers?.observe(rel, text);
+    const source = Boolean(RULES[extname(rel)]);
+    const identity = signatures[kind] ?? "portable";
     fileHashes[rel] = h;
     rels.push(rel);
+    const old = prev[rel];
+    if (
+      old?.hash === h &&
+      old.identity === identity &&
+      old.mode === parserMode &&
+      !["parser-worker-failed", "parser-timeout"].includes(old.coverage?.reason)
+    ) {
+      cache[rel] = old;
+      reusedFiles++;
+      continue;
+    }
+    function index(facts) {
+      let data, coverage;
+      if (facts && !facts.reason) {
+        data = syntaxGraph(facts, rel, moduleId(rel), BUILTINS);
+        coverage = {
+          backend: kind === "python" ? "python-ast" : "typescript-ast",
+          limitations: facts.limitations,
+        };
+      } else {
+        const { symbols, nodes, edges } = extractFile(f, root, text);
+        data = { symbols, nodes, edges };
+        coverage = {
+          backend: source ? "portable-lexical" : "document-or-config",
+          ...(facts?.reason
+            ? { reason: facts.reason }
+            : parsers && source
+              ? { reason: "unsupported-language" }
+              : {}),
+        };
+      }
+      cache[rel] = { hash: h, identity, mode: parserMode, coverage, data };
+    }
+    if (parsers && kind) parsers.add(kind, rel, text, index);
+    else index(null);
   }
-  const { edges, stats } = resolveEdges(nodes, rawEdges, rels, loadPathAliases(root));
+  parsers?.finish();
+  for (const rel of rels) {
+    const { data, coverage } = cache[rel];
+    byFile[rel] = coverage;
+    backends[coverage.backend] = (backends[coverage.backend] ?? 0) + 1;
+    for (const symbol of data.symbols) symbols.push(symbol);
+    for (const node of data.nodes) nodes.push(node);
+    for (const edge of data.edges) rawEdges.push(edge);
+  }
+  const aliases = loadPathAliases(root);
+  const compiler = parsers?.compiler(aliases);
+  const checked = applyCompilerSites(nodes, rawEdges, compiler?.sites ?? []);
+  const { edges, stats } = resolveEdges(nodes, checked.raw, rels, aliases);
+  let linked = 0;
+  for (const edge of checked.edges) {
+    edges.push(edge);
+    if ("resolved" in edge) linked++;
+  }
+  stats.names.resolved += linked;
+  stats.names.unresolved += checked.edges.length - linked;
   const atlas = {
     version: ATLAS_VERSION,
     files: inv.files.length,
     sourceFiles: inv.source,
+    coverage: {
+      mode: parserMode,
+      ...(compiler
+        ? {
+            compiler: {
+              status: compiler.status,
+              ...(compiler.reason ? { reason: compiler.reason } : {}),
+              ...compiler.stats,
+              linked,
+            },
+          }
+        : {}),
+      backends,
+      byFile,
+      reusedFiles,
+      unindexedExtensions: inv.unindexedExtensions,
+      signatures,
+    },
     symbols,
     nodes,
     edges,
@@ -1164,13 +1376,16 @@ export function build({ root = process.cwd(), cap = 20000 } = {}) {
     cap,
     // True only when a file was actually dropped (the old `files >= cap` also fired at
     // exactly `cap` files, and counted docs/configs against a source-file cap).
-    capped: inv.skipped > 0,
-    skippedFiles: inv.skipped,
+    capped: inv.skipped + omitted.length > 0,
+    skippedFiles: inv.skipped + omitted.length,
+    omitted,
     stats,
   };
-  mkdirSync(join(root, ".forge"), { recursive: true });
-  writeFileSync(join(root, ".forge", "atlas.json"), JSON.stringify(atlas));
-  writeFileSync(cachePath(root), JSON.stringify({ version: ATLAS_VERSION, entries: cache }));
+  if (persist) {
+    mkdirSync(join(root, ".forge"), { recursive: true });
+    publishIndex(cachePath(root), { version: ATLAS_VERSION, parserMode, entries: cache });
+    publishIndex(join(root, ".forge", "atlas.json"), atlas);
+  }
   return atlas;
 }
 
@@ -1197,27 +1412,47 @@ export function indexedText(atlas, rel, text) {
 
 export function isStale(root, atlas) {
   if (!atlas?.fileHashes || atlas.version !== ATLAS_VERSION) return true;
+  if (atlas.coverage?.mode === "ast") {
+    const parsers = createAtlasParsers(root);
+    if (
+      ["typescript", "python"].some(
+        (kind) => hash(parsers.identity(kind)) !== atlas.coverage.signatures?.[kind],
+      )
+    )
+      return true;
+  }
   const indexed = new Set(Object.keys(atlas.fileHashes));
+  for (const item of atlas.omitted ?? []) {
+    if (readIndexInput(join(root, item.file)).reason !== item.reason) return true;
+  }
   for (const rel of indexed) {
-    let text;
-    try {
-      text = readFileSync(join(root, rel), "utf8");
-    } catch {
-      return true; // a tracked file was deleted
-    }
-    if (hash(text) !== atlas.fileHashes[rel]) return true; // a tracked file changed
+    const input = readIndexInput(join(root, rel));
+    if (input.reason !== undefined || hash(input.text) !== atlas.fileHashes[rel]) return true; // a tracked file changed
   }
-  if (!atlas.capped) {
-    const current = inventory(root, atlas.cap ?? 20000).files;
-    if (current.length !== indexed.size) return true; // a file was added or removed
-    for (const p of current) if (!indexed.has(toPosix(relative(root, p)))) return true;
-  }
+  const current = inventory(root, atlas.cap ?? 20000);
+  if (
+    atlas.coverage?.mode === "ast" &&
+    JSON.stringify(current.unindexedExtensions) !==
+      JSON.stringify(atlas.coverage?.unindexedExtensions ?? {})
+  )
+    return true;
+  for (const item of atlas.omitted ?? []) indexed.add(item.file);
+  if (
+    current.files.length !== indexed.size ||
+    current.skipped !== atlas.skippedFiles - (atlas.omitted?.length ?? 0)
+  )
+    return true;
+  for (const p of current.files) if (!indexed.has(toPosix(relative(root, p)))) return true;
   return false;
 }
 
 export function load(root = process.cwd()) {
   const p = join(root, ".forge", "atlas.json");
-  return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null;
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1459,6 +1694,7 @@ const round4 = (x) => Number(x.toFixed(4));
  * @param {number} [opts.threshold]
  * @param {number} [opts.maxHops] reverse-dependency hop cap
  * @param {number} [opts.decay]
+ * @param {Record<string, number>} [opts.edgeWeights] edge priors for comparative evaluation
  * @param {readonly string[]} [opts.relations] subset of IMPACT_RELATIONS
  *   (default: DEFAULT_IMPACT_RELATIONS — reverse only; pass IMPACT_RELATIONS for the wide walk)
  * @param {boolean} [opts.llm]
@@ -1474,6 +1710,7 @@ export function impact(
     threshold = 0.1,
     maxHops = 6,
     decay = 0.85,
+    edgeWeights = EDGE_WEIGHT,
     relations = DEFAULT_IMPACT_RELATIONS,
     llm,
     run,
@@ -1482,13 +1719,24 @@ export function impact(
     hazards,
   } = {},
 ) {
+  if (
+    edgeWeights !== EDGE_WEIGHT &&
+    (!edgeWeights ||
+      !Object.values(edgeWeights).every(
+        (weight) => Number.isFinite(weight) && weight >= 0 && weight <= 1,
+      ))
+  )
+    throw new RangeError("Impact edge weights must be finite probabilities");
   const starts = targetIds(atlas, target);
   const startSet = new Set(starts);
   const { nodeById, incoming, outgoing, ambiguousByName, nodesByFile, fileIndegree } =
     adjacency(atlas);
   const wanted = new Set(relations);
   const step = (conf, edge) =>
-    conf * (EDGE_WEIGHT[edge.kind] || 0.5) * (edge.confidence ?? 1) * decay;
+    conf *
+    (edgeWeights[edge.kind] ?? EDGE_WEIGHT[edge.kind] ?? 0.5) *
+    (edge.confidence ?? 1) *
+    decay;
   const visited = new Map();
   const queue = wanted.has("reverse")
     ? starts.map((id) => ({

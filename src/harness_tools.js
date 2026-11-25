@@ -24,7 +24,7 @@ import { hasSecret, redactSecrets } from "./secrets.js";
 import { contentHash, userStateDir } from "./util.js";
 
 const FILE_BYTES = 128 * 1024;
-const PAGE = 12000;
+const READ_OUTPUT_BYTES = 20000;
 const noFollow = constants.O_NOFOLLOW ?? 0;
 const nonBlock = constants.O_NONBLOCK ?? 0;
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
@@ -56,7 +56,8 @@ function target(root, path, kind, request) {
     resolved = join(resolved, part);
     const s = lstatSync(resolved, { throwIfNoEntry: false });
     if (!s && kind === "write" && i === parts.length - 1) break;
-    if (!s || s.isSymbolicLink() || (i < parts.length - 1 && !s.isDirectory()))
+    if (!s) throw Object.assign(new Error("Missing workspace path"), { code: "ENOENT" });
+    if (s.isSymbolicLink() || (i < parts.length - 1 && !s.isDirectory()))
       throw new Error("Missing path, link, or non-directory in workspace path");
     if (
       i === parts.length - 1 &&
@@ -84,10 +85,14 @@ function snapshot(path) {
   const fd = openSync(path, constants.O_RDONLY | noFollow | nonBlock);
   try {
     const info = fstatSync(fd);
+    if (info.size > FILE_BYTES)
+      throw Object.assign(new Error("Refusing oversized file"), { code: "EFBIG" });
+    const visible = lstatSync(path);
     if (
       !info.isFile() ||
       info.nlink !== 1 ||
-      info.size > FILE_BYTES ||
+      info.dev !== visible.dev ||
+      info.ino !== visible.ino ||
       realpathSync.native(path) !== path
     )
       throw new Error("Refusing linked, non-regular or oversized file");
@@ -95,13 +100,58 @@ function snapshot(path) {
     let len = 0,
       n;
     while (len < buf.length && (n = readSync(fd, buf, len, buf.length - len, null)) > 0) len += n;
-    if (len > FILE_BYTES || buf.subarray(0, len).includes(0))
-      throw new Error("Refusing oversized or binary file");
+    if (len > FILE_BYTES)
+      throw Object.assign(new Error("Refusing oversized file"), { code: "EFBIG" });
+    if (buf.subarray(0, len).includes(0))
+      throw Object.assign(new Error("Refusing binary file"), { code: "EBADMSG" });
+    const after = lstatSync(path);
+    if (
+      after.dev !== info.dev ||
+      after.ino !== info.ino ||
+      after.nlink !== 1 ||
+      realpathSync.native(path) !== path
+    )
+      throw new Error("Workspace file changed during read");
     const text = utf8.decode(buf.subarray(0, len));
     return { text, sha256: contentHash(text), mode: info.mode & 0o777 };
   } finally {
     closeSync(fd);
   }
+}
+
+/** Read only bounded ordinary workspace files. Reasons are safe to show to clients. */
+export function workspaceEvidence(root, rel, { inspectOnly = false } = {}) {
+  try {
+    const file = target(
+      root,
+      typeof rel === "string" ? rel.replace(/^(?:\.\/)+/, "") : rel,
+      "file",
+      undefined,
+    );
+    if (inspectOnly) {
+      const bytes = lstatSync(file).size;
+      return bytes > FILE_BYTES
+        ? { available: false, reason: "size-limit" }
+        : { available: true, bytes };
+    }
+    const { text } = snapshot(file);
+    return { available: true, text };
+  } catch (err) {
+    const reason =
+      err.code === "ENOENT"
+        ? "missing"
+        : err.code === "EFBIG"
+          ? "size-limit"
+          : ["EBADMSG", "ERR_ENCODING_INVALID_ENCODED_DATA"].includes(err.code)
+            ? "binary-or-invalid-utf8"
+            : "protected-or-unreadable";
+    return { available: false, reason };
+  }
+}
+
+/** Portable evidence uses exactly the same file restrictions and digest as a guarded edit. */
+export function workspaceFileDigest(root, path) {
+  return snapshot(target(root, path, "file", undefined)).sha256;
 }
 
 const filePath = { type: "string", minLength: 1, maxLength: 1024 };
@@ -126,29 +176,56 @@ export function createHarnessTools() {
     {
       name: "read_file",
       description:
-        "Read a bounded page of a UTF-8 workspace file with its SHA-256 for guarded edits.",
+        "Read a context-sized UTF-8 file page. Continue using nextOffset and expectedSha256 from the response.",
       risk: "read",
       idempotency: "safe",
       timeoutMs: 5000,
-      outputCapBytes: 20000,
+      outputCapBytes: READ_OUTPUT_BYTES,
       inputSchema: schema(
-        { path: filePath, offset: { type: "integer", minimum: 0, maximum: FILE_BYTES } },
+        {
+          path: filePath,
+          offset: { type: "integer", minimum: 0, maximum: FILE_BYTES },
+          expectedSha256: { type: "string", minLength: 64, maxLength: 64 },
+        },
         ["path"],
       ),
       validate(args, { root, request }) {
         target(root, args.path, "file", request);
       },
-      execute(args, { root, request }) {
+      execute(args, { root, request, readPageBytes = READ_OUTPUT_BYTES }) {
         const { text, sha256 } = snapshot(target(root, args.path, "file", request));
-        const safe = redactSecrets(text),
-          start = args.offset ?? 0;
-        const next = Math.min(start + PAGE, safe.length);
-        return {
-          path: args.path,
-          sha256,
-          content: safe.slice(start, next),
-          nextOffset: next < safe.length ? next : null,
-        };
+        if (args.expectedSha256 !== undefined && args.expectedSha256 !== sha256)
+          throw new Error("File changed between pages; restart at offset 0");
+        const safe = redactSecrets(text);
+        const start = args.offset ?? 0;
+        if (
+          !Number.isSafeInteger(start) ||
+          start < 0 ||
+          start > safe.length ||
+          (start < safe.length &&
+            safe.charCodeAt(start) >= 0xdc00 &&
+            safe.charCodeAt(start) <= 0xdfff)
+        )
+          throw new Error("Invalid read offset");
+        const cap = Math.min(READ_OUTPUT_BYTES, readPageBytes);
+        const page = { path: args.path, sha256, nextOffset: null, content: "" };
+        const envelope = Buffer.byteLength(JSON.stringify(page));
+        // nextOffset is a UTF-16 index in the complete redacted text (existing API).
+        // Reserve its largest possible serialization, then count each escaped code point.
+        const available = cap - envelope - Math.max(0, String(safe.length).length - "null".length);
+        let used = 0;
+        let next = start;
+        for (const ch of safe.slice(start)) {
+          const bytes = Buffer.byteLength(JSON.stringify(ch)) - 2;
+          if (used + bytes > available) break;
+          used += bytes;
+          next += ch.length;
+        }
+        if (available < 0 || (next === start && next < safe.length))
+          throw new Error("Context window too small for a read page; increase contextTokens");
+        page.content = safe.slice(start, next);
+        page.nextOffset = next < safe.length ? next : null;
+        return page;
       },
     },
     {

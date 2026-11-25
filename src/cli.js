@@ -811,10 +811,23 @@ HANDLERS.atlas = async (argv) => {
     return null;
   };
   if (sub === "build") {
-    const at = a.build({ root: process.cwd() });
+    const mode = argv.includes("--ast")
+      ? "ast"
+      : argv.includes("--portable")
+        ? "portable"
+        : undefined;
+    const at = a.build({ root: process.cwd(), parser: mode });
+    if (argv.includes("--json")) {
+      console.log(JSON.stringify(at));
+      return;
+    }
     console.log(
       `  indexed ${at.symbols.length} symbols in ${at.files} files → .forge/atlas.json${at.capped ? " (capped)" : ""}`,
     );
+    const counts = Object.entries(at.coverage.backends)
+      .map(([backend, n]) => `${backend} ${n}`)
+      .join(", ");
+    console.log(`  parser coverage: ${counts}`);
   } else if (sub === "query") {
     const at = need();
     if (!at) return;
@@ -833,7 +846,9 @@ HANDLERS.atlas = async (argv) => {
     if (!at) return;
     const name = argv[2];
     const yes = a.has(at, name);
-    console.log(`  ${yes ? "✓ defined" : "✗ not found (possible hallucinated symbol)"}: ${name}`);
+    console.log(
+      `  ${yes ? "✓ defined" : "✗ absent from indexed definitions (see parser coverage)"}: ${name}`,
+    );
     if (!yes) process.exitCode = 1;
   } else {
     console.error(`atlas: unknown subcommand "${sub}" (build | query | has)`);

@@ -1,8 +1,16 @@
 // Shared helpers for emitters. Every generated file carries a `forge:sync:<hash>`
 // marker so re-running is idempotent (skip identical content) and drift is
 // detectable (forge doctor compares the marker to the current source hash).
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 
 export const MARKER = "forge:sync";
@@ -34,6 +42,21 @@ export function writeIfChanged(absPath, content) {
   if (existing === content) return "unchanged";
   mkdirSync(dirname(absPath), { recursive: true });
   writeFileSync(absPath, content);
+  return "written";
+}
+
+/** Replace hook wiring in a single rename so a concurrent host sees a complete document. */
+export function writeAtomicIfChanged(path, content) {
+  if (readIfExists(path) === content) return "unchanged";
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.forge-tmp-${randomUUID()}`;
+  try {
+    const mode = existsSync(path) ? statSync(path).mode : undefined;
+    writeFileSync(tmp, content, { flag: "wx", mode });
+    renameSync(tmp, path);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
   return "written";
 }
 

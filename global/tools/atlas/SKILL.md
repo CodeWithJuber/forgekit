@@ -14,14 +14,17 @@ A precomputed, portable symbol index at `.forge/atlas.json`. Any tool reads it v
 - `forge atlas query <term>` — where is `<term>` defined? Returns file:line + kind.
   Prefer this over grep-and-read-files (far fewer tokens).
 - `forge atlas has <symbol>` — is this symbol defined anywhere? Use before calling
-  an unfamiliar function/class: "not found" is a strong hallucinated-API signal.
+  an unfamiliar function or class. Check parser coverage when a name is absent.
 
 ## When
 - Reuse-first: before writing a helper, `forge atlas query` for an existing one.
 - Verification: after generating code that calls project symbols, spot-check the
   unfamiliar ones with `forge atlas has`.
 
-## Honest boundary
-v1 indexes symbol *definitions* + membership, not a full call graph ("what calls
-Z"). It flags likely-missing symbols; it does not certify correctness. The call
-graph is the documented upgrade (LSP / serena-backed export).
+## Interpret the result
+
+Use `forge atlas build --ast` to enable Python syntax and optional TypeScript compiler
+resolution across local JS/TS modules. Check `coverage.byFile` and `coverage.compiler`
+in the JSON output for the backend and omissions. An absent name can mean that its language,
+dynamic load or dependency is outside the indexed inputs. Use `forge impact` to inspect
+observed dependents and `forge test-select` for the checkout-bound verification scope.

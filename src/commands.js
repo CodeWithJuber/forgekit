@@ -97,7 +97,11 @@ export const COMMANDS = {
     examples: ["forge update --check", "forge update --to 0.19.0"],
   },
   taste: "enable one UI-taste tool for this repo (no arg = list)",
-  atlas: "build / query the code-graph (where-is-Y, has-symbol)",
+  atlas: {
+    summary: "build / query the code-graph (where-is-Y, has-symbol)",
+    usage: "forge atlas build [--ast|--portable] [--json] | query <text> | has <symbol>",
+    examples: ["forge atlas build --portable", "forge atlas query freezeSuite"],
+  },
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   radar:
     "dependency-currency rings — staleness/major-lag/advisories from live registry evidence, cached 24h",
@@ -316,10 +320,26 @@ export const COMMANDS = {
   context: {
     summary:
       "budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed",
-    usage: 'forge context "<task>" [--budget <tokens>] [--block] [--json]',
+    usage:
+      'forge context "<task>" [--budget <units>] [--encoding <name>] [--block] [--json] [--packet [--ack <revision>]]',
     flags: [
-      { flag: "--budget <tokens>", desc: "assembly budget (chars/3.6 estimate; default 6000)" },
+      {
+        flag: "--budget <units>",
+        desc: "budget for the rendered context in the selected counting units (default 6000)",
+      },
+      {
+        flag: "--encoding <name>",
+        desc: "count UTF-8 bytes (default) or use a named encoding from an independently installed js-tiktoken",
+      },
       { flag: "--block", desc: "print the assembled context block itself (what gets delivered)" },
+      {
+        flag: "--packet",
+        desc: "emit a versioned JSON packet with delivered evidence and revision",
+      },
+      {
+        flag: "--ack <revision>",
+        desc: "send changes against an exact packet retained by this client",
+      },
       { flag: "--json", desc: "machine-readable result (add --block to include the block)" },
     ],
     examples: ['forge context "update computeTax in src/tax.js" --block'],

@@ -12,7 +12,8 @@
   "exports": {
     ".": "./src/cli.js",
     "./model-tiers": "./src/model_tiers.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./context-packet": "./src/context_packet.js"
   },
   "author": "CodeWithJuber",
   "license": "MIT",

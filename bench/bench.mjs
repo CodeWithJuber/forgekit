@@ -16,7 +16,7 @@
 //    (mulberry32) — deterministic across runs and machines, built in os.tmpdir,
 //    cleaned up.
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { arch, cpus, platform, tmpdir, totalmem } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -573,7 +573,9 @@ function resultsMarkdown(env, rows, quality) {
 }
 
 function writeReport(env, rows, quality) {
-  const path = join(REPO_ROOT, "reports", "benchmarks.md");
+  const directory = join(REPO_ROOT, ".forge", "benchmarks");
+  mkdirSync(directory, { recursive: true });
+  const path = join(mkdtempSync(join(directory, "run-")), "benchmarks.md");
   const section = resultsMarkdown(env, rows, quality);
   let text;
   try {
