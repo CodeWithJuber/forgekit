@@ -135,13 +135,22 @@ async function body(req) {
   }
 }
 export function cloudService(
-  { dataDir, principals, transport = "cloud", maxConcurrentReads = 4, maxConcurrentWrites = 2 },
+  {
+    dataDir,
+    principals,
+    transport = "cloud",
+    maxConcurrentReads = 4,
+    maxConcurrentWrites = 2,
+    maxHistoryBytes = MAX_TOTAL,
+  },
   env = process.env,
 ) {
   for (const limit of [maxConcurrentReads, maxConcurrentWrites]) {
     if (!Number.isSafeInteger(limit) || limit < 1)
       throw new Error("Cloud concurrency limits must be positive integers");
   }
+  if (!Number.isSafeInteger(maxHistoryBytes) || maxHistoryBytes < 1)
+    throw new Error("Cloud journal capacity must be a positive integer number of bytes");
   if (!["cloud", "relay"].includes(transport)) throw new Error("Unknown cloud transport");
   const relay = transport === "relay";
   if (!dataDir || !isAbsolute(dataDir) || !Array.isArray(principals) || !principals.length)
@@ -270,7 +279,13 @@ export function cloudService(
         if (query.op === "push") {
           const change = await body(req);
           validateChange(change, relay);
-          query = { ...query, change, maxFiles: MAX_FILES + Number(relay), maxBytes: MAX_TOTAL };
+          query = {
+            ...query,
+            change,
+            maxFiles: MAX_FILES + Number(relay),
+            maxBytes: MAX_TOTAL,
+            maxHistoryBytes,
+          };
         }
         const result = await storage(python, database, { scope: peer.scope, ...query });
         json(result.error ?? 200, result);
