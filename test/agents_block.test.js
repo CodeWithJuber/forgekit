@@ -38,6 +38,12 @@ import {
 } from "../src/sync.js";
 
 const fixture = () => mkdtempSync(join(tmpdir(), "forge-block-"));
+function configuredFixture() {
+  const root = fixture();
+  mkdirSync(join(root, ".forge"));
+  writeFileSync(join(root, ".forge", "forge.config.json"), "{}");
+  return root;
+}
 const agentsOf = (root) => readFileSync(join(root, "AGENTS.md"), "utf8");
 const HAND =
   "# HostLelo agents\n\n- Lint: `npm run lint`\n- Never call the WHMCS API from the client.\n";
@@ -133,7 +139,7 @@ test("auto-sync never adopts a hand-written AGENTS.md (no block → no write)", 
 });
 
 test("a human edit OUTSIDE the block survives auto-sync; the stale block is refreshed", () => {
-  const root = fixture();
+  const root = configuredFixture();
   sync({ targetRoot: root });
   const block = agentsOf(root);
   const edited = `# Repo notes\nRun \`npm run e2e\` against port 3100.\n\n${block}\n## Deploy\n- Vercel only.\n`;
@@ -152,7 +158,7 @@ test("a human edit OUTSIDE the block survives auto-sync; the stale block is refr
 });
 
 test("drift INSIDE the block is repaired by auto-sync without touching the text around it", () => {
-  const root = fixture();
+  const root = configuredFixture();
   writeFileSync(join(root, "AGENTS.md"), HAND);
   sync({ targetRoot: root });
   const good = agentsOf(root);
@@ -163,7 +169,7 @@ test("drift INSIDE the block is repaired by auto-sync without touching the text 
 });
 
 test("auto-sync refreshes Continue's forge-owned rules copy only when it already exists", () => {
-  const root = fixture();
+  const root = configuredFixture();
   sync({ targetRoot: root });
   const rules = join(root, ".continue", "rules", "00-forge.md");
   assert.ok(existsSync(rules));
@@ -171,7 +177,7 @@ test("auto-sync refreshes Continue's forge-owned rules copy only when it already
   autoSyncIfDrifted(root);
   assert.match(readFileSync(rules, "utf8"), /continue sees this too/);
 
-  const bare = fixture();
+  const bare = configuredFixture();
   sync({ targetRoot: bare, tools: ["claude"] });
   addRule(bare, "x");
   autoSyncIfDrifted(bare);
@@ -206,7 +212,7 @@ test("a legacy fully generated AGENTS.md converts to a block, keeping text a per
 });
 
 test("a stale legacy file converts losslessly on auto-sync too (old rules replaced)", () => {
-  const root = fixture();
+  const root = configuredFixture();
   const old = assemble({ title: "old", sections: [{ title: "Old", rules: ["stale rule"] }] });
   writeFileSync(join(root, "AGENTS.md"), legacyFile(old));
   const r = autoSyncIfDrifted(root);
@@ -299,7 +305,7 @@ test("size checks measure the whole AGENTS.md, not only Forge's block", () => {
 });
 
 test("a stranded AGENTS.md.forge-bak is reported by sync and doctor until its text is back", () => {
-  const root = fixture();
+  const root = configuredFixture();
   const settingsPath = join(fixture(), "settings.json");
   // What an older forge left: the generated file, with the person's original moved aside.
   writeFileSync(join(root, "AGENTS.md"), legacyFile(canonical(root)));

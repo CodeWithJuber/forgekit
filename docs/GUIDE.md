@@ -1408,6 +1408,30 @@ conflict-free claims). Upgrading from an older version? Run `forge ledger import
 (the one-release escape hatch) to temporarily restore the legacy file store while external
 tooling migrates.
 
+### Project memory on disposable runners
+
+Commit `.forge/forge.config.json` with the profile used to generate `AGENTS.md`. The Stop hook preserves the existing block if the project configuration is missing or unreadable. An explicit `forge sync` can still regenerate it.
+
+`forge decide` writes project decisions to `.forge/decisions.md`. Set `"portableMemory": true` in the project config to also write repository facts and learned lessons as reviewable Markdown. If Git currently ignores `.forge/`, replace that entry with:
+
+```gitignore
+/.forge/*
+!/.forge/forge.config.json
+!/.forge/decisions.md
+!/.forge/lessons/
+/.forge/lessons/*
+!/.forge/lessons/*.md
+!/.forge/brain/
+/.forge/brain/*
+!/.forge/brain/facts/
+/.forge/brain/facts/*
+!/.forge/brain/facts/*.md
+```
+
+Review and commit the Markdown you want to carry to a new checkout. SessionStart and `forge ledger stats` or `query` recover the committed content locally. Recovery reads Markdown files up to 4 MiB each. Recovered lessons begin as candidates. Session transcripts, Atlas data and raw ledger records stay outside the application commit.
+
+For the full record, including confirmations and retractions, run `forge ledger sync --remote origin --ref refs/heads/forge-memory` before releasing the runner and again in its replacement. Use a dedicated branch in a repository whose readers may see the ledger contents. A private persistent volume is an alternative: use the same existing directory with `forge ledger sync --dir <directory>` in both checkouts. A runner can only recover data that reached Git or persistent storage before teardown.
+
 ### `forge claim export` — claims as open JSON
 
 ```bash
@@ -2488,7 +2512,7 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_ORIENT`                                                 | `0` hides the SessionStart orientation block (what the plugin adds, workflow rules, crew agents, MCP tools); `false`/`off`/`no` also work                                                                                                |
 | `FORGE_VERBOSE`                                                | `1` restores the `Forge <cmd>` title line on command output (also `--verbose`)                                                                                                                                                          |
 
-| `FORGE_NO_HINT` | `1` silences the first-run onboarding tip (`forge init` / `forge doctor --fix`) printed once when `~/.claude/settings.json` isn't yet forge-managed |
+| `FORGE_NO_HINT` | `1` silences the onboarding tip shown by bare `forge` in an interactive terminal without a project config or Forge-managed user settings |
 | `NO_COLOR` | set (non-empty) disables ANSI color in CLI output — the [no-color.org](https://no-color.org) convention |
 | `FORCE_COLOR` | forces CLI color on even when piped, e.g. in CI (`0` forces off) — takes precedence over `NO_COLOR` |
 | `TERM` / `COLORTERM` | `TERM=dumb` disables color; `COLORTERM=truecolor`/`24bit` upgrades to the brand palette's 24-bit hues |
@@ -2496,7 +2520,7 @@ code reads but this table misses fails CI on the forge repo):
 | `HTTPS_PROXY` | Standard HTTPS proxy setting for public research on managed networks. |
 | `FORGE_JSCPD_BIN` | Absolute path to an externally installed jscpd executable or npm launcher for the optional `verify.duplicates` gate. |
 | `FORGE_WEB_SEARCH_PROVIDER` | Optional live web search backend. Set to `serper` (Google results via Serper with `SERPER_API_KEY`) or `brave` (with `BRAVE_SEARCH_API_KEY`). The configured service can charge for queries. |
-| `FORGE_EVIDENCE_WEB` | Set to `0` to disable automatic fixed-vocabulary public research. A separate explicit `--web` query still runs unless all catalog fetching is offline. |
+| `FORGE_EVIDENCE_WEB` | Set to `1` to enable automatic fixed-vocabulary public research. A separate explicit `--web` query still runs unless all catalog fetching is offline. |
 | `FORGE_NO_CATALOG_FETCH` | `1` never fetches a model catalog (Anthropic Models API, gateway `/v1/models`, OpenRouter prices): ids and prices come from the `.forge/cache/` copy, else the shipped snapshot — for air-gapped machines |
 | `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
 

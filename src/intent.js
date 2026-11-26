@@ -133,6 +133,45 @@ export function classifyIntent(text, { k = 3, minConf = 0.25 } = {}) {
   return { intent, confidence: Number(confidence.toFixed(3)), neighbors: sims };
 }
 
+// The speech act decides whether to run a pre-action check. Use the host's explicit
+// intent when available. A polite change request and a question can both end in "?".
+/** @param {string} text @param {string} [intent] */
+export function isDialogueTurn(text, intent) {
+  if (["question", "acknowledgement", "continuation"].includes(intent)) return true;
+  if (Object.hasOwn(PROTOCOL_CARDS, intent)) return false;
+  const clauses = String(text)
+    .trim()
+    .toLowerCase()
+    .split(/(?<=[.!?;])\s+|\n+/u)
+    .filter(Boolean);
+  return (
+    clauses.length > 0 &&
+    clauses.every((clause) => {
+      const words = clause.replace(/[.!?;]+$/u, "").trim();
+      if (
+        /^(?:ok(?:ay)?|yes|no|yep|thanks|thank you|got it|go ahead|continue|please continue)$/u.test(
+          words,
+        )
+      )
+        return true;
+      if (/^(?:can|could|would|will) you\s+(?:please\s+)?/u.test(words))
+        return /^(?:can|could|would|will) you\s+(?:please\s+)?(?:explain|tell|clarify|describe|summarize|remind|show me (?:why|how|where|which))\b/u.test(
+          words,
+        );
+      if (
+        /^(?:who|what|why|where|when|which|how|is|are|was|were|does|did|has|can|could|would|will|should|kya|kyun|kaise)\b/u.test(
+          words,
+        )
+      )
+        return true;
+      if (/^(?:do|have)\b/u.test(words))
+        return clause.endsWith("?") || /^(?:do|have) (?:we|you|they|i)\b/u.test(words);
+      const inferred = classifyIntent(words).intent;
+      return inferred === "question" || (inferred === "none" && clause.endsWith("?"));
+    })
+  );
+}
+
 /** The skills and crew agents each kind of work calls for — data. A host with many skills
  *  installed lists a skill by name only, so the card is where the model learns when to load
  *  one. Every name is a shipped skill or crew agent (the test holds it).

@@ -159,6 +159,10 @@ const TOOL_KEYS = [
 const forgeConfigPath = (root) => join(root, FORGE_CONFIG_REL);
 const legacyConfigPath = (root) => join(root, LEGACY_CONFIG_REL);
 
+export function hasProjectConfig(root) {
+  return existsSync(forgeConfigPath(root)) || existsSync(legacyConfigPath(root));
+}
+
 // One loud warning per process (not per read) — the cortex hooks re-read config on every
 // event, and repeating the same corruption warning on each hook fire would be spam.
 let warnedCorruptConfig = false;

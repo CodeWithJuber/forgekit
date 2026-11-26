@@ -65,13 +65,20 @@ export function lessonClaim(lesson, t = 0, lineage = {}) {
 /** A recall fact's claim. Name/text are trimmed so the shadow-write path and the
  *  file-parse import path mint the SAME id for the same fact. `rev` (≥1) re-asserts a value
  *  whose rev-0 claim was retracted — see shadowFact; rev 0 keeps the historical id.
+ *  @param {{agent?:string,author?:string}} [provenance]
  *  @returns {{ok:boolean, reason?:string, claim?:any}} */
-export function factClaim(name, text, t = 0, rev = 0) {
+export function factClaim(
+  name,
+  text,
+  t = 0,
+  rev = 0,
+  provenance = { agent: "recall", author: gitAuthor() },
+) {
   return mintClaim({
     kind: "fact",
     body: { name: String(name).trim(), text: String(text).trim(), ...(rev ? { rev } : {}) },
     scope: { level: "repo" },
-    provenance: { agent: "recall", author: gitAuthor() },
+    provenance,
     t,
   });
 }

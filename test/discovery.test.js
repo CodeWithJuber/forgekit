@@ -70,6 +70,7 @@ test("ranks observed task fit across all artifact kinds, retaining source and se
 
 test("automatic queries use repo stack and fixed vocabulary; fresh discovery bypasses cache", async (t) => {
   const root = workspace(t);
+  configureAdvisor(root, { recommendations: true });
   writeFileSync(
     join(root, "package.json"),
     JSON.stringify({
@@ -182,7 +183,7 @@ test("a library's own test setup and an unrelated product stack do not establish
 
 test("Jev selects only existing candidates and hook evidence includes the recommendation within budget", async (t) => {
   const root = workspace(t);
-  configureAdvisor(root, { decisions: true });
+  configureAdvisor(root, { decisions: true, recommendations: true });
   process.env.TYPESAFE_API_KEY = "test-key-not-real";
   const search = async () => ({ checkedAt: new Date().toISOString(), results: rows, warnings: [] });
   const jevCall = (payload) => {

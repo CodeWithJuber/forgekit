@@ -23,7 +23,7 @@ const factsDir = (store) => join(store, "facts");
 
 import { ledgerOnly, slug as slugify, userStateDir } from "./util.js";
 
-export function add(store, name, body) {
+export function add(store, name, body, { portable = false } = {}) {
   if (hasSecret(`${name}\n${body}`)) {
     return {
       ok: false,
@@ -34,7 +34,7 @@ export function add(store, name, body) {
   // Legacy-store retirement: under FORGE_LEDGER_ONLY skip the fact file — the caller
   // shadows the fact into the ledger (`forge recall add`/`remember`), and readFact/list
   // resolve it from there. reindex still rebuilds MEMORY.md (a projection, not a store).
-  if (!ledgerOnly()) {
+  if (portable || !ledgerOnly()) {
     const dir = factsDir(store);
     mkdirSync(dir, { recursive: true });
     // Slug migration: `slug()` became Unicode-aware, so a fact written by an older version
@@ -55,15 +55,21 @@ export function add(store, name, body) {
   return { ok: true, slug };
 }
 
+export function parseFact(text, slug) {
+  const raw = text.replace(/\r\n/g, "\n");
+  const match = raw.match(/^# (.*)\n\n([\s\S]*)$/);
+  return match
+    ? { name: match[1].trim(), text: match[2].trim() }
+    : { name: slug, text: raw.trim() };
+}
+
 /** Parse one stored fact back into {name, text} — THE parser for the fact format
  *  (`# name\n\ntext`), CRLF-tolerant so a Windows checkout can't fork the format.
  *  Everything that reads fact files (bridge import, consolidation) must use this. */
 export function readFact(store, slug) {
   const path = join(factsDir(store), `${slug}.md`);
   if (existsSync(path)) {
-    const raw = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
-    const m = raw.match(/^# (.*)\n\n([\s\S]*)$/);
-    return m ? { name: m[1].trim(), text: m[2].trim() } : { name: slug, text: raw.trim() };
+    return parseFact(readFileSync(path, "utf8"), slug);
   }
   // No file — resolve from the ledger this store shadows into. Covers a merged teammate
   // fact and, under FORGE_LEDGER_ONLY, the fact's only home. null when neither has it.

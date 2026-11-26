@@ -153,7 +153,7 @@ In a project, run `forge hooks on --hosts claude,codex` to install the project h
 
 Run `forge evidence "investigate retry timeouts"` to inspect the same evidence directly. For an unfamiliar capability, `forge integrations find "<task>"` looks for a suitable community tool. `forge team "<task>"` shows whether independent specialist work is warranted. The [setup and research guide](docs/AGENT-EVIDENCE.md) covers supported hosts, local PDFs and spreadsheets, public research, and Jira, Confluence and GitLab on cloud and self-hosted deployments.
 
-`forge discover find "<task>"` searches for task-fit skills, plugins, tools and hooks, with source links, fit reasons and setup guidance. Configure Jev decisions across repositories with `forge discover setup --global --decisions on`; add `--search serper` for Google or `--search brave` for Brave. [Keys, preferences and automatic recommendations](docs/DISCOVERY.md)
+`forge discover find "<task>"` searches for task-fit skills, plugins, tools and hooks, with source links, fit reasons and setup guidance. Automatic public research is opt-in. Configure Jev decisions across repositories with `forge discover setup --global --decisions on`; add `--search serper` for Google or `--search brave` for Brave. [Keys, preferences and automatic recommendations](docs/DISCOVERY.md)
 
 ## See it in action
 
@@ -447,8 +447,8 @@ Choose explicitly with
 `forge init --tools claude,cursor` or `--tools all`; the choice is recorded in
 `.forge/forge.config.json`, so later `forge sync` runs emit the same set. In `AGENTS.md`,
 Forgekit owns only the block between `<!-- forge:begin -->` and `<!-- forge:end -->`. A
-hand-written `AGENTS.md` keeps every line and gets the block appended; `forge sync` and the
-Stop-hook auto-sync rewrite that block and nothing else.
+hand-written `AGENTS.md` keeps every line when `forge sync` appends the block.
+The Stop hook refreshes the block only with readable project settings. Keep the selected profile in Git for disposable runners. [Project memory on disposable runners](docs/GUIDE.md#project-memory-on-disposable-runners)
 
 For an explicit model provider, inspect or update configuration with `forge config`. API keys
 remain environment variables; Forgekit's provider file stores the environment-variable name,

@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Stop hook preserves existing project rules when settings are missing. Fresh clones recover committed decisions and can retain reviewable facts and lessons with `portableMemory`.
+- Conversation and routine local file errors skip pre-action guidance and research. Automatic public research requires opt-in.
+- The repetition guard reports unavailable history. Doctor counts warnings, and ordinary CLI commands run without an onboarding tip.
 - The Pages workflow no longer fails after a successful deploy: it stopped archiving the site on a compute server whose upload address is gone (404), and only deletes the package it deployed.
 
 ## [1.19.4] - 2026-11-25

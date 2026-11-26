@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { readForgeConfig } from "./repo_config.js";
 import { hasSecret } from "./secrets.js";
 import { ledgerOnly } from "./util.js";
 
@@ -94,7 +95,10 @@ export function save(root, lesson) {
   // Legacy-store retirement: the ledger already holds this lesson (recordLessonEvent
   // shadows every save), so under FORGE_LEDGER_ONLY skip the .md file — the ledger is
   // the store. The secret check above still runs so nothing unsafe is minted either way.
-  if (ledgerOnly()) return { ok: true, ledgerOnly: true };
+  if (ledgerOnly() && readForgeConfig(root).portableMemory !== true)
+    return { ok: true, ledgerOnly: true };
+  if (!lesson.id || /[\\/\0]/u.test(lesson.id))
+    return { ok: false, reason: "invalid lesson filename" };
   const dir = lessonsDir(root);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${lesson.id}.md`), text);

@@ -66,6 +66,17 @@ function withDecisionLock(root, fn) {
   }
 }
 
+/** Make the same content-addressed claim for a new decision or a recovered journal entry. */
+export function decisionClaim(id, text, t, provenance) {
+  return mintClaim({
+    kind: "decision",
+    body: { id, text },
+    scope: { level: "repo" },
+    provenance,
+    t,
+  });
+}
+
 /**
  * Append one decision ("<what was decided> — <why>"). Refuses secrets (same rule as
  * every forge store). Also mints a `decision` ledger claim — the machine-readable twin —
@@ -103,13 +114,7 @@ export function appendDecision(root, text, { t = Date.now() } = {}) {
   if (!appended.ok) return appended;
   const { id } = appended;
   try {
-    const minted = mintClaim({
-      kind: "decision",
-      body: { id, text: body },
-      scope: { level: "repo" },
-      provenance: { author: gitAuthor() },
-      t: Math.floor(t / 86_400_000),
-    });
+    const minted = decisionClaim(id, body, Math.floor(t / 86_400_000), { author: gitAuthor() });
     if (minted.ok) putClaim(join(root, ".forge", "ledger"), minted.claim);
   } catch {}
   return { ok: true, id, text: body };

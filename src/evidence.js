@@ -130,10 +130,14 @@ export async function runEvidence(task, options = {}) {
   options = { ...options, root: sourceWorkspaceRoot(options.root ?? process.cwd()) };
   const local = buildEvidence(task, options);
   const explicit = options.web !== undefined;
-  const query = explicit ? options.web : publicQuery(task.slice(0, 10000), options.root);
+  const automatic = advisorSettings(options.root).recommendations;
+  const query = explicit
+    ? options.web
+    : automatic
+      ? publicQuery(task.slice(0, 10000), options.root)
+      : "";
   const cap = options.hook ? 2600 : 12000;
   const network = process.env.FORGE_NO_CATALOG_FETCH !== "1" || options.search;
-  const automatic = advisorSettings(options.root).recommendations;
   const wantWeb = (explicit || query) && (explicit || automatic) && network;
   const lookup = wantWeb
     ? lookupPublic(query, {

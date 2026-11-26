@@ -25,7 +25,12 @@ import {
   readSession,
 } from "./cortex_hook.js";
 import { nativeHarnessInstruction } from "./harness_native.js";
-import { autoAdoptionNotice, failureQuery, hookEvidence } from "./hook_evidence.js";
+import {
+  autoAdoptionNotice,
+  failureQuery,
+  hookEvidence,
+  toolEvidenceQuery,
+} from "./hook_evidence.js";
 import { mergedLessons } from "./ledger_read.js";
 import { enforceDecision, substrateCheck, substrateContext } from "./substrate.js";
 import { epochDay } from "./util.js";
@@ -97,10 +102,7 @@ async function main() {
       if (review) emit("PostToolUse", review);
     }
   } else if (mode === "failure") {
-    const text = await hookEvidence(
-      root,
-      [failureQuery(hook), hook.pending_query].filter(Boolean).join("\n"),
-    );
+    const text = await hookEvidence(root, toolEvidenceQuery(hook, hook.pending_query, true));
     if (text) emit("PostToolUseFailure", text);
   } else if (mode === "stop") {
     const events = readSession(root, sid);
@@ -145,6 +147,8 @@ async function main() {
       if (!r.allow) process.stdout.write(JSON.stringify({ decision: "block", reason: r.reason }));
     } catch {}
   } else if (mode === "session-start") {
+    const { restoreProjectMemory } = await import("./project_memory.js");
+    restoreProjectMemory(root);
     // Prune BEFORE anchoring: pruning after would delete the very baseline a >7-day
     // resume just preserved (the anchor then re-records fresh, which is the right
     // semantics for a week-old session anyway). Then record WHERE the repo stands so
@@ -206,6 +210,12 @@ async function main() {
     // typed prompt. They are reports, not requests: no advisory, no card, no lookups.
     const harness = /^\s*(<(agent-message|task-notification)\b|\[SYSTEM NOTIFICATION\b)/;
     if (typeof hook.prompt === "string" && hook.prompt.trim() && !harness.test(hook.prompt)) {
+      const { intentCard, isDialogueTurn } = await import("./intent.js");
+      if (isDialogueTurn(hook.prompt, hook.intent)) {
+        const instruction = nativeHarnessInstruction(hook);
+        if (instruction) emit("UserPromptSubmit", instruction);
+        return;
+      }
       const result = substrateCheck(root, hook.prompt, {
         allowBuild: false,
         sessionId: hook.session_id || null,
@@ -276,7 +286,6 @@ async function main() {
       // SAME emit — one hook process must write one JSON object.
       let card = "";
       try {
-        const { intentCard } = await import("./intent.js");
         card = intentCard(root, sid, hook.prompt);
       } catch {}
       // Anti-repetition advisory: one line when a prior solved task closely matches this

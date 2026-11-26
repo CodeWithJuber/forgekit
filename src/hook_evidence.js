@@ -71,7 +71,7 @@ export function takeQuery(host, root, sessionId) {
 }
 
 /** Get a diagnostic only for an explicit failure, never from incidental "error" in tool output. */
-export function failureQuery(hook) {
+export function failureQuery(hook, { research = false, failedEvent = false } = {}) {
   if (hook.is_interrupt || hook.failure_type === "permission_denied") return "";
   const response = hook.tool_response;
   const code =
@@ -86,7 +86,14 @@ export function failureQuery(hook) {
     );
   const error =
     hook.error || (typeof response?.error === "string" ? response.error : response?.error?.message);
-  if (!error && !response?.isError && !(typeof code === "number" && code !== 0) && !status)
+  if (
+    !failedEvent &&
+    hook.hook_event_name !== "PostToolUseFailure" &&
+    !error &&
+    !response?.isError &&
+    !(typeof code === "number" && code !== 0) &&
+    !status
+  )
     return "";
   const message =
     (typeof error === "string" ? error : error?.message) ||
@@ -97,11 +104,33 @@ export function failureQuery(hook) {
       ? response
       : response?.content?.find?.((item) => item?.type === "text")?.text);
   const detail = String(message || "").slice(-1200);
+  if (research) {
+    const osCode = hook.error?.code ?? response?.error?.code ?? response?.code;
+    // The shell's exit status is still a real failure for edit tracking. A routine
+    // local path error needs no community lookup, even with a queued prompt.
+    if (
+      ["ENOENT", "ENOTDIR", "EISDIR"].includes(osCode) ||
+      /\b(?:ENOENT|ENOTDIR|EISDIR|no such file or directory|not a directory|is a directory|cannot find the (?:file|path) specified)\b/i.test(
+        detail,
+      ) ||
+      !detail.trim() ||
+      /^(?:Tool failed|(?:Process exited with code|Exit code:)\s+\d+)$/i.test(detail.trim())
+    )
+      return "";
+  }
   const command =
     typeof hook.tool_input?.command === "string" ? hook.tool_input.command.slice(0, 300) : "";
   return redactSecrets(
     ["Troubleshoot", hook.tool_name, command, detail].filter(Boolean).join(" ").slice(0, MAX_QUERY),
   );
+}
+
+/** Consume deferred intent only on a successful tool or a failure with an actionable diagnostic. */
+export function toolEvidenceQuery(hook, pending = "", failedEvent = false) {
+  if (hook.is_interrupt || hook.failure_type === "permission_denied") return "";
+  if (!failedEvent && !failureQuery(hook)) return pending;
+  const query = failureQuery(hook, { research: true, failedEvent });
+  return query ? [query, pending].filter(Boolean).join("\n") : "";
 }
 
 /** Advisory retrieval must never swallow an existing guard verdict when it fails. */

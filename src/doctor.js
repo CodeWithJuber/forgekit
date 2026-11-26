@@ -33,6 +33,7 @@ import {
 import { verify as ledgerVerify, repoLedger } from "./ledger_store.js";
 import { PRICING_VERIFIED } from "./model_tiers.js";
 import { activeProvider, envModelOverride } from "./providers.js";
+import { readForgeConfig } from "./repo_config.js";
 import { agentsMdStatus, canonical, strandedAgentsBackup, sync } from "./sync.js";
 import { updateStatus } from "./update.js";
 
@@ -669,9 +670,18 @@ function checkMcp(out, targetRoot) {
 // Cortex: report the self-correcting memory's state for this repo (always informational).
 function checkCortex(out, targetRoot) {
   const s = cortexSummary(targetRoot, Math.floor(Date.now() / 86400000));
+  const portable =
+    s.total === 0 &&
+    existsSync(join(targetRoot, ".forge", "lessons")) &&
+    readForgeConfig(targetRoot).portableMemory === true;
   out.push(
     s.total === 0
-      ? ok("cortex", "no lessons yet — learns from corrections as you work")
+      ? ok(
+          "cortex",
+          portable
+            ? "no locally indexed lessons — run `forge ledger stats` to recover committed lessons"
+            : "no lessons yet — learns from corrections as you work",
+        )
       : ok(
           "cortex",
           `${s.active} active · ${s.candidate} candidate · ${s.quarantined} quarantined · ${s.retired} retired`,
@@ -685,7 +695,15 @@ function checkCortex(out, targetRoot) {
 function checkLedger(out, targetRoot) {
   const dir = repoLedger(targetRoot);
   if (!existsSync(join(dir, "claims"))) {
-    out.push(ok("ledger", "empty — claims appear as cortex/recall learn (`forge ledger`)"));
+    const journal = existsSync(join(targetRoot, ".forge", "decisions.md"));
+    out.push(
+      ok(
+        "ledger",
+        journal
+          ? "empty local ledger — run `forge ledger stats` to recover the committed decision journal"
+          : "empty — claims appear as cortex/recall learn (`forge ledger`)",
+      ),
+    );
     return;
   }
   const attrs = join(targetRoot, ".gitattributes");
@@ -975,6 +993,7 @@ export function doctor({
   return {
     results,
     failed: results.filter((r) => r.status === "fail").length,
+    warned: results.filter((r) => r.status === "warn").length,
     repairs,
     health: subsystemHealth(results),
   };

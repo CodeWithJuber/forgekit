@@ -211,6 +211,8 @@ test("ME-19: an all-clean sync reports status OK / partial:false", () => {
 
 test("RA-16: a hand-edited AGENTS.md body with an INTACT marker still counts as drift", () => {
   const root = fixture();
+  mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "forge.config.json"), "{}");
   sync({ targetRoot: root });
   const p = join(root, "AGENTS.md");
   const lines = readFileSync(p, "utf8").split("\n");
