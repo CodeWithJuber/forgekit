@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.19.5] - 2026-11-26
+
 ### Fixed
 
 - The Stop hook preserves existing project rules when settings are missing. Fresh clones recover committed decisions and can retain reviewable facts and lessons with `portableMemory`.
@@ -3916,7 +3918,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...HEAD
+[1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
 [1.19.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...v1.19.4
 [1.19.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.2...v1.19.3
 [1.19.2]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.1...v1.19.2
