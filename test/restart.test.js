@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { brainStore, remember } from "../src/brain.js";
 import { appendDecision, listDecisions } from "../src/decide.js";
 import { ledgerLessons } from "../src/ledger_read.js";
@@ -166,7 +166,7 @@ test("a clean clone restores committed decisions, facts and lessons without inve
 
 test("on a cold checkout questions and a missing file skip advice, research and Atlas builds", (t) => {
   const { repo } = fixture(t);
-  const sentinel = join(repo, "network.cjs");
+  const sentinel = join(repo, "network recorder.cjs");
   const requests = join(repo, "requests");
   writeFileSync(
     sentinel,
@@ -176,7 +176,7 @@ test("on a cold checkout questions and a missing file skip advice, research and 
     FORGE_EVIDENCE_WEB: "1",
     FORGE_NO_CATALOG_FETCH: "0",
     FORGE_ENFORCE: "1",
-    NODE_OPTIONS: `--require "${sentinel}"`,
+    NODE_OPTIONS: `--import=${pathToFileURL(sentinel).href}`,
   };
   hook("session-start", repo, {}, env);
   for (const prompt of ["Which language is this?", "Why are the Redis tests failing?", "continue"])
