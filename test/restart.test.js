@@ -106,6 +106,21 @@ test("a clean clone restores committed decisions, facts and lessons without inve
     ".forge/lessons",
   );
   git(repo, "commit", "-qm", "review project knowledge");
+  assert.ok(
+    save(repo, {
+      ...lesson,
+      status: "active",
+      evidenceCount: 10,
+      lastConfirmedDay: 20005,
+      provenance: { episodes: ["local-session-id"], signals: ["local-signal"] },
+    }).ok,
+  );
+  assert.equal(git(repo, "diff", "--name-only", "--", ".forge/lessons"), "");
+  assert.doesNotMatch(
+    readFileSync(join(repo, ".forge", "lessons", "lsn_migration.md"), "utf8"),
+    /^episodes:|^evidence:/m,
+  );
+
   const fresh = join(base, "fresh");
   git(base, "clone", "-q", repo, fresh);
   assert.equal(existsSync(repoLedger(fresh)), false);

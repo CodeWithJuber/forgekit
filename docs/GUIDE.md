@@ -1428,7 +1428,7 @@ Commit `.forge/forge.config.json` with the profile used to generate `AGENTS.md`.
 !/.forge/brain/facts/*.md
 ```
 
-Review and commit the Markdown you want to carry to a new checkout. SessionStart and `forge ledger stats` or `query` recover the committed content locally. Recovery reads Markdown files up to 4 MiB each. Recovered lessons begin as candidates. Session transcripts, Atlas data and raw ledger records stay outside the application commit.
+Review and commit the Markdown you want to carry to a new checkout. SessionStart and `forge ledger stats` or `query` recover the committed content locally. Recovery reads Markdown files up to 4 MiB each. Recovered lessons begin as candidates. Reconfirming a lesson keeps its reviewed Markdown byte-identical. Session transcripts, Atlas data and raw ledger records stay outside the application commit.
 
 For the full record, including confirmations and retractions, run `forge ledger sync --remote origin --ref refs/heads/forge-memory` before releasing the runner and again in its replacement. Use a dedicated branch in a repository whose readers may see the ledger contents. A private persistent volume is an alternative: use the same existing directory with `forge ledger sync --dir <directory>` in both checkouts. A runner can only recover data that reached Git or persistent storage before teardown.
 

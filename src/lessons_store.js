@@ -27,24 +27,28 @@ const listOf = (v) =>
     : [];
 
 /** Pure: lesson object → file text (flat front-matter + markdown body). */
-export function serialize(lesson) {
+export function serialize(lesson, { portable = false } = {}) {
   const t = lesson.trigger ?? {};
   const fm = [
     `id: ${lesson.id}`,
-    `status: ${lesson.status}`,
+    `status: ${portable && lesson.status === "active" ? "candidate" : lesson.status}`,
     `scope: ${lesson.scope}`,
     `trigger.files: ${csv(t.files)}`,
     `trigger.symbols: ${csv(t.symbols)}`,
     `trigger.keywords: ${csv(t.keywords)}`,
     `trigger.action: ${t.action ?? ""}`,
-    `evidence: ${lesson.evidenceCount}`,
-    `contradiction: ${lesson.contradictionCount}`,
-    `quarantineReconfirms: ${lesson.quarantineReconfirms}`,
-    `created: ${lesson.createdDay}`,
-    `lastConfirmed: ${lesson.lastConfirmedDay}`,
-    `halfLifeDays: ${lesson.halfLifeDays}`,
-    `episodes: ${csv(lesson.provenance?.episodes)}`,
-    `signals: ${csv(lesson.provenance?.signals)}`,
+    ...(portable
+      ? [`created: ${lesson.createdDay}`]
+      : [
+          `evidence: ${lesson.evidenceCount}`,
+          `contradiction: ${lesson.contradictionCount}`,
+          `quarantineReconfirms: ${lesson.quarantineReconfirms}`,
+          `created: ${lesson.createdDay}`,
+          `lastConfirmed: ${lesson.lastConfirmedDay}`,
+          `halfLifeDays: ${lesson.halfLifeDays}`,
+          `episodes: ${csv(lesson.provenance?.episodes)}`,
+          `signals: ${csv(lesson.provenance?.signals)}`,
+        ]),
   ].join("\n");
   return `---\n${fm}\n---\n\n${lesson.whatWentWrong}\n\n**Fix:** ${lesson.correctedBehavior}\n`;
 }
@@ -101,7 +105,12 @@ export function save(root, lesson) {
     return { ok: false, reason: "invalid lesson filename" };
   const dir = lessonsDir(root);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${lesson.id}.md`), text);
+  // The reviewed copy carries the correction. Confirmations and session identifiers stay
+  // in the ledger, so running the same lesson again produces no application diff.
+  writeFileSync(
+    join(dir, `${lesson.id}.md`),
+    ledgerOnly() ? serialize(lesson, { portable: true }) : text,
+  );
   return { ok: true };
 }
 
