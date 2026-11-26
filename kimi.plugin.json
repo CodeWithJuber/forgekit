@@ -1,6 +1,6 @@
 {
   "name": "forgekit",
-  "version": "1.19.4",
+  "version": "1.19.5",
   "description": "Research existing code and surface workspace evidence before coding. Run ForgeKit guards around tool calls.",
   "license": "MIT",
   "skills": "./global/tools",
