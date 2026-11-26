@@ -185,7 +185,14 @@ test("on a cold checkout questions and a missing file skip advice, research and 
   const requests = join(repo, "requests");
   writeFileSync(
     sentinel,
-    `globalThis.fetch = () => { require("node:fs").appendFileSync(${JSON.stringify(requests)}, "request\\n"); throw Error("offline"); };`,
+    `
+const { appendFileSync } = require("node:fs");
+const { join } = require("node:path");
+globalThis.fetch = () => {
+  appendFileSync(join(__dirname, "requests"), "request\\n");
+  throw new Error("offline");
+};
+`,
   );
   const env = {
     FORGE_EVIDENCE_WEB: "1",
