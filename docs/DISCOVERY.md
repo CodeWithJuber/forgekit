@@ -33,8 +33,9 @@ forge discover reset --global
 Precedence is explicit call options, environment, workspace preferences, global
 preferences, defaults. `FORGE_LLM=0` disables Jev; `FORGE_LLM=1` enables the existing
 model proposer layer. A saved `--decisions on` enables Jev alone. Defaults are
-automatic recommendations on, model decisions off and optional web search off.
-`FORGE_EVIDENCE_WEB=0` disables automatic research/recommendations.
+automatic public research off, model decisions off and optional web search off.
+Enable automatic public research with `--recommendations on` or `FORGE_EVIDENCE_WEB=1`.
+Questions, acknowledgements and routine missing-file errors skip hook research even when enabled.
 `FORGE_NO_CATALOG_FETCH=1` disables public fetching even for an explicit lookup.
 These public-search switches do not disable separately opted-in model decisions.
 

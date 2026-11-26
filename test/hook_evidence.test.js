@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { budgetHookOutput } from "../global/guards/run.mjs";
 import { BRAND } from "../src/brand.js";
-import { failureQuery, queueQuery, takeQuery } from "../src/hook_evidence.js";
+import { failureQuery, queueQuery, takeQuery, toolEvidenceQuery } from "../src/hook_evidence.js";
 import { HOSTS } from "../src/hosts.js";
 import { initSources, syncSources } from "../src/sources.js";
 import { userStateDir } from "../src/util.js";
@@ -201,6 +201,19 @@ test("packaged prompt and failure hooks retrieve actual indexed evidence without
     }),
   );
   assert.equal(posts.filter((out) => /lacustrine sentinel/.test(out)).length, 1);
+  fire("cursor", "beforeSubmitPrompt", {
+    conversation_id: "question",
+    prompt: "Why does the Nebulaparse importer fail?",
+  });
+  assert.equal(takeQuery("cursor", root, "question"), "");
+  queueQuery("cursor", root, "missing-file", body.prompt);
+  const missing = fire("cursor", "postToolUseFailure", {
+    conversation_id: "missing-file",
+    tool_name: "Shell",
+    error_message: "cat: local.txt: No such file or directory",
+  });
+  assert.doesNotMatch(missing.stdout, /lacustrine sentinel|Forge evidence/);
+  assert.equal(takeQuery("cursor", root, "missing-file"), "");
   const failures = [
     [
       "claude",
@@ -241,4 +254,32 @@ test("packaged prompt and failure hooks retrieve actual indexed evidence without
     tool_output: "OK",
   });
   assert.doesNotMatch(revoked.stdout, /lacustrine sentinel/);
+});
+
+test("missing local paths discard pending research without hiding failed edits", () => {
+  const missing = {
+    tool_name: "Bash",
+    tool_input: { command: "cat issue.txt" },
+    error: { code: "ENOENT", message: "missing path" },
+  };
+  assert.ok(failureQuery(missing));
+  assert.equal(toolEvidenceQuery(missing, "unrelated older prompt"), "");
+  assert.equal(
+    toolEvidenceQuery(
+      {
+        tool_name: "Bash",
+        exitCode: 1,
+        tool_response: { stderr: "cat: issue.txt: No such file or directory" },
+      },
+      "older prompt",
+    ),
+    "",
+  );
+  assert.equal(toolEvidenceQuery({ is_interrupt: true }, "older prompt"), "");
+  assert.equal(toolEvidenceQuery({}, "older prompt", true), "");
+  assert.match(
+    toolEvidenceQuery({ tool_response: { stderr: "Parser failed to compile" } }, "", true),
+    /failed to compile/,
+  );
+  assert.equal(toolEvidenceQuery({ exitCode: 0 }, "pending"), "pending");
 });

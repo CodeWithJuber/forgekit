@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { classifyIntent, INTENT_HELPERS, intentCard, PROTOCOL_CARDS } from "../src/intent.js";
+import {
+  classifyIntent,
+  INTENT_HELPERS,
+  intentCard,
+  isDialogueTurn,
+  PROTOCOL_CARDS,
+} from "../src/intent.js";
 
 const ENTRY = fileURLToPath(new URL("../src/cortex_hook_main.js", import.meta.url));
 
@@ -141,4 +147,30 @@ test("preflight hook emits the card as additionalContext and dedupes on repeat",
     !again || !/Bugfix protocol/.test(again.hookSpecificOutput?.additionalContext ?? ""),
     "repeat intent does not re-inject the card",
   );
+});
+
+test("questions and acknowledgements skip pre-action guidance while requests retain it", () => {
+  for (const prompt of [
+    "Which language is this?",
+    "What happened?",
+    "Why are the tests failing?",
+    "Can you explain the error?",
+    "Kya hua?",
+    "Thanks!",
+    "continue",
+    "where is the config loaded from",
+  ]) {
+    assert.equal(isDialogueTurn(prompt), true, prompt);
+  }
+  for (const prompt of [
+    "Fix the parser.",
+    "Can you fix the parser?",
+    "Why is CI red? Fix it.",
+    "Do the work.",
+    "Implement pagination",
+  ]) {
+    assert.equal(isDialogueTurn(prompt), false, prompt);
+  }
+  assert.equal(isDialogueTurn("ambiguous", "question"), true);
+  assert.equal(isDialogueTurn("why?", "bugfix"), false);
 });

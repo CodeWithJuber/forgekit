@@ -116,6 +116,8 @@ const atticPath = (dir, id) => join(dir, "attic", `${id}.json`);
 const logPath = (dir, log, id) => join(dir, log, `${id}.log`);
 /** A pruned claim is ARCHIVED, not missing: its file sits in attic/ and its logs never move. */
 const inAttic = (dir, id) => existsSync(atticPath(dir, id));
+/** Look up an exact content address without scanning a shard or changing its audit trail. */
+export const hasStoredClaim = (dir, id) => existsSync(claimPath(dir, id)) || inAttic(dir, id);
 
 /** Claim file bytes: pure content only. Identical for the same id on every replica. */
 const claimBytes = (claim) =>
@@ -453,7 +455,7 @@ function readStateCache(dir, sig) {
 }
 
 /** Keep a machine-local file out of git: add `name` to the ledger's .gitignore if absent. */
-function ensureLocalIgnored(dir, name, comment) {
+export function ensureLocalIgnored(dir, name, comment) {
   const path = join(dir, GITIGNORE_FILE);
   let current = "";
   try {

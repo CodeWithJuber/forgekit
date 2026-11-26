@@ -10,6 +10,7 @@ import { BRAND } from "./brand.js";
 import { shadowFact } from "./ledger_bridge.js";
 import { dormantFactSlugs, ledgerFacts, mergeFactSlugs } from "./ledger_read.js";
 import { listStored, add as recallAdd } from "./recall.js";
+import { readForgeConfig } from "./repo_config.js";
 import { epochDay } from "./util.js";
 
 export const brainStore = (targetRoot = process.cwd()) => join(targetRoot, ".forge", "brain");
@@ -25,7 +26,10 @@ const brainLedger = (store) => join(dirname(store), "ledger");
  *  must never break a remember that already stored the fact. Shadow BEFORE buildIndex so
  *  the index picks the ledger fact up under ledger-only. */
 export function remember(store, name, body) {
-  const res = recallAdd(store, name, body);
+  const root = dirname(dirname(store));
+  const res = recallAdd(store, name, body, {
+    portable: readForgeConfig(root).portableMemory === true,
+  });
   if (res.ok) {
     try {
       shadowFact(brainLedger(store), name, body);

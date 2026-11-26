@@ -25,6 +25,7 @@ import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
 import { orchestrationSection } from "./orchestration.js";
 import {
+  hasProjectConfig,
   KNOWN_TOOLS,
   LEGACY_PROFILES,
   parseTools,
@@ -112,7 +113,7 @@ function readLegacyRules(targetRoot) {
   try {
     text = readFileSync(path, "utf8");
   } catch {
-    return { sections: [], corrupt: false, path };
+    return { sections: [], corrupt: true, path };
   }
   try {
     const extra = JSON.parse(text);
@@ -480,7 +481,7 @@ export function canonical(targetRoot = process.cwd()) {
  * The Stop hook calls this, so lessons/facts learned in a session reach every
  * AGENTS.md-reading tool immediately — not whenever someone remembers `forge sync`.
  * It never adopts a repo (no block → no write), never touches text outside the markers,
- * and never runs the full per-tool emit. The one other file it refreshes is Continue's
+ * and requires a readable project config before repairing drift. It never runs the full per-tool emit. The one other file it refreshes is Continue's
  * rules copy of the same body, and only when that forge-owned file already exists.
  * A legacy fully generated AGENTS.md is converted in place only when the conversion is
  * provably lossless; one edited inside its generated text is left for `forge sync`.
@@ -506,6 +507,17 @@ export function autoSyncIfDrifted(targetRoot = process.cwd()) {
     case "damaged":
       return { synced: false, reason: "damaged Forge markers in AGENTS.md — fix them by hand" };
   }
+  // A managed block can arrive through Git while its ignored configuration does not.
+  // Only explicit sync may choose fallback rules in that checkout.
+  if (
+    !hasProjectConfig(targetRoot) ||
+    readForgeConfig(targetRoot).corrupt ||
+    readLegacyRules(targetRoot).corrupt
+  )
+    return {
+      synced: false,
+      reason: "project config missing or unreadable; keeping the existing Forge block",
+    };
   writeAgentsBlock(status, { allowBackup: false });
   const continueRules = join(targetRoot, ".continue", "rules", "00-forge.md");
   if (shared.isManaged(shared.readIfExists(continueRules)))

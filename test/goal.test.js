@@ -63,6 +63,7 @@ test("autoSyncIfDrifted: repairs a drifted managed AGENTS.md, never adopts an un
 
   // Drift the canonical inputs (a per-repo rules override) → auto-sync repairs.
   mkdirSync(join(root, ".forge"), { recursive: true });
+  writeFileSync(join(root, ".forge", "forge.config.json"), "{}");
   writeFileSync(
     join(root, ".forge", "rules.json"),
     JSON.stringify({ sections: [{ title: "Extra", rules: ["always frob the widget"] }] }),

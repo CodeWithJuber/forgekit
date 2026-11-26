@@ -22,6 +22,11 @@ HANDLERS.ledger = async (argv) => {
   const sub = args[1] || "stats";
   const json = argv.includes("--json");
   const nowDay = epochDay();
+  let restored;
+  if (!personal && ["stats", "query", "show", "blame", "import"].includes(sub)) {
+    const { restoreProjectMemory } = await import("../project_memory.js");
+    restored = restoreProjectMemory(root, { force: sub === "import" });
+  }
   if (sub === "stats") {
     const s = ls.stats(dir, nowDay);
     if (json) return console.log(JSON.stringify(s, null, 2));
@@ -456,8 +461,16 @@ HANDLERS.ledger = async (argv) => {
         nowDay,
       });
     }
-    if (json) return console.log(JSON.stringify(r, null, 2));
-    console.log(`  imported: ${r.lessons} lesson(s), ${r.facts} fact(s), ${r.outcomes} outcome(s)`);
+    const imported = {
+      ...r,
+      decisions: restored?.decisions ?? 0,
+      facts: r.facts + (restored?.facts ?? 0),
+      lessons: r.lessons + (restored?.lessons ?? 0),
+    };
+    if (json) return console.log(JSON.stringify(imported, null, 2));
+    console.log(
+      `  imported: ${imported.decisions} decision(s), ${imported.lessons} lesson(s), ${imported.facts} fact(s), ${r.outcomes} outcome(s)`,
+    );
     for (const x of r.refused) console.log(`    refused: ${x}`);
     return;
   }
