@@ -296,7 +296,6 @@ export async function discoverTools(task, options = {}) {
   if (typeof task !== "string" || !task.trim()) throw new Error("Supply a developer task");
   const root = options.root ?? process.cwd();
   const settings = advisorSettings(root);
-  const query = options.web ?? publicQuery(task.slice(0, 10000), root);
   const enabled = options.fresh || options.web !== undefined || settings.recommendations;
   const network = process.env.FORGE_NO_CATALOG_FETCH !== "1" || options.search;
   const empty = {
@@ -308,6 +307,7 @@ export async function discoverTools(task, options = {}) {
     queries: [],
   };
   if (!enabled) return { ...empty, status: "disabled" };
+  const query = options.web ?? publicQuery(task.slice(0, 10000), root);
   if (
     options.web !== undefined &&
     (typeof options.web !== "string" ||

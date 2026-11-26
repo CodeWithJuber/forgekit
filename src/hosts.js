@@ -40,7 +40,14 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { GUARD_POLICY } from "../global/guards/run.mjs";
 import { BRAND } from "./brand.js";
-import { failureQuery, hookEvidence, queueQuery, takeQuery } from "./hook_evidence.js";
+import {
+  failureQuery,
+  hookEvidence,
+  queueQuery,
+  takeQuery,
+  toolEvidenceQuery,
+} from "./hook_evidence.js";
+import { isDialogueTurn } from "./intent.js";
 import { readForgeConfig, recordedTools } from "./repo_config.js";
 import { readJsonSafe, userStateDir } from "./util.js";
 
@@ -426,6 +433,7 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
   }
   if (def.as === "UserPromptSubmit") {
     const prompt = pick(data, FIELDS.prompt);
+    if (typeof data.intent === "string") base.intent = data.intent;
     // Kimi sends multimodal prompt parts; only textual parts are valid search terms.
     base.prompt =
       hostId === "kimi" && Array.isArray(prompt)
@@ -466,7 +474,8 @@ export function normalize(hostId, nativeEvent, payload, env = process.env) {
     ...(typeof code === "number" ? { exitCode: code } : {}),
     ...(def.as === "PostToolUseFailure"
       ? {
-          error: String(data.error?.message ?? data.error ?? data.error_message ?? "Tool failed"),
+          error: data.error ?? data.error_message,
+          tool_response: response,
           is_interrupt: data.is_interrupt === true,
           failure_type: data.failure_type,
         }
@@ -804,6 +813,7 @@ export function eventKey(payloads) {
         p.tool_input?.command ?? "",
         p.tool_input?.file_path ?? "",
         p.prompt ?? "",
+        p.intent ?? "",
         p.source ?? "",
       ]),
     );
@@ -1028,13 +1038,15 @@ export async function runHook({
         verdict.context = join2(instruction, verdict.context, "\n\n");
     }
     if (defer && norm.event === "UserPromptSubmit")
-      queueQuery(as, first.cwd, sid, verdict.block ? "" : first.prompt);
+      queueQuery(
+        as,
+        first.cwd,
+        sid,
+        verdict.block || isDialogueTurn(first.prompt, first.intent) ? "" : first.prompt,
+      );
     if (norm.event === "PostToolUse") {
       // Other hosts deliver failures inside the ordinary result, e.g. a nonzero Codex Bash exit.
-      const guidance = await hookEvidence(
-        first.cwd,
-        [failureQuery(first), pending].filter(Boolean).join("\n"),
-      );
+      const guidance = await hookEvidence(first.cwd, toolEvidenceQuery(first, pending));
       verdict.context = join2(verdict.context, guidance, "\n\n");
     }
     if (norm.unchecked && norm.event === "PreToolUse")

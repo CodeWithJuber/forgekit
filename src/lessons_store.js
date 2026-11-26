@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { readForgeConfig } from "./repo_config.js";
 import { hasSecret } from "./secrets.js";
 import { ledgerOnly } from "./util.js";
 
@@ -26,24 +27,28 @@ const listOf = (v) =>
     : [];
 
 /** Pure: lesson object → file text (flat front-matter + markdown body). */
-export function serialize(lesson) {
+export function serialize(lesson, { portable = false } = {}) {
   const t = lesson.trigger ?? {};
   const fm = [
     `id: ${lesson.id}`,
-    `status: ${lesson.status}`,
+    `status: ${portable && lesson.status === "active" ? "candidate" : lesson.status}`,
     `scope: ${lesson.scope}`,
     `trigger.files: ${csv(t.files)}`,
     `trigger.symbols: ${csv(t.symbols)}`,
     `trigger.keywords: ${csv(t.keywords)}`,
     `trigger.action: ${t.action ?? ""}`,
-    `evidence: ${lesson.evidenceCount}`,
-    `contradiction: ${lesson.contradictionCount}`,
-    `quarantineReconfirms: ${lesson.quarantineReconfirms}`,
-    `created: ${lesson.createdDay}`,
-    `lastConfirmed: ${lesson.lastConfirmedDay}`,
-    `halfLifeDays: ${lesson.halfLifeDays}`,
-    `episodes: ${csv(lesson.provenance?.episodes)}`,
-    `signals: ${csv(lesson.provenance?.signals)}`,
+    ...(portable
+      ? [`created: ${lesson.createdDay}`]
+      : [
+          `evidence: ${lesson.evidenceCount}`,
+          `contradiction: ${lesson.contradictionCount}`,
+          `quarantineReconfirms: ${lesson.quarantineReconfirms}`,
+          `created: ${lesson.createdDay}`,
+          `lastConfirmed: ${lesson.lastConfirmedDay}`,
+          `halfLifeDays: ${lesson.halfLifeDays}`,
+          `episodes: ${csv(lesson.provenance?.episodes)}`,
+          `signals: ${csv(lesson.provenance?.signals)}`,
+        ]),
   ].join("\n");
   return `---\n${fm}\n---\n\n${lesson.whatWentWrong}\n\n**Fix:** ${lesson.correctedBehavior}\n`;
 }
@@ -94,10 +99,18 @@ export function save(root, lesson) {
   // Legacy-store retirement: the ledger already holds this lesson (recordLessonEvent
   // shadows every save), so under FORGE_LEDGER_ONLY skip the .md file — the ledger is
   // the store. The secret check above still runs so nothing unsafe is minted either way.
-  if (ledgerOnly()) return { ok: true, ledgerOnly: true };
+  if (ledgerOnly() && readForgeConfig(root).portableMemory !== true)
+    return { ok: true, ledgerOnly: true };
+  if (!lesson.id || /[\\/\0]/u.test(lesson.id))
+    return { ok: false, reason: "invalid lesson filename" };
   const dir = lessonsDir(root);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, `${lesson.id}.md`), text);
+  // The reviewed copy carries the correction. Confirmations and session identifiers stay
+  // in the ledger, so running the same lesson again produces no application diff.
+  writeFileSync(
+    join(dir, `${lesson.id}.md`),
+    ledgerOnly() ? serialize(lesson, { portable: true }) : text,
+  );
   return { ok: true };
 }
 

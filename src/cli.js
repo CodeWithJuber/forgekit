@@ -22,22 +22,14 @@ import verificationHandlers from "./cli/verification.js";
 import { COMMANDS, commandSummary, GROUPS } from "./commands.js";
 import { printCommandHelp } from "./help.js";
 import { suggest } from "./math.js";
+import { hasProjectConfig } from "./repo_config.js";
 
 const printVersion = () => console.log(`${BRAND.brand} (${BRAND.pkg}) v${BRAND.version}`);
 
-// Commands that are themselves the onboarding path — nudging on them would be circular.
-// `hooks` too: `hooks run` replies to an agent on stdout/stderr, and a tip line there would be
-// read as part of a guard's verdict.
-const HINT_SKIP = new Set(["init", "help", "version", "hooks"]);
-
-/** First-run nudge: if the user has never run `forge init` (no forge-managed marker in
- *  ~/.claude/settings.json) and is invoking a real command, print ONE tip line to stderr.
- *  Stateless — zero writes — and self-silences the moment `init` (or install.sh) writes the
- *  marker. FORGE_NO_HINT=1 mutes it. Never throws; a missing/garbage settings file just
- *  means "not yet managed". */
-function maybeFirstRunHint(cmd) {
-  if (process.env.FORGE_NO_HINT === "1") return;
-  if (!(cmd in COMMANDS) || HINT_SKIP.has(cmd)) return;
+// Interactive onboarding belongs to the bare CLI, outside normal commands and hook protocols.
+function maybeFirstRunHint() {
+  if (!process.stderr.isTTY || process.env.FORGE_NO_HINT === "1" || hasProjectConfig(process.cwd()))
+    return;
   try {
     const settings = JSON.parse(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"));
     if (settings?._forge === "forge-managed") return;
@@ -84,6 +76,7 @@ const HANDLERS = {
 async function run(argv) {
   const [cmd] = argv;
   // Top-level help/version — flag AND word forms (`forge help`, `forge version`).
+  if (!cmd) maybeFirstRunHint();
   if (!cmd || cmd === "-h" || cmd === "--help" || (cmd === "help" && !argv[1])) return printHelp();
   if (cmd === "-v" || cmd === "--version" || cmd === "version") return printVersion();
   // Per-command help by word form: `forge help <cmd>`.
@@ -102,7 +95,6 @@ async function run(argv) {
     process.exitCode = printCommandHelp(cmd);
     return;
   }
-  if (!(cmd === "integrations" && ["run", "serve-local"].includes(argv[1]))) maybeFirstRunHint(cmd);
   if (cmd === "cortex-mcp") {
     const { serve } = await import("./cortex_mcp.js"); // stdio MCP server for other tools
     serve();
@@ -509,13 +501,13 @@ HANDLERS.doctor = async (argv) => {
   const { doctor } = await import("./doctor.js");
   const fix = argv.includes("--fix");
   const adversarial = argv.includes("--adversarial");
-  const { results, failed, repairs, health } = doctor({
+  const { results, failed, warned, repairs, health } = doctor({
     targetRoot: process.cwd(),
     fix,
     adversarial,
   });
   if (argv.includes("--json")) {
-    console.log(JSON.stringify({ results, failed, repairs, health }, null, 2));
+    console.log(JSON.stringify({ results, failed, warned, repairs, health }, null, 2));
     if (failed) process.exitCode = 1;
     return;
   }
@@ -551,8 +543,12 @@ HANDLERS.doctor = async (argv) => {
       .join("  ");
     console.log(`\n  health: ${healthLine}`);
   }
+  const counts = [
+    failed && `${failed} problem${failed === 1 ? "" : "s"}`,
+    warned && `${warned} warning${warned === 1 ? "" : "s"}`,
+  ].filter(Boolean);
   console.log(
-    `\n${failed === 0 ? paint("all clear", "ok") : paint(`${failed} problem(s)`, "err")}`,
+    `\n${counts.length ? paint(counts.join(", "), failed ? "err" : "warn") : paint("all clear", "ok")}`,
   );
   if (failed) process.exitCode = 1;
   return;

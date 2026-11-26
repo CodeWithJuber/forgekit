@@ -22,6 +22,9 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 **Fixed**
 
+- The Stop hook preserves existing project rules when settings are missing.
+- Conversation and routine local file errors skip pre-action guidance and research.
+- The repetition guard reports unavailable history.
 - The Pages workflow no longer fails after a successful deploy: it stopped archiving the site on a compute server whose upload address is gone (404), and only deletes the package it deployed.
 
 [Full notes for Unreleased →](https://github.com/CodeWithJuber/forgekit/blob/HEAD/CHANGELOG.md#unreleased)

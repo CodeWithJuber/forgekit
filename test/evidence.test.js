@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { configureAdvisor } from "../src/discovery_config.js";
 import { runEvidence } from "../src/evidence.js";
 import { evidenceTool } from "../src/evidence_tools.js";
 import { initSources, syncSources } from "../src/sources.js";
@@ -23,6 +24,7 @@ function workspace(t) {
 
 test("an ordinary task retrieves private rows and discloses only known public concepts, once", async (t) => {
   const root = workspace(t);
+  configureAdvisor(root, { recommendations: true });
   writeFileSync(join(root, "cases.csv"), "cause,remedy\ndeadlock,LOCAL_CANARY\n");
   const cfg = initSources(root);
   writeFileSync(
@@ -64,6 +66,7 @@ test("an unrecognized task or disabled automatic research makes zero public requ
   const search = async () => assert.fail("unexpected public lookup");
   const result = await runEvidence("put the label in bold", { root, hook: true, search });
   assert.equal(result.web, null);
+  assert.equal((await runEvidence("debug Redis cache", { root, hook: true, search })).web, null);
   const prev = process.env.FORGE_EVIDENCE_WEB;
   process.env.FORGE_EVIDENCE_WEB = "0";
   try {
