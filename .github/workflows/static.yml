@@ -78,21 +78,18 @@ jobs:
         with:
           artifact_name: ${{ needs.build.outputs.artifact_name }}
 
-  archive:
-    name: Archive the deployed site on compute
+  # The deployed site is rebuilt from its commit, so no copy is kept: once Pages has it, the
+  # package this run uploaded is deleted. It used to be archived on a compute server first,
+  # whose receiver is gone (every upload answered 404 and failed the run).
+  remove-package:
+    name: Remove the Pages package after the deploy
     needs: [build, deploy]
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       actions: write
-      id-token: write
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-          sparse-checkout: scripts/ci
-      - name: Verify the compute copy before removing the Pages handoff
+      - name: Delete this run's Pages package
         env:
           ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
           ARTIFACT_NAME: ${{ needs.build.outputs.artifact_name }}
@@ -101,14 +98,8 @@ jobs:
           set -euo pipefail
           [[ "$ARTIFACT_ID" =~ ^[0-9]+$ ]]
           resource="repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID"
-          metadata=$(gh api "$resource")
-          digest=$(jq -er --arg id "$ARTIFACT_ID" --arg name "$ARTIFACT_NAME" --arg run "$GITHUB_RUN_ID" '
-            select((.id | tostring) == $id and .name == $name and
-                   (.workflow_run.id | tostring) == $run and .expired == false)
-            | .digest | select(test("^sha256:[0-9a-f]{64}$"))
-          ' <<< "$metadata")
-          package="$RUNNER_TEMP/github-pages.zip"
-          gh api "$resource/zip" > "$package"
-          printf '%s  %s\n' "${digest#sha256:}" "$package" | sha256sum --check --status
-          bash scripts/ci/put-artifact.sh pages site "$package"
+          # Only the package this run built and deployed, by id, name and run.
+          gh api "$resource" | jq -e --arg id "$ARTIFACT_ID" --arg name "$ARTIFACT_NAME" --arg run "$GITHUB_RUN_ID" '
+            (.id | tostring) == $id and .name == $name and (.workflow_run.id | tostring) == $run
+          ' > /dev/null
           gh api --method DELETE "$resource"
