@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Pages workflow no longer fails after a successful deploy: it stopped archiving the site on a compute server whose upload address is gone (404), and only deletes the package it deployed.
+
 ## [1.19.4] - 2026-11-25
 
 ### Fixed
