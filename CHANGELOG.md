@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-11-27
+
 ### Added
 
 - Ten commands leave the Labs group: `taste`, `uicheck`, `imagine`, `lean`, `anchor`, `diagnose`, `deja`, `reuse`, `rank` and `collide`. Each met the production bar in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md): its help lists every flag it reads and its exit statuses, its flags are checked strictly, and its `--json` output has a versioned contract ([`src/contracts.js`](src/contracts.js)) that CI checks in a fixture repository, together with the rule that the exit status is the same with and without `--json`. `forge --help` and the README table now show them in Substrate, Memory, Quality and Config.
@@ -3953,7 +3955,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
 [1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
 [1.19.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...v1.19.4
