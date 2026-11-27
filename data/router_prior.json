@@ -167,7 +167,15 @@
       "observed"
     ],
     "pricedModels": 3,
-    "n": 5498
+    "n": 5498,
+    "smear": 1.2647741141869098,
+    "failLogRatio": 0.43840579082881137,
+    "failLogRatioEvidence": {
+      "passed": 3923,
+      "failed": 1575,
+      "pairedWeight": 1106.3882570281125,
+      "standardError": 0.019893906571917398
+    }
   },
   "selection": {
     "chosen": {

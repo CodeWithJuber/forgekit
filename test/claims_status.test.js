@@ -13,6 +13,7 @@ import {
   checkCopies,
   compareVersions,
   END,
+  freshness,
   README_PATH,
   REGISTRY_PATH,
   releaseProblems,
@@ -328,4 +329,82 @@ test("stampRelease rewrites only unreleased assessments, keeping the file's layo
     stampRelease(text, "1.3.0"),
     '{\n  "a": { "assessed_release": "1.3.0" },\n  "b": { "assessed_release": "1.2.3" }\n}\n',
   );
+});
+
+test("freshness: evidence is valid while byte-identical, stale once changed, unresolved once deleted", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-claims-fresh-"));
+  try {
+    const git = (...args) =>
+      execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe" }).trim();
+    const write = (rel, text) => {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      writeFileSync(join(root, rel), text);
+    };
+    git("init", "-q");
+    git("config", "user.email", "t@example.test");
+    git("config", "user.name", "t");
+    git("config", "commit.gpgsign", "false");
+    write("src/a.js", "export const a = 1;\n");
+    write("src/b.js", "export const b = 1;\n");
+    write("src/c.js", "export const c = 1;\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "assessed");
+    const assessed = git("rev-parse", "HEAD");
+    const registry = {
+      claims: [
+        claim({
+          id: "kept",
+          source_commit: assessed,
+          evidence: ["src/a.js", "https://example.test/x"],
+        }),
+        claim({ id: "edited", source_commit: assessed, evidence: ["src/a.js", "src/b.js#L1"] }),
+        claim({ id: "deleted", source_commit: assessed, evidence: ["src/c.js"] }),
+        claim({ id: "newer", source_commit: assessed, evidence: ["src/d.js"] }),
+        claim({ id: "elsewhere", source_commit: SHA, evidence: ["src/a.js"] }),
+      ],
+    };
+    const states = (r) => Object.fromEntries(r.results.map((x) => [x.id, x.state]));
+    assert.deepEqual(states(freshness(root, registry)), {
+      kept: "valid",
+      edited: "valid",
+      deleted: "valid",
+      newer: "unresolved",
+    });
+
+    write("src/b.js", "export const b = 2;\n");
+    rmSync(join(root, "src/c.js"));
+    write("src/d.js", "export const d = 1;\n");
+    const now = freshness(root, registry);
+    assert.deepEqual(states(now), {
+      kept: "valid",
+      edited: "stale",
+      deleted: "unresolved",
+      newer: "stale",
+    });
+    assert.deepEqual(now.results.find((r) => r.id === "edited").because, ["src/b.js"]);
+    assert.deepEqual(now.unchecked, ["elsewhere"], "a commit absent from the clone is not guessed");
+
+    // Reverting the content makes the claim valid again: the check is on content, not history.
+    write("src/b.js", "export const b = 1;\n");
+    assert.equal(states(freshness(root, registry)).edited, "valid");
+
+    // --since asks what a branch touched, whatever each claim's own commit is.
+    git("add", "-A");
+    git("commit", "-q", "-m", "later");
+    const later = git("rev-parse", "HEAD");
+    write("src/a.js", "export const a = 3;\n");
+    const touched = freshness(root, registry, { since: later });
+    assert.equal(touched.base, later);
+    assert.deepEqual(touched.unchecked, []);
+    assert.deepEqual(states(touched), {
+      kept: "stale",
+      edited: "stale",
+      deleted: "unresolved",
+      newer: "valid",
+      elsewhere: "stale",
+    });
+    assert.throws(() => freshness(root, registry, { since: "no-such-ref" }), /--since/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

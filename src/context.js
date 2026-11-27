@@ -14,6 +14,7 @@ import { basename, dirname, join } from "node:path";
 import { has as atlasHas, query as atlasQuery, impact, indexedText } from "./atlas.js";
 import { claimText, jaccard, sketch, val } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
+import { dropRivals } from "./mathcore/rivals.js";
 import { referencedEntities } from "./preflight.js";
 
 /** chars → tokens ESTIMATE (chars/3.6, consistent with the reuse estimator). It is not a
@@ -331,10 +332,28 @@ export function assemble(
     if (it) items.push(it);
   }
   // Optional extras: trusted scope-matching facts (nice-to-have, never required).
-  for (const c of allClaims) {
-    if (c.kind !== "fact" || c.tombstone) continue;
+  //
+  // Two live facts with one name and different text are rival statements. `forge remember`
+  // retires the old value when one author rewrites a fact, but a teammate's value that
+  // arrived through a ledger merge stays live beside it. Packing both is the measured worst
+  // case for a model (a rival costs far more than neutral filler, arXiv:2611.04169), so the
+  // later one is packed alone; two different values minted on the same day cannot be ordered
+  // and are both withheld and reported. Unnamed facts have no key and never compete.
+  const trusted = allClaims.filter(
+    (c) => c.kind === "fact" && !c.tombstone && val(c, nowDay) >= 0.5,
+  );
+  const rivals = dropRivals(
+    trusted.map((c) => ({
+      id: c.id,
+      key: c.body?.name ? `name:${c.body.name}` : `id:${c.id}`,
+      value: String(c.body?.text ?? ""),
+      at: Number.isFinite(c.provenance?.t) ? c.provenance.t : 0,
+    })),
+  );
+  const packable = new Set(rivals.keep.map((s) => s.id));
+  for (const c of trusted) {
+    if (!packable.has(c.id)) continue;
     const v = val(c, nowDay);
-    if (v < 0.5) continue;
     const text = `fact: ${claimText(c)}`;
     items.push({
       id: `fact:${c.id.slice(0, 8)}`,
@@ -463,6 +482,15 @@ export function assemble(
     missing: missing.map((r) => r.key),
     questions,
     truncated,
+    rivals: {
+      superseded: rivals.superseded
+        .filter((x) => !x.by.startsWith("conflict:"))
+        .map((x) => ({ id: x.id.slice(0, 8), by: x.by.slice(0, 8) })),
+      conflicts: rivals.conflicts.map((x) => ({
+        name: x.key.replace(/^name:/, ""),
+        ids: x.ids.map((id) => id.slice(0, 8)),
+      })),
+    },
     selection: chosen.map((c) => ({
       id: c.item.id,
       source: c.item.source,
@@ -500,6 +528,14 @@ export function renderContext(r) {
       lines.push(
         `    ~ ${t.id}: ${t.omitted.length} of ${t.total} omitted (${t.omitted.slice(0, 5).join(", ")}${t.omitted.length > 5 ? ", …" : ""})`,
       );
+  for (const c of r.rivals?.conflicts ?? [])
+    lines.push(
+      `    ! fact "${c.name}" has ${c.ids.length} different current values (${c.ids.join(", ")}) — none was packed; settle it with \`forge remember\``,
+    );
+  if (r.rivals?.superseded?.length)
+    lines.push(
+      `    ~ ${r.rivals.superseded.length} older fact value(s) left out in favour of a newer one with the same name`,
+    );
   if (r.missing.length) {
     lines.push("", "  missing (computed, not a feeling):");
     for (const m of r.missing) lines.push(`    - ${m}`);

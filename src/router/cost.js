@@ -1,6 +1,20 @@
 // Expected cost of one attempt by a model on a task.
 //
-//   log cost = α_m + β·x + ε,   ε ~ N(0, s²)   ⇒   E[cost] = exp(α_m + β·x + s²/2)
+//   log cost = α_m + β·x + ε        E[cost] = exp(α_m + β·x) · S
+//
+// S is the retransformation factor E[exp(ε)]. If ε were normal it would be exp(s²/2), and that
+// is the fallback. Recorded attempt costs have a heavier right tail than a log-normal, so
+// exp(s²/2) under-predicts the mean: on six held-out splits of the SWE-bench Verified runs the
+// FIRST attempt alone was under-predicted in five. With enough data S is therefore Duan's
+// smearing estimate, the mean of exp(residual) over all fitted attempts (residuals rescaled by
+// sqrt(n/dof) so they carry the same variance as s²). A fit too sparse for slopes keeps
+// exp(s²/2).
+//
+// One factor for every model, on purpose. A factor per model (`smearByModel`, reported for
+// inspection) forecasts the cost level better, but it also reorders models, and on the same six
+// splits the cascades chosen with it cost 1.8% more on held-out tasks (5.7% more on one split,
+// interval excluding zero) for 4 more solved tasks in 2,100. A shared factor changes the level
+// and leaves every comparison between models exactly as the regression made it.
 //
 // α_m (per model) and the shared slope β are fitted by least squares on observed attempt costs.
 // A model with prices but no observed attempts gets α_m from its price: across the models that
@@ -100,6 +114,27 @@ export function fitCost(
   // Standard error of each fitted α (a model with one observation is barely known).
   const alphaSE = counts.map((n, m) => (alpha[m] === null || !n ? null : Math.sqrt(s2 / n)));
 
+  // Smearing factor (see the header). Only an OLS fit has residuals worth exponentiating: with
+  // per-model means and a handful of attempts the in-sample residuals are near zero by
+  // construction and would understate the mean.
+  /** @type {number|null} */
+  let smear = null;
+  /** @type {(number|null)[]} */
+  let smearByModel = new Array(nModels).fill(null);
+  if (method === "ols") {
+    const inflate = Math.sqrt(used.length / dofOls);
+    const sums = new Array(nModels).fill(0);
+    let total = 0;
+    for (let i = 0; i < used.length; i++) {
+      const pred = X[i].reduce((t, v, c) => t + v * coef[c], 0);
+      const e = Math.exp((y[i] - pred) * inflate);
+      sums[used[i].model] += e;
+      total += e;
+    }
+    smear = total / used.length;
+    smearByModel = counts.map((n, m) => (n ? sums[m] / n : null));
+  }
+
   // Cold start from prices.
   const priced = models.filter((m) => prices[m]?.priceIn > 0 && prices[m]?.priceOut > 0);
   let rho = null;
@@ -147,11 +182,68 @@ export function fitCost(
     counts,
     alphaSE,
     excluded,
+    smear,
+    smearByModel,
   };
+}
+
+/**
+ * The retransformation factor: the fit's smearing estimate, else the log-normal exp(s²/2) (a
+ * fit too sparse to have one, and every prior written before smearing existed).
+ */
+export function meanFactor(costModel) {
+  return Number.isFinite(costModel.smear) ? costModel.smear : Math.exp(costModel.s2 / 2);
 }
 
 /** Expected attempt cost per model for a task (null where the model's cost is unknown). */
 export function expectedCosts(costModel, x) {
   const bx = costModel.beta.reduce((s, b, d) => s + b * (x[d] ?? 0), 0);
-  return costModel.alpha.map((a) => (a === null ? null : Math.exp(a + bx + costModel.s2 / 2)));
+  const factor = meanFactor(costModel);
+  return costModel.alpha.map((a) => (a === null ? null : Math.exp(a + bx) * factor));
+}
+
+/**
+ * How much more a failed attempt costs than a successful one, as a log ratio δ.
+ *
+ * The cascade cost formula used to assume an attempt costs the same whatever its outcome. In
+ * the recorded runs a failed attempt cost 1.2 to 2.0 times a successful one for every model,
+ * which is why expected cascade cost was under-predicted. δ is estimated WITHIN each model, so
+ * a cheap model that fails often cannot masquerade as "failures are cheap":
+ *
+ *   d_m = mean(residual | failed) − mean(residual | passed),  residual = log cost − β·x
+ *   δ̂   = Σ_m w_m d_m / Σ_m w_m,   w_m = n_pass·n_fail / (n_pass + n_fail)
+ *
+ * The model intercept cancels in d_m. `weight` (Σ w_m) is the number of paired observations the
+ * estimate is worth, and Var(δ̂) = s² / weight. A model with only passes or only failures
+ * contributes nothing. The caller shrinks δ̂ toward its prior; with no usable model δ̂ is null.
+ * @param {{model:number, x:number[], cost:number, passed:boolean}[]} obs
+ * @param {{beta:number[], s2:number}} costModel
+ * @returns {{delta:number|null, weight:number, se:number|null, passed:number, failed:number}}
+ */
+export function failLogRatio(obs, costModel) {
+  /** @type {Map<number, {pass:number[], fail:number[]}>} */
+  const byModel = new Map();
+  for (const o of obs) {
+    if (!(o?.cost > 0) || !Number.isFinite(o.cost) || typeof o.passed !== "boolean") continue;
+    if (!Number.isInteger(o.model) || !Array.isArray(o.x)) continue;
+    const resid = Math.log(o.cost) - costModel.beta.reduce((t, b, d) => t + b * (o.x[d] ?? 0), 0);
+    const g = byModel.get(o.model) ?? { pass: [], fail: [] };
+    (o.passed ? g.pass : g.fail).push(resid);
+    byModel.set(o.model, g);
+  }
+  const mean = (v) => v.reduce((t, x) => t + x, 0) / v.length;
+  let num = 0;
+  let weight = 0;
+  let passed = 0;
+  let failed = 0;
+  for (const g of byModel.values()) {
+    if (!g.pass.length || !g.fail.length) continue;
+    const w = (g.pass.length * g.fail.length) / (g.pass.length + g.fail.length);
+    num += w * (mean(g.fail) - mean(g.pass));
+    weight += w;
+    passed += g.pass.length;
+    failed += g.fail.length;
+  }
+  if (weight === 0) return { delta: null, weight: 0, se: null, passed: 0, failed: 0 };
+  return { delta: num / weight, weight, se: Math.sqrt(costModel.s2 / weight), passed, failed };
 }

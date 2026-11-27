@@ -8,17 +8,21 @@
 // the TAP summary, and always discards the checkout. Selection stays useful on its own as
 // "run these, in this order"; dryRun turns the prediction into measured evidence.
 //
-// What it is NOT (review A05): a security sandbox. A git worktree isolates the CHECKOUT —
-// the files the tests see — and nothing else: the tests run with this user's network,
-// credentials, home directory and process permissions. And it runs the COMMITTED baseline
-// (HEAD), not an uncommitted patch. Untrusted test code needs a restricted execution
-// backend, which this is not.
+// What the worktree is NOT (review A05): a security sandbox. A git worktree isolates the
+// CHECKOUT — the files the tests see — and nothing else. Process confinement is a separate
+// layer, delegated to an installed sandbox runtime (src/sandbox.js): when `srt` is on the
+// PATH the suite runs inside it with the network denied, writes limited to the throwaway
+// checkout and credential stores unreadable. Without it the tests run with this user's
+// network, credentials, home directory and permissions, and every verdict says which of the
+// two happened in its `isolation` field. Either way the run is of the COMMITTED baseline
+// (HEAD), not an uncommitted patch.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build as buildAtlas, impact, load as loadAtlas } from "./atlas.js";
 import { referencedEntities } from "./preflight.js";
+import { wrapCommand } from "./sandbox.js";
 import { isTestFile, loadRankData, predictFailingTests } from "./substrate.js";
 import { hasBin, toPosix } from "./util.js";
 
@@ -97,7 +101,8 @@ const locFile = (line) => {
 /**
  * @typedef {{ok: boolean, reason?: string, passed?: number, failed?: number,
  *   perFile?: Record<string, "pass"|"fail">, durationMs?: number, runner?: string,
- *   output?: string, worktree?: string, unsupported?: boolean}} DryRunVerdict
+ *   output?: string, worktree?: string, unsupported?: boolean,
+ *   isolation?: Record<string, any>}} DryRunVerdict
  */
 
 /**
@@ -148,7 +153,9 @@ export function unsupportedRunner(dir, tests) {
 /**
  * Isolated-checkout dry-run of a selected suite — the simulation half of ĉ = g(a, C)
  * (spec §2.2): run the tests in an EPHEMERAL, detached `git worktree` of HEAD and discard
- * it. Isolation is of the CHECKOUT only — not network, credentials, home or permissions.
+ * it. The worktree isolates the CHECKOUT only. `sandbox` adds process confinement through an
+ * installed runtime: "auto" (default) uses it when present, "required" refuses to run without
+ * it, "off" never uses it. The verdict's `isolation` records what was enforced.
  * The worktree is HEAD, not the working tree — worktrees share the object store,
  * never uncommitted files — so callers MUST surface that a dirty tree dry-runs the
  * last commit, not the in-flight proposal (the CLI refuses dirty trees by default).
@@ -156,10 +163,11 @@ export function unsupportedRunner(dir, tests) {
  * failed>0 — that IS the imagined consequence, delivered as evidence. Never throws:
  * unmet preconditions return { ok:false, reason }.
  * @param {string} root
- * @param {{tests?: string[], timeoutMs?: number}} [opts] repo-relative test paths
+ * @param {{tests?: string[], timeoutMs?: number, sandbox?: string,
+ *   findSandbox?: (bin: string) => boolean}} [opts] repo-relative test paths
  * @returns {DryRunVerdict}
  */
-export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
+export function dryRun(root, { tests, timeoutMs = 120000, sandbox = "auto", findSandbox } = {}) {
   if (!Array.isArray(tests) || tests.length === 0)
     return { ok: false, reason: "no tests selected — nothing to dry-run" };
   if (!hasBin("git"))
@@ -180,6 +188,8 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
   const parent = mkdtempSync(join(tmpdir(), "forge-dryrun-"));
   const wt = join(parent, "wt");
   const started = Date.now();
+  /** @type {Record<string, any>|undefined} what confinement the suite actually ran under */
+  let isolation;
   // The body runs in a closure so every exit path — verdict, timeout, crash — flows
   // through the same finally-cleanup AND the same verified `worktree` stamp below.
   /** @returns {DryRunVerdict} */
@@ -208,18 +218,32 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     // makes the child speak the runner's internal protocol instead of TAP.
     const env = { ...process.env };
     delete env.NODE_TEST_CONTEXT;
-    const run = spawnSync(
+    // Confined runs may write only under `parent`, so tests get a temp directory there.
+    const scratch = join(parent, "tmp");
+    const wrapped = wrapCommand(
       process.execPath,
       ["--test", "--test-reporter=tap", ...tests.map(String)],
-      {
+      { mode: sandbox, writable: [parent], ...(findSandbox ? { find: findSandbox } : {}) },
+    );
+    if ("error" in wrapped) return { ok: false, reason: wrapped.error, runner };
+    isolation = wrapped.isolation;
+    if (isolation.process !== "none") {
+      mkdirSync(scratch, { recursive: true });
+      Object.assign(env, { TMPDIR: scratch, TMP: scratch, TEMP: scratch });
+    }
+    let run;
+    try {
+      run = spawnSync(wrapped.command, wrapped.args, {
         cwd: wt,
         env,
         encoding: "utf8",
         timeout: timeoutMs,
         killSignal: "SIGKILL", // node --test forks workers; SIGKILL is the reliable stop
         maxBuffer: 16 * 1024 * 1024,
-      },
-    );
+      });
+    } finally {
+      wrapped.cleanup();
+    }
     const combined = `${run.stdout ?? ""}${run.stderr ? `\n${run.stderr}` : ""}`.trim();
     const output = combined.length > 2000 ? `…${combined.slice(-2000)}` : combined;
     const durationMs = Date.now() - started;
@@ -325,6 +349,7 @@ export function dryRun(root, { tests, timeoutMs = 120000 } = {}) {
     } catch {}
   }
   result.worktree = existsSync(wt) ? "leaked" : "removed";
+  if (isolation) result.isolation = { checkout: "git-worktree", ...isolation };
   return result;
 }
 

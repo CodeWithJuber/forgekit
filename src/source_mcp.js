@@ -1,10 +1,60 @@
 // Probe a trusted, manually configured enterprise MCP HTTP endpoint. Only these
 // handshake/discovery operations are issued. Provider record IDs never enter the probe.
+//
+// Tool-surface pin. A server can change a tool's description or schema after it was approved
+// (measured attack success with poisoned descriptions: 22.9% across 12 frameworks,
+// arXiv:2611.03555). The probe therefore returns `surface`, a digest of everything in the tool
+// list a model would read: each tool's name, title, description, input and output schema and
+// annotations. Put that digest in the source's private config as `mcp.surface` after reviewing
+// the tools; from then on a probe that sees a different surface fails, and the route falls back
+// instead of handing the model tool text nobody reviewed.
+import { createHash } from "node:crypto";
+
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const MAX_PAGE_BYTES = 512 * 1024;
 const MAX_PAGES = 12;
 const MAX_TOOLS = 1000;
 const TOOL_NAME = /^[\w.-]{1,128}$/;
+const SURFACE_PIN = /^sha256:[0-9a-f]{64}$/;
+/** The fields of a tool entry that reach the model. Icons and `_meta` do not. */
+const SURFACE_FIELDS = [
+  "name",
+  "title",
+  "description",
+  "inputSchema",
+  "outputSchema",
+  "annotations",
+];
+
+/** JSON with object keys in sorted order, so equal values always serialise identically. */
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.keys(value)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`)
+      .join(",")}}`;
+  return JSON.stringify(value ?? null);
+}
+
+const sha256 = (text) => createHash("sha256").update(text).digest("hex");
+
+/**
+ * Digest of a tool list as a model sees it. Independent of the order the server lists tools in
+ * and of key order inside a schema; any change to a name, description, schema or annotation
+ * changes it.
+ * @param {any[]} tools entries of one or more `tools/list` pages
+ * @returns {string} "sha256:<hex>"
+ */
+export function toolSurfaceDigest(tools) {
+  const lines = tools.map((entry) => {
+    const kept = Object.fromEntries(
+      SURFACE_FIELDS.filter((f) => entry?.[f] !== undefined).map((f) => [f, entry[f]]),
+    );
+    return `${String(entry?.name)}\u0000${sha256(stableJson(kept))}`;
+  });
+  return `sha256:${sha256(lines.sort().join("\n"))}`;
+}
 
 /** Validate a Streamable HTTP address before probing it or emitting a client config. */
 export function validatedMcpUrl(value) {
@@ -42,7 +92,10 @@ function endpoint(config, env) {
       throw new Error("Missing or invalid credential for mcp.tokenEnv");
     headers.set("Authorization", `Bearer ${token}`);
   }
-  return { url, headers, tool };
+  const surface = config.surface ?? null;
+  if (surface !== null && (typeof surface !== "string" || !SURFACE_PIN.test(surface)))
+    throw new Error("Set mcp.surface to the sha256:<hex> digest a probe reported");
+  return { url, headers, tool, surface };
 }
 
 function message(raw) {
@@ -129,7 +182,7 @@ export async function probeMcpEndpoint(
   config,
   { env = process.env, fetchImpl = fetch, timeoutMs = 8000 } = {},
 ) {
-  const { url, headers, tool } = endpoint(config, env);
+  const { url, headers, tool, surface: pinned } = endpoint(config, env);
   const signal = AbortSignal.timeout(
     Number.isInteger(timeoutMs) ? Math.min(20000, Math.max(1, timeoutMs)) : 8000,
   );
@@ -191,6 +244,7 @@ export async function probeMcpEndpoint(
     headers.set("MCP-Protocol-Version", init.protocolVersion);
     await send("notifications/initialized", null, true);
     const tools = new Set();
+    const entries = [];
     if (init.capabilities?.tools) {
       const cursors = new Set();
       let cursor;
@@ -203,6 +257,7 @@ export async function probeMcpEndpoint(
           if (typeof entry?.name !== "string" || !TOOL_NAME.test(entry.name))
             throw new Error("Invalid advertised MCP tool name");
           tools.add(entry.name);
+          entries.push(entry);
         }
         if (tools.size > MAX_TOOLS) throw new Error("MCP tool limit exceeded");
         cursor = page.nextCursor;
@@ -214,10 +269,19 @@ export async function probeMcpEndpoint(
         if (cursor) cursors.add(cursor);
       } while (cursor);
     }
+    const surface = toolSurfaceDigest(entries);
+    // A pinned surface that no longer matches is a hard stop: the tool text changed after review.
+    if (pinned !== null && pinned !== surface)
+      throw Object.assign(
+        new Error("MCP tool surface differs from the pinned digest; review the tools and re-pin"),
+        { code: "surface-changed", surface, pinned },
+      );
     return {
       available: tool !== null && tools.has(tool),
       configuredTool: tool,
       tools: [...tools].sort(),
+      surface,
+      surfacePinned: pinned !== null,
       protocolVersion: init.protocolVersion,
       checkedAt: new Date().toISOString(),
     };

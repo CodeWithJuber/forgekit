@@ -1647,8 +1647,19 @@ Forge imagine — consequence simulation (pre-action)
 
 Add **`--run`** to actually execute that suite in an isolated git checkout (a detached-HEAD
 worktree) — the dry-run result lands as oracle evidence on the prediction. The checkout isolates
-files only: it is not a security sandbox, and the tests run with your network, credentials, home
-directory and process permissions. It tests the committed baseline, not a proposed uncommitted
+files only; it is not a security sandbox. Process confinement is a separate layer that ForgeKit
+delegates: when Anthropic's Sandbox Runtime is installed (`npm install -g
+@anthropic-ai/sandbox-runtime`; it needs Node 22.12 or newer, and on Linux `bubblewrap` and
+`socat`), the suite is started through `srt` with the network denied, writes limited to the
+throwaway checkout and its temp directory, and credential stores such as `~/.ssh`, `~/.aws` and
+`~/.npmrc` unreadable. Without the runtime the tests run with your network, credentials, home
+directory and process permissions, and the output says so in its first line; the JSON verdict
+carries the same fact as `dryRun.isolation`. `--sandbox required` refuses to run unconfined,
+`--sandbox off` never uses the runtime, and the default `auto` uses it when present. A suite
+whose tests need the network, or run `git` inside the checkout, fails under confinement:
+that is the policy working, and `--sandbox off` is the way to run such a suite. The confinement
+itself is the runtime's; this repository tests only that the suite is handed to it with that
+policy. The dry-run tests the committed baseline, not a proposed uncommitted
 patch, so it refuses a dirty working tree (your uncommitted changes wouldn't be in the run);
 commit/stash first or pass `--allow-dirty` to knowingly measure the last commit. The selected
 files run under `node --test` and nothing else: when a selected test is not a `.js`, `.mjs` or
@@ -2549,8 +2560,10 @@ code reads but this table misses fails CI on the forge repo):
 - **`forge context` completeness is syntactic.** `COMPLETE` means every required item was
   delivered within an estimated token budget, with no pending reads; it does not mean the
   context is sufficient for the edit.
-- **`forge imagine --run` is an isolated checkout, not a sandbox.** It runs the committed
-  baseline's selected tests under `node --test` with your normal permissions.
+- **`forge imagine --run` is an isolated checkout, and confined only when a sandbox runtime
+  is installed.** It runs the committed baseline's selected tests under `node --test`. With
+  `srt` on the PATH they run without network and without access to credential stores; without
+  it they run with your normal permissions, and the result states which.
 - **The substrate's rubrics are heuristic, not benchmarked** — judge them after real
   use. What's _asserted_ (safe to gate on): repo grounding, graph traversal, scope
   decomposition, routing arithmetic, and the test/build commands. Everything else is

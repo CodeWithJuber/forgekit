@@ -9,6 +9,7 @@
 //
 //   node bench/universal-router/holdout_eval.mjs <input.json> --out <results.json>
 //     [--seed 20260926] [--dev 150] [--draws 10000] [--objective match-best-single] [--max-depth 3]
+//     [--cost-model fitted|legacy|ratio-only|smear-only|per-model-smear]
 //
 // <input.json> is what build_input.py writes. The steps:
 //  1. Split. Shuffle the task ids (input order: instance_id ascending) with a Fisher-Yates
@@ -54,6 +55,20 @@ const nDev = Number(opt("--dev", 150));
 const draws = Number(opt("--draws", 10000));
 const objective = opt("--objective", "match-best-single");
 const maxDepth = Number(opt("--max-depth", 3));
+// "fitted": the dev fit's own cost model, as the router uses it: one smearing factor and the
+// fail/success cost ratio.
+// "legacy": the formula before 2026-11-27, kept for comparison: the log-normal mean exp(s²/2)
+// and an attempt that costs the same whatever its outcome.
+// Three ablations isolate which part moves a result: "ratio-only" keeps the ratio with the
+// legacy factor, "smear-only" keeps the smearing factor and drops the ratio, and
+// "per-model-smear" gives each model its own smearing factor (the alternative that was measured
+// and not adopted; see docs/UNIVERSAL_ROUTING.md).
+const COST_MODELS = ["fitted", "legacy", "ratio-only", "smear-only", "per-model-smear"];
+const costModel = opt("--cost-model", "fitted");
+if (!COST_MODELS.includes(costModel)) {
+  console.error(`--cost-model must be one of: ${COST_MODELS.join(", ")}`);
+  process.exit(2);
+}
 
 const t0 = Date.now();
 
@@ -132,6 +147,30 @@ const restricted = {
 };
 const tFit = Date.now();
 const fit = buildPrior(input, devSet);
+// What the dev fit estimated, kept for the record; the legacy comparison run switches it off.
+const fittedCost = {
+  failCostRatio: Number.isFinite(fit.cost.failLogRatio) ? Math.exp(fit.cost.failLogRatio) : null,
+  failLogRatioEvidence: fit.cost.failLogRatioEvidence ?? null,
+  smear: fit.cost.smear ?? null,
+  smearByModel: Object.fromEntries(
+    fit.models.map((id, m) => [id, fit.cost.smearByModel?.[m] ?? null]),
+  ),
+  lognormalFactor: Math.exp(fit.cost.s2 / 2),
+};
+const dropped = {
+  legacy: ["failLogRatio", "failLogRatioEvidence", "smear"],
+  "ratio-only": ["smear"],
+  "smear-only": ["failLogRatio", "failLogRatioEvidence"],
+};
+for (const key of dropped[costModel] ?? []) delete fit.cost[key];
+if (costModel === "per-model-smear" && Number.isFinite(fit.cost.smear)) {
+  // exp(α_m + βx)·S_m is exp(α_m + log(S_m/S) + βx)·S: a per-model factor is a shift of α_m.
+  fit.cost.alpha = fit.cost.alpha.map((a, m) =>
+    a === null || !Number.isFinite(fit.cost.smearByModel?.[m])
+      ? a
+      : a + Math.log(fit.cost.smearByModel[m] / fit.cost.smear),
+  );
+}
 const fitSeconds = (Date.now() - tFit) / 1000;
 if (fit.provenance.tasks !== dev.length) throw new Error("dev fit saw tasks outside the dev set");
 
@@ -312,6 +351,8 @@ const calibration = {
   brier: mean(decisions, (r) => (r.pSuccess - r.solved) ** 2),
   meanExpectedCost: mean(decisions, (r) => r.expectedCost),
   meanObservedCost: heldOutSummary.router.meanCost,
+  // Which cost model produced meanExpectedCost, and what the dev fit estimated.
+  costModel: { used: costModel, fitted: fittedCost },
   quintiles: [0, 1, 2, 3, 4].map((q) => {
     const rows = byP.slice(Math.round((q * n) / 5), Math.round(((q + 1) * n) / 5));
     return {

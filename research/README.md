@@ -193,6 +193,12 @@ is the only way to supply them; and the "convergence" of the theory, forgekit an
 projects is consistency within one author's work, not independent confirmation — the same care the
 programme already applied when it conceded priority for the protection-layer equation.
 
+*(Added 2026-11-27.)* A dated check of the outside tools, protocols and papers considered for
+ForgeKit's next work is in [`tool-landscape/`](tool-landscape/): 137 repositories read for their
+last commit and license, the papers behind each planning claim, and the six findings that
+changed what was built. It records verdicts and dates, and will go stale; re-run the check
+before relying on a row.
+
 ## How this programme tries to stay honest
 
 - Protocols and parameter freezes are declared *before* the data is seen, and amendments are
