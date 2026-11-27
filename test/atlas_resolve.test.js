@@ -232,3 +232,50 @@ test("CLI: forge impact lists the real importers (no more 'found · impacted fil
   assert.equal(typeof json.unresolvedImports, "number");
   assert.ok(readFileSync(join(root, ".forge", "atlas.json"), "utf8").length > 0);
 });
+
+test("impact separates direct references from downstream files, code first", async () => {
+  const { forReview } = await import("../src/atlas.js");
+  const root = mkdtempSync(join(tmpdir(), "forge-impact-direct-"));
+  const files = {
+    "src/core.js": "export function priceWithTax(c) { return c + c / 10; }\n",
+    "src/cart.js":
+      'import { priceWithTax } from "./core.js";\nexport const total = (c) => priceWithTax(c);\n',
+    "test/core.test.js": 'import { priceWithTax } from "../src/core.js";\npriceWithTax(1);\n',
+    "src/checkout.js": 'import { total } from "./cart.js";\nexport const pay = (c) => total(c);\n',
+    "src/ui.js": 'import { pay } from "./checkout.js";\nexport const click = () => pay(1);\n',
+  };
+  for (const [rel, text] of Object.entries(files)) {
+    const dir = join(root, rel, "..");
+    spawnSync(process.execPath, [
+      "-e",
+      `require("fs").mkdirSync(${JSON.stringify(dir)},{recursive:true})`,
+    ]);
+    writeFileSync(join(root, rel), text);
+  }
+  const r = impact(build({ root }), "priceWithTax");
+  assert.deepEqual(
+    r.directFiles,
+    ["src/cart.js", "test/core.test.js"],
+    "callers of the symbol, source first",
+  );
+  assert.equal(r.hops[1], 2);
+  assert.ok(r.impactedFiles.includes("src/ui.js"), "downstream files are still in the full answer");
+  assert.ok(!r.directFiles.includes("src/ui.js"), "but not among the direct references");
+  assert.deepEqual(forReview([".github/x.yml", "README.md", "test/a.test.js", "src/b.js"]), [
+    "src/b.js",
+    "test/a.test.js",
+    ".github/x.yml",
+    "README.md",
+  ]);
+  const out = spawnSync(process.execPath, [CLI, "impact", "priceWithTax"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /direct references: 2 file\(s\) use the target itself/);
+  assert.match(
+    out.stdout,
+    /downstream: \d+ more file\(s\) reach it through a direct reference \(hop 2: \d+/,
+  );
+  assert.ok(out.stdout.indexOf("src/cart.js") < out.stdout.indexOf("downstream:"));
+});

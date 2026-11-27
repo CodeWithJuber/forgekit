@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { arch, availableParallelism, platform } from "node:os";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, posix } from "node:path";
 import { build as buildAtlas, CODE_EXTS, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { duplicateGate } from "./duplicate_gate.js";
@@ -34,6 +34,7 @@ import {
 } from "./stack.js";
 import { assessTestIntegrity } from "./test_integrity.js";
 import { userStateDir } from "./util.js";
+import { stripXmlComments } from "./xml.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -662,6 +663,7 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
  * @property {string} [output]         tail of the suite's own output (failures)
  * @property {number} [durationMs]      observed elapsed milliseconds for an actual attempt
  * @property {ReturnType<typeof observedTestCounts>} [reportedCounts] counts printed by a recognized runner, or null
+ * @property {{name: string, status: string}[]} [modules] per-module results a Maven or Gradle build printed
  */
 /**
  * Which package dirs needed a verdict, and which got one (review F08). `required` is "." (the
@@ -703,7 +705,24 @@ export function computeCodeState(cwd = process.cwd(), { depth = 0, config: given
  *   instead of one coarse bucket
  */
 // Bins forge is willing to execute directly. Everything else stays report-only.
-const EXECUTORS = new Set(["npm", "pnpm", "yarn", "bun", "pytest"]);
+const EXECUTORS = new Set([
+  "npm",
+  "pnpm",
+  "yarn",
+  "bun",
+  "pytest",
+  "mvn",
+  "./mvnw",
+  "gradle",
+  "./gradlew",
+]);
+// Maven and Gradle, with or without the project's wrapper.
+const JVM_BINS = new Set(["mvn", "./mvnw", "gradle", "./gradlew"]);
+/** @param {{bin?: string}|undefined} r */
+const isJvmRunner = (r) => JVM_BINS.has(r?.bin ?? "");
+// A build's whole test output stays readable: Maven and Gradle print far past the 1 MiB
+// execFileSync default, which turned a finished run into an ENOBUFS non-verdict.
+const SUITE_MAX_BUFFER = 64 * 1024 * 1024;
 // Fallback when a detectStack result has no `testRunners` field (older shape):
 // rebuild descriptors from the command strings.
 /** @param {string[]} cmds @returns {import("./stack.js").TestRunner[]} */
@@ -736,11 +755,121 @@ export function maskedTestScript(cwd) {
 /** Is this descriptor one forge can execute directly (whitelisted bin, and a
  *  package.json present for the package-manager runners)? Pure. */
 function isExecutable(r, cwd) {
-  return !!(
-    r?.bin &&
-    EXECUTORS.has(r.bin) &&
-    (r.bin === "pytest" || existsSync(join(cwd, "package.json")))
-  );
+  if (!r?.bin || !EXECUTORS.has(r.bin)) return false;
+  if (isJvmRunner(r))
+    // On Windows the wrappers and the PATH installs are .cmd/.bat scripts, which Node runs
+    // only through a shell, and verify never spawns one: those suites stay report-only there.
+    return (
+      process.platform !== "win32" &&
+      ["pom.xml", "build.gradle", "build.gradle.kts"].some((f) => existsSync(join(cwd, f)))
+    );
+  return r.bin === "pytest" || existsSync(join(cwd, "package.json"));
+}
+
+/**
+ * Per-module results and test counts from a Maven or Gradle run, so a reviewer sees which
+ * module passed, failed or was skipped instead of one verdict for the whole build. Maven:
+ * the Surefire summary lines (`Tests run: N, Failures: F, Errors: E, Skipped: S`, one per
+ * module) and the reactor summary. Gradle (`--console=plain`): one `> Task :path:test` line
+ * per project. Pure; `null` when nothing recognizable was printed.
+ * @param {unknown} stdout @param {string} bin
+ * @returns {{counts: {total:number, pass:number, fail:number, cancelled:number, skipped:number, todo:number}|null, modules: {name:string, status:string}[]}|null}
+ */
+export function observedJvmResult(stdout, bin) {
+  if (typeof stdout !== "string") return null;
+  const text = stdout.replaceAll("\r\n", "\n");
+  const modules = [];
+  let counts = null;
+  if (bin === "mvn" || bin === "./mvnw") {
+    let total = 0;
+    let fail = 0;
+    let skipped = 0;
+    let seen = false;
+    for (const m of text.matchAll(
+      /^\[(?:INFO|WARNING|ERROR)\] Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)\s*$/gm,
+    )) {
+      seen = true;
+      total += Number(m[1]);
+      fail += Number(m[2]) + Number(m[3]);
+      skipped += Number(m[4]);
+    }
+    if (seen)
+      counts = { total, pass: total - fail - skipped, fail, cancelled: 0, skipped, todo: 0 };
+    const at = text.indexOf("Reactor Summary");
+    if (at >= 0) {
+      const status = { SUCCESS: "PASS", FAILURE: "FAIL", SKIPPED: "SKIPPED" };
+      for (const m of text
+        .slice(at)
+        .matchAll(/^\[INFO\] (\S.*?) \.{2,} ?(SUCCESS|FAILURE|SKIPPED)\b/gm))
+        modules.push({ name: m[1].trim(), status: status[/** @type {"SUCCESS"} */ (m[2])] });
+    }
+  } else {
+    const status = {
+      FAILED: "FAIL",
+      "UP-TO-DATE": "UP-TO-DATE",
+      "FROM-CACHE": "UP-TO-DATE",
+      "NO-SOURCE": "NO-TESTS",
+      SKIPPED: "SKIPPED",
+    };
+    for (const m of text.matchAll(
+      /^> Task (:(?:[\w.-]+:)*)test(?: (FAILED|UP-TO-DATE|FROM-CACHE|NO-SOURCE|SKIPPED))?\s*$/gm,
+    )) {
+      const name = m[1] === ":" ? "." : m[1].slice(1, -1).replaceAll(":", "/");
+      modules.push({ name, status: m[2] ? status[/** @type {"FAILED"} */ (m[2])] : "PASS" });
+    }
+  }
+  return counts || modules.length ? { counts, modules } : null;
+}
+
+/**
+ * The module directories a Maven or Gradle root build runs itself: `<module>` entries of
+ * the root pom (recursively, outside `<profiles>`, which may be inactive) and the projects
+ * `include`d by settings.gradle(.kts). A root `mvn test` or `gradle test` covers these, so
+ * verify does not run them again one by one, which fails on unbuilt sibling modules.
+ * @param {string} root
+ * @returns {Set<string>} posix paths relative to root
+ */
+export function jvmBuildModules(root) {
+  const out = new Set();
+  const read = (rel) => {
+    try {
+      return readFileSync(join(root, rel), "utf8");
+    } catch {
+      return null;
+    }
+  };
+  const walk = (dir, depth) => {
+    const pom = read(dir === "." ? "pom.xml" : `${dir}/pom.xml`);
+    if (!pom || depth > 8) return;
+    // Comments are removed the way an XML parser reads them (src/xml.js): a single regex
+    // pass misreads `<!--` inside CDATA and can hide a real <module> that follows it.
+    const body = stripXmlComments(pom).replace(/<profiles>[\s\S]*?<\/profiles>/g, "");
+    for (const block of body.matchAll(/<modules>([\s\S]*?)<\/modules>/g))
+      for (const m of block[1].matchAll(/<module>\s*([^<]+?)\s*<\/module>/g)) {
+        let rel = posix.normalize(posix.join(dir, m[1].replaceAll("\\", "/")));
+        if (rel.endsWith(".xml")) rel = posix.dirname(rel);
+        rel = rel.replace(/\/$/, "");
+        if (!rel || rel === "." || rel.startsWith("..") || out.has(rel)) continue;
+        out.add(rel);
+        walk(rel, depth + 1);
+      }
+  };
+  walk(".", 0);
+  for (const name of ["settings.gradle", "settings.gradle.kts"]) {
+    const text = read(name);
+    if (!text) continue;
+    const body = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const lists = [
+      ...[...body.matchAll(/\binclude\s*\(([\s\S]*?)\)/g)].map((m) => m[1]),
+      ...[...body.matchAll(/^\s*include\s+([^\n(]+)$/gm)].map((m) => m[1]),
+    ];
+    for (const list of lists)
+      for (const q of list.matchAll(/["']([^"']+)["']/g)) {
+        const rel = q[1].replace(/^:/, "").replaceAll(":", "/");
+        if (rel && !rel.startsWith("..")) out.add(rel);
+      }
+  }
+  return out;
 }
 
 /**
@@ -952,6 +1081,9 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
   /** @type {Record<string, "measured"|"inferred"|"declared">} */
   const basis = rootRunners.length ? { ".": "measured" } : {};
   const rootCovers = ["."];
+  // A Maven reactor or a Gradle multi-project build runs its modules from the root.
+  const jvmModules = rootRunners.some(isJvmRunner) ? jvmBuildModules(root) : new Set();
+  const jvmCovers = ["."];
   const scan = nestedPackages(root, stack);
   for (const pkg of scan.roots) {
     const member = workspaces.some((g) => matchesWorkspaceGlob(g, pkg));
@@ -969,6 +1101,11 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     } catch {}
     if (!runners.length) continue; // declares no suite — nothing is owed for it
     required.push(pkg);
+    if (jvmModules.has(pkg) && runners.every(isJvmRunner)) {
+      jvmCovers.push(pkg);
+      basis[pkg] = "inferred";
+      continue;
+    }
     // Reached: a member the tool iterates AND runs, whose own script does not mask a failure
     // (`… || true` passes under the root run too — it is run on its own and reported).
     const reached = !!run && reachesWorkspace(root, run, pkg) && !maskedTestScript(join(root, pkg));
@@ -992,7 +1129,7 @@ export function planSuites(root, { stack = detectStack(root), config = verifyCon
     cwd: ".",
     runner: r,
     label: r?.label ?? String(r?.bin ?? "unknown"),
-    covers: rootCovers,
+    covers: isJvmRunner(r) ? jvmCovers : rootCovers,
   }));
   return {
     suites: [...rootSuites, ...nested],
@@ -1081,6 +1218,16 @@ function describeNotConfigured(cwd) {
   };
 }
 
+/** What a finished suite's stdout says: test counts, plus per-module results for a JVM build. */
+function suiteReport(r, stdout) {
+  if (!isJvmRunner(r)) return { reportedCounts: observedTestCounts(stdout) };
+  const jvm = observedJvmResult(stdout, r.bin);
+  return {
+    reportedCounts: jvm?.counts ?? null,
+    ...(jvm?.modules.length ? { modules: jvm.modules } : {}),
+  };
+}
+
 // The project's suite must run as if launched from a terminal. `NODE_TEST_CONTEXT` is node's
 // test-runner plumbing: inherited from a parent `node --test` (verify called from inside a
 // test run, or from a hook spawned by one), it makes the project's own `node --test` act as a
@@ -1155,8 +1302,8 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
       continue;
     }
     if (!isExecutable(r, dir)) {
-      // No built-in executor (go/cargo/mvn/gradle/dotnet/rspec/phpunit/npx-runners) —
-      // report-only. Its absence means a PASS can't be claimed for what it covers.
+      // No built-in executor (go/cargo/dotnet/rspec/phpunit/npx-runners, or Maven/Gradle on
+      // Windows) — report-only. Its absence means a PASS can't be claimed for what it covers.
       notExecuted.push(label);
       continue;
     }
@@ -1172,6 +1319,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         stdio: "pipe",
         timeout,
         env: suiteEnv(),
+        maxBuffer: SUITE_MAX_BUFFER,
       });
       executed.push({
         label,
@@ -1179,7 +1327,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         ...where,
         exitCode: 0,
         durationMs: Math.round(performance.now() - startedMs),
-        reportedCounts: observedTestCounts(stdout),
+        ...suiteReport(r, stdout),
       });
       onProgress?.({ label, phase: "done", status: "PASS" });
     } catch (e) {
@@ -1187,7 +1335,7 @@ function runTests(cwd, { plan = planSuites(cwd), onProgress } = {}) {
         ...classifySuiteFailure(e, { label, bin: r.bin, timeout }),
         ...where,
         durationMs: Math.round(performance.now() - startedMs),
-        reportedCounts: observedTestCounts(e.stdout),
+        ...suiteReport(r, e.stdout),
       };
       executed.push(classified);
       onProgress?.({ label, phase: "done", status: classified.status });

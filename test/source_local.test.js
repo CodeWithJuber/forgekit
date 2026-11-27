@@ -1,11 +1,20 @@
 import assert from "node:assert/strict";
 import childProcess, { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { aggregateLocalTable, eligibleLocalRows, readLocalSource } from "../src/source_local.js";
+import { spawnOnBytes } from "../src/spawn_input.js";
 
 function fixture(t) {
   const temp = mkdtempSync(join(tmpdir(), "forge-local-test-"));
@@ -153,6 +162,34 @@ test("real CSV and TSV parser handles multiline quoting, BOM, groups, blanks, an
       .groups[0].value,
     "8",
   );
+});
+
+test("converters read bounded bytes from a private regular file on stdin, never a pipe", (t) => {
+  const keys = ["TMPDIR", "TMP", "TEMP"];
+  const saved = keys.map((key) => process.env[key]);
+  const scratch = mkdtempSync(join(tmpdir(), "forge-stdin-test-"));
+  for (const key of keys) process.env[key] = scratch;
+  t.after(() => {
+    keys.forEach((key, i) => {
+      if (saved[i] === undefined) delete process.env[key];
+      else process.env[key] = saved[i];
+    });
+    rmSync(scratch, { recursive: true, force: true });
+  });
+  // Larger than any pipe buffer, the size that used to stall a reader.
+  const bytes = Buffer.from("x\n".repeat(100002));
+  const probe = [
+    "const fs = require('node:fs');",
+    "const st = fs.fstatSync(0);",
+    "const data = fs.readFileSync(0);",
+    "process.stdout.write(JSON.stringify({ file: st.isFile(), size: data.length }));",
+  ].join("");
+  const result = spawnOnBytes(process.execPath, ["-e", probe], bytes, {
+    timeout: 20000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { file: true, size: bytes.length });
+  assert.deepEqual(readdirSync(scratch), [], "the private input copy is removed afterwards");
 });
 
 test("aggregate denies traversal, ignored files, ambiguous columns, invalid numbers, row overflows and secret columns", {

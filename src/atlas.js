@@ -1452,6 +1452,18 @@ export function byRelation(files, rels) {
 
 const round4 = (x) => Number(x.toFixed(4));
 
+const TEST_PATH = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[^/]+$|_test\.[^/]+$/;
+/**
+ * Review order for a file list: source files, then tests, then docs and config, each by
+ * path. Alphabetical order put `.github/` workflows and docs ahead of the code that calls
+ * the target.
+ * @param {string[]} files
+ */
+export function forReview(files) {
+  const rank = (f) => (!CODE_EXTS.has(extname(f)) ? 2 : TEST_PATH.test(f) ? 1 : 0);
+  return [...files].sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
 /**
  * @param {object} atlas
  * @param {string} target
@@ -1682,12 +1694,30 @@ export function impact(
   const startNames = new Set(starts.map((id) => nodeById.get(id)?.name).filter(Boolean));
   let ambiguousRefs = 0;
   for (const name of startNames) ambiguousRefs += ambiguousByName.get(name) ?? 0;
+  // Each file's shortest reverse-dependency distance: hop 1 files use the target itself and are
+  // what a reviewer reads first; the rest reach it through one of them.
+  const hopOf = new Map();
+  for (const x of all) {
+    const f = x.node?.file;
+    if (!f || x.relation !== "reverse" || x.hopDistance == null) continue;
+    if (!hopOf.has(f) || hopOf.get(f) > x.hopDistance) hopOf.set(f, x.hopDistance);
+  }
+  // The file that defines the target reaches it through its own module node; it is where the
+  // target lives, not a reference to it.
+  const definedIn = [...new Set(starts.map((id) => nodeById.get(id)?.file).filter(Boolean))].sort();
+  for (const f of definedIn) hopOf.delete(f);
+  /** @type {Record<string, number>} */
+  const hops = {};
+  for (const h of hopOf.values()) hops[h] = (hops[h] ?? 0) + 1;
   return {
     target,
     found: starts.length > 0,
     threshold,
     impacted: all,
     impactedFiles: [...new Set(all.map((x) => x.node.file).filter(Boolean))].sort(),
+    directFiles: forReview([...hopOf].filter(([, h]) => h === 1).map(([f]) => f)),
+    hops,
+    definedIn,
     relations: relationCounts,
     llmVerified: llmImpacted.map((x) => x.node.file),
     totalGraphNodes: (atlas.nodes || []).length,

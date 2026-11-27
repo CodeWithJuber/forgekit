@@ -1283,3 +1283,217 @@ test("a skipped baseline test produces a signed SUSPECT verdict despite a green 
     todo: 0,
   });
 });
+
+// ---------------------------------------------------------------------------
+// Maven and Gradle: the default verifier runs the project's own build, once, from the root.
+// ---------------------------------------------------------------------------
+// On Windows the Maven/Gradle wrappers and installs are .cmd scripts, which verify never runs
+// through a shell: there the same fixtures must come back report-only, never PASS.
+const WINDOWS = process.platform === "win32";
+/** @param {any} r @param {string} label */
+const assertReportOnlyOnWindows = (r, label) => {
+  assert.notEqual(r.tests.status, "PASS", "an unexecuted build is never a pass");
+  assert.ok(r.tests.notExecuted.includes(label), `${label} is reported as not executed`);
+};
+
+/** A fake build tool: prints `out` and exits `code`. */
+const fakeTool = (path, out, code) => {
+  writeFileSync(path, `#!/bin/sh\ncat <<'OUT'\n${out}\nOUT\nexit ${code}\n`);
+  chmodSync(path, 0o755);
+};
+const pom = (modules = [], profileModules = []) =>
+  `<project><modelVersion>4.0.0</modelVersion><groupId>g</groupId><artifactId>a</artifactId>${
+    modules.length
+      ? `<modules>${modules.map((m) => `<module>${m}</module>`).join("")}</modules>`
+      : ""
+  }${
+    profileModules.length
+      ? `<profiles><profile><id>x</id><modules>${profileModules
+          .map((m) => `<module>${m}</module>`)
+          .join("")}</modules></profile></profiles>`
+      : ""
+  }<!-- <modules><module>commented</module></modules> --></project>`;
+
+test("jvmBuildModules reads reactor modules and Gradle includes, not profiles or comments", async () => {
+  const { jvmBuildModules } = await import("../src/verify.js");
+  const root = mkdtempSync(join(tmpdir(), "forge-jvm-mods-"));
+  writeFileSync(join(root, "pom.xml"), pom(["api", "libs/pom.xml"], ["extra"]));
+  mkdirSync(join(root, "libs"), { recursive: true });
+  writeFileSync(join(root, "libs", "pom.xml"), pom(["core"]));
+  writeFileSync(
+    join(root, "settings.gradle.kts"),
+    'rootProject.name = "x"\n// include(":ignored")\ninclude(\n  ":web",\n  "tools:cli"\n)\ninclude ":docs"\n',
+  );
+  assert.deepEqual([...jvmBuildModules(root)].sort(), [
+    "api",
+    "docs",
+    "libs",
+    "libs/core",
+    "tools/cli",
+    "web",
+  ]);
+  // Comments are read the way an XML parser reads them: `<!--` inside CDATA is text, so the
+  // module after it still counts, and a commented-out module never does.
+  const xml = mkdtempSync(join(tmpdir(), "forge-jvm-xml-"));
+  writeFileSync(
+    join(xml, "pom.xml"),
+    "<project><description><![CDATA[ <!-- not a comment ]]></description>" +
+      "<modules><module>real</module><!-- <module>hidden</module> --></modules></project>",
+  );
+  assert.deepEqual([...jvmBuildModules(xml)], ["real"]);
+});
+
+test("observedJvmResult: Maven module totals and reactor, Gradle per-project tasks", async () => {
+  const { observedJvmResult } = await import("../src/verify.js");
+  const maven = [
+    "[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.1 s - in a.FooTest",
+    "[INFO] Results:",
+    "[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 1",
+    "[ERROR] Tests run: 4, Failures: 1, Errors: 1, Skipped: 0",
+    "[INFO] Reactor Summary for parent 1.0:",
+    "[INFO] parent ............................................. SUCCESS [  0.1 s]",
+    "[INFO] My API ............................................. FAILURE [  2.0 s]",
+    "[INFO] web ................................................ SKIPPED",
+  ].join("\n");
+  assert.deepEqual(observedJvmResult(maven, "./mvnw"), {
+    counts: { total: 7, pass: 4, fail: 2, cancelled: 0, skipped: 1, todo: 0 },
+    modules: [
+      { name: "parent", status: "PASS" },
+      { name: "My API", status: "FAIL" },
+      { name: "web", status: "SKIPPED" },
+    ],
+  });
+  const gradle = [
+    "> Task :compileJava",
+    "> Task :test NO-SOURCE",
+    "> Task :api:testClasses",
+    "> Task :api:test",
+    "> Task :lib:core:test FAILED",
+    "> Task :web:test UP-TO-DATE",
+  ].join("\n");
+  assert.deepEqual(observedJvmResult(gradle, "gradle")?.modules, [
+    { name: ".", status: "NO-TESTS" },
+    { name: "api", status: "PASS" },
+    { name: "lib/core", status: "FAIL" },
+    { name: "web", status: "UP-TO-DATE" },
+  ]);
+  assert.equal(observedJvmResult("BUILD SUCCESSFUL", "gradle"), null);
+});
+
+test("verify runs a Maven reactor once through ./mvnw and reports each module", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "pom.xml"), pom(["api", "web"]));
+  for (const m of ["api", "web"]) {
+    mkdirSync(join(root, m));
+    writeFileSync(join(root, m, "pom.xml"), pom());
+  }
+  fakeTool(
+    join(root, "mvnw"),
+    [
+      "[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 1",
+      "[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0",
+      "[INFO] Reactor Summary for a 1.0:",
+      "[INFO] a .................................................. SUCCESS [  0.1 s]",
+      "[INFO] api ................................................ SUCCESS [  1.0 s]",
+      "[INFO] web ................................................ SUCCESS [  1.0 s]",
+    ].join("\n"),
+    0,
+  );
+  const r = verify({ targetRoot: root });
+  if (WINDOWS) return assertReportOnlyOnWindows(r, "./mvnw test");
+  assert.equal(r.tests.status, "PASS", r.tests.output);
+  assert.equal(r.tests.executed.length, 1, "the modules are not re-run one by one");
+  const [suite] = r.tests.executed;
+  assert.equal(suite.label, "./mvnw test");
+  assert.deepEqual(suite.reportedCounts, {
+    total: 5,
+    pass: 4,
+    fail: 0,
+    cancelled: 0,
+    skipped: 1,
+    todo: 0,
+  });
+  assert.deepEqual(
+    suite.modules.map((m) => `${m.name}=${m.status}`),
+    ["a=PASS", "api=PASS", "web=PASS"],
+  );
+  assert.deepEqual([...r.tests.coverage.covered].sort(), [".", "api", "web"]);
+  assert.equal(
+    r.tests.coverage.basis.api,
+    "inferred",
+    "covered by the reactor, not measured alone",
+  );
+});
+
+test("verify: a failing Maven module fails the run and is named", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "pom.xml"), pom(["api", "web"]));
+  for (const m of ["api", "web"]) {
+    mkdirSync(join(root, m));
+    writeFileSync(join(root, m, "pom.xml"), pom());
+  }
+  fakeTool(
+    join(root, "mvnw"),
+    [
+      "[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0",
+      "[INFO] Reactor Summary for a 1.0:",
+      "[INFO] api ................................................ FAILURE [  1.0 s]",
+      "[INFO] web ................................................ SKIPPED",
+    ].join("\n"),
+    1,
+  );
+  const r = verify({ targetRoot: root });
+  if (WINDOWS) return assertReportOnlyOnWindows(r, "./mvnw test");
+  assert.equal(r.tests.status, "FAIL");
+  assert.equal(r.ok, false);
+  assert.deepEqual(
+    r.tests.executed[0].modules.map((m) => `${m.name}=${m.status}`),
+    ["api=FAIL", "web=SKIPPED"],
+  );
+});
+
+test("verify: Gradle without a wrapper runs gradle from PATH, per project", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "build.gradle"), "plugins { id 'java' }\n");
+  writeFileSync(join(root, "settings.gradle"), "include 'api', ':lib:core'\n");
+  mkdirSync(join(root, "api"));
+  writeFileSync(join(root, "api", "build.gradle"), "plugins { id 'java' }\n");
+  mkdirSync(join(root, "lib", "core"), { recursive: true });
+  writeFileSync(join(root, "lib", "core", "build.gradle"), "plugins { id 'java' }\n");
+  const bin = mkdtempSync(join(tmpdir(), "forge-bin-"));
+  fakeTool(
+    join(bin, "gradle"),
+    ["> Task :test NO-SOURCE", "> Task :api:test", "> Task :lib:core:test UP-TO-DATE"].join("\n"),
+    0,
+  );
+  const r = withBins(bin, () => verify({ targetRoot: root }));
+  if (WINDOWS) return assertReportOnlyOnWindows(r, "gradle test");
+  assert.equal(r.tests.status, "PASS", r.tests.output);
+  assert.equal(r.tests.executed.length, 1);
+  assert.equal(r.tests.executed[0].label, "gradle test");
+  assert.deepEqual(
+    r.tests.executed[0].modules.map((m) => `${m.name}=${m.status}`),
+    [".=NO-TESTS", "api=PASS", "lib/core=UP-TO-DATE"],
+  );
+  assert.deepEqual([...r.tests.coverage.covered].sort(), [".", "api", "lib/core"]);
+});
+
+test("verify: a mixed Node and Maven repo runs both and needs both", () => {
+  const root = gitRepo();
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({ name: "t", scripts: { test: "true" } }),
+  );
+  mkdirSync(join(root, "backend"));
+  writeFileSync(join(root, "backend", "pom.xml"), pom());
+  const bin = mkdtempSync(join(tmpdir(), "forge-bin-"));
+  fakeBin(bin, "npm", 0);
+  fakeTool(join(bin, "mvn"), "[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0", 1);
+  const r = withBins(bin, () => verify({ targetRoot: root }));
+  if (WINDOWS) return assertReportOnlyOnWindows(r, "mvn test (backend)");
+  assert.equal(r.tests.status, "FAIL", "a failing backend suite is not hidden by a green frontend");
+  assert.deepEqual(r.tests.executed.map((s) => `${s.label}=${s.status}`).sort(), [
+    "mvn test (backend)=FAIL",
+    "npm test=PASS",
+  ]);
+});

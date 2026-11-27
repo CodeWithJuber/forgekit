@@ -1,10 +1,10 @@
 // Local readers consume the already checked bytes. The expensive PDF path is selected
 // in the user's source config and starts only inside an operating-system network guard.
-import { spawnSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { redactSecrets } from "./secrets.js";
+import { spawnOnBytes } from "./spawn_input.js";
 
 const office = fileURLToPath(new URL("./source_office.py", import.meta.url));
 const docling = fileURLToPath(new URL("./source_docling.py", import.meta.url));
@@ -54,12 +54,10 @@ export function extractDocument(ext, bytes, cap, config = null) {
     args = ["-p", "(version 1)(allow default)(deny network*)", python, ...args];
     env.FORGE_DOCLING_SANDBOXED = "1";
   }
-  const proc = spawnSync(command, args, {
-    input: bytes,
+  const proc = spawnOnBytes(command, args, bytes, {
     env,
     timeout: enhanced ? 120000 : 10000,
     maxBuffer: 9 * 1024 * 1024,
-    encoding: "utf8",
   });
   if (proc.status !== 0 || proc.error)
     throw new Error(

@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { harnessChildPath, installedHarnessProgram } from "./harness_python.js";
 import { redactSecrets } from "./secrets.js";
 import { doclingConfig, extractDocument } from "./source_documents.js";
+import { spawnOnBytes } from "./spawn_input.js";
 import { CODE_EXT, contentHash, IGNORE_DIRS, toPosix, userStateDir } from "./util.js";
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -173,9 +174,7 @@ async function readBytes(root, rel, maxBytes) {
 
 function table(mode, ext, bytes, opts) {
   const python = process.platform === "win32" ? "python" : "python3";
-  const result = spawnSync(python, ["-I", READER, mode, ext, JSON.stringify(opts)], {
-    input: bytes,
-    encoding: "utf8",
+  const result = spawnOnBytes(python, ["-I", READER, mode, ext, JSON.stringify(opts)], bytes, {
     timeout: 20000,
     maxBuffer: 12 * 1024 * 1024,
     env: { ...process.env, OPENBLAS_NUM_THREADS: "1", OMP_NUM_THREADS: "1" },
@@ -244,11 +243,9 @@ function convert(rel, bytes, cap, docling) {
   }
   let text;
   if (ext === ".pdf") {
-    const result = spawnSync("pdftotext", ["-layout", "-enc", "UTF-8", "-", "-"], {
-      input: bytes,
+    const result = spawnOnBytes("pdftotext", ["-layout", "-enc", "UTF-8", "-", "-"], bytes, {
       timeout: 12000,
       maxBuffer: 8 * 1024 * 1024,
-      encoding: "utf8",
     });
     if (
       docling &&
