@@ -308,6 +308,24 @@ test("dash --json: one line once listening, then a clean stop; a busy port exits
   if (process.platform !== "win32") assert.equal(end.code, 0, "SIGTERM is a clean stop");
 });
 
+test("cloud and relay: status without enrollment, and refusals before any network call", () => {
+  const home = mkdtempSync(join(tmpdir(), "forge-contracts-home-"));
+  try {
+    for (const transport of ["cloud", "relay"]) {
+      const r = forge([transport, "status"], { env: { FORGE_HOME: home } });
+      assert.equal(r.code, 0);
+      assert.deepEqual(violations(JSON.parse(r.stdout), CONTRACTS[`${transport} status`].spec), []);
+      assert.deepEqual(JSON.parse(r.stdout), { enrolled: false });
+      const push = forge([transport, "push"], { env: { FORGE_HOME: home } });
+      assert.equal(push.code, 1, "no enrollment");
+      assert.equal(push.stdout.trim(), "");
+      assert.match(push.stderr, /enrollment/);
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("usage errors: exit 1, nothing on stdout, a reason on stderr", () => {
   const cases = [
     [["deja", "--json"], /usage/],
@@ -334,6 +352,11 @@ test("usage errors: exit 1, nothing on stdout, a reason on stderr", () => {
     [["report", "--out"], /--out needs a value/],
     [["dash", "--port", "70000"], /--port must be a whole number from 0 to 65535/],
     [["dash", "--prot", "1"], /unknown flag --prot \(did you mean --port\?\)/],
+    [["relay", "push", "--interval", "5"], /--interval applies to watch, not push/],
+    [["relay", "watch", "--interval", "0"], /--interval must be a whole number from 1 to 86400/],
+    [["cloud", "status", "--tenant", "x"], /unknown flag --tenant/],
+    [["relay", "read", "a.txt", "--revison", "x"], /did you mean --revision\?/],
+    [["cloud", "configure", "--key-env", "K"], /unknown flag --key-env/],
   ];
   for (const [args, reason] of cases) {
     const r = forge(/** @type {string[]} */ (args));

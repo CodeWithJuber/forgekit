@@ -1,7 +1,9 @@
 # Command contracts
 
 What a script can rely on when it calls a ForgeKit command. This page covers the commands
-that have left the Labs group; a Labs command can still change its output in a minor release.
+that have met the production bar below: the fourteen that left the Labs group on 2026-11-27.
+Other commands work, but their JSON is not frozen yet, and a command in a Labs group can
+change its output in a minor release.
 
 ## The production bar
 
@@ -68,6 +70,13 @@ is on stderr. Commands whose JSON also carries a refusal say so in the table.
 | `forge dash refused`        | v1       | `{error}`                                                                                                                    | 1             |
 | `forge report`              | v1       | `{path, bytes}`                                                                                                              | 0, 1          |
 | `forge report refused`      | v1       | `{error}`                                                                                                                    | 1             |
+| `forge cloud status`        | v1       | `{enrolled, revision?, pending?, remote?}`                                                                                   | 0, 1          |
+| `forge cloud preview`       | v1       | `{bytes, files, skipped}`                                                                                                    | 0, 1          |
+| `forge cloud logout`        | v1       | `{enrolled, remoteDeleted}`                                                                                                  | 0, 1          |
+| `forge relay status`        | v1       | `{enrolled, revision?, pending?, remote?}`                                                                                   | 0, 1          |
+| `forge relay push`          | v1       | `{revision?, modified, removed, skipped}`                                                                                    | 0, 1          |
+| `forge relay list`          | v1       | `{revision?, parent?, authenticated, files}`                                                                                 | 0, 1          |
+| `forge relay read --json`   | v1       | `{revision, parent?, path, kind, redacted, sha256, bytes, content}`                                                          | 0, 1          |
 | `forge collide`             | v1       | `{risk, sessions, mine}`                                                                                                     | 0             |
 <!-- forge:render:cli-contracts:end -->
 
@@ -84,3 +93,9 @@ is on stderr. Commands whose JSON also carries a refusal say so in the table.
 - `dash --json` promises only its start line. The dashboard's HTTP routes (`/api/data`,
   `/api/harness` and the rest) are the page's own interface and can change in any release.
 - The report's HTML layout is for people; read the ledger itself (`forge ledger`) for data.
+- `cloud watch` and `relay watch` print one push result per line until stopped, and `serve`
+  prints its address; neither is a contract. `relay read` without `--json` writes the
+  verified bytes, not JSON.
+- The cloud and relay contracts are checked by calling the same functions the commands
+  print, against a real receiver started in the test; the CLI itself is exercised for the
+  status and refusal forms.

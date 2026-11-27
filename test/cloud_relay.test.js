@@ -20,11 +20,14 @@ import {
   pendingRelayChange,
   queueRelayChange,
   relayChange,
+  relayHistory,
   relayKeys,
 } from "../src/cloud_relay.js";
 import { cloudService } from "../src/cloud_server.js";
 import { sha } from "../src/cloud_snapshot.js";
+import { CONTRACTS } from "../src/contracts.js";
 import { installedHarnessPython } from "../src/harness_python.js";
+import { violations } from "../src/schema.js";
 
 const run = promisify(execFile);
 const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
@@ -277,6 +280,7 @@ test("relay clients retry an encrypted outbox, verify another device's receipt a
     revision: second.revision,
     authenticated: true,
     files: 3,
+    history: "current",
   });
   process.env[tokenEnv] = env.READ;
   await assert.rejects(readRelay(peer, file, first.revision), /expected relay revision/);
@@ -423,4 +427,105 @@ test("a revoked offline writer can publish its local edits only after enrollment
     (await readRelay(reader, "notes.txt", cutover.revision)).sha256,
     sha(Buffer.from("edited offline")),
   );
+});
+
+test("relay history: an older or forked revision this device has seen past is refused", () => {
+  const [r1, r2, r3, r4] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  assert.equal(relayHistory([], r1).state, "first");
+  assert.equal(relayHistory([r1, r2], r2, r1).state, "current");
+  assert.equal(relayHistory([r1, r2], r3, r2).state, "newer", "another device built on our latest");
+  assert.equal(relayHistory([r1, r2], r4, r3).state, "newer", "several steps ahead");
+  const older = relayHistory([r1, r2], r1);
+  assert.equal(older.state, "older");
+  assert.match(older.reason, /rollback/);
+  assert.equal(relayHistory([r1, r2], r3, r1).state, "fork", "builds on an older revision");
+  assert.equal(relayHistory([r1, r2], null).state, "missing");
+});
+
+test("a relay that serves an older authentic snapshot is caught by the reading device", async (t) => {
+  const folder = mkdtempSync(join(realpathSync.native(tmpdir()), "forge-relay-rollback-"));
+  const home = join(folder, "state"),
+    root = join(folder, "writer"),
+    peer = join(folder, "reader"),
+    dataDir = join(folder, "service");
+  mkdirSync(root);
+  mkdirSync(peer);
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  const env = { WRITE: credential(), READ: credential() };
+  scopedEnv(t, { FORGE_HOME: home, [keyEnv]: credential(), [tokenEnv]: env.WRITE });
+  // Built from the variable names, as the suite above does, so no credential-shaped literal.
+  const roles = { WRITE: "writer", READ: "reader" };
+  const principals = Object.keys(env).map((name) => ({
+    workspace: "demo",
+    tenant: "first",
+    tokenEnv: name,
+    role: roles[name],
+  }));
+  const { origin } = await startRelay(t, dataDir, principals, env);
+  const config = {
+    url: origin,
+    tenant: "first",
+    workspace: "demo",
+    tokenEnv,
+    keyEnv,
+    fullWorkspace: true,
+  };
+  const contract = (key, value) =>
+    assert.deepEqual(violations(value, CONTRACTS[key].spec, key), [], `${key} contract`);
+  contract("relay status", await cloudStatus(root, false, "relay"));
+  await configureCloud(root, config, "relay");
+  await configureCloud(peer, config, "relay");
+  writeFileSync(join(root, "plan.txt"), "version one");
+  contract("cloud preview", previewCloud(root, "relay"));
+  const first = await pushCloud(root, {}, "relay");
+  contract("relay push", first);
+  contract("relay status", await cloudStatus(root, true, "relay"));
+  // Record what an honest relay served for the first snapshot.
+  process.env[tokenEnv] = env.READ;
+  const realFetch = globalThis.fetch;
+  const recorded = new Map();
+  globalThis.fetch = async (url, init) => {
+    const r = await realFetch(url, init);
+    recorded.set(String(url).replace(origin, ""), await r.clone().text());
+    return r;
+  };
+  const seenFirst = await readRelay(peer, "plan.txt");
+  globalThis.fetch = realFetch;
+  contract("relay read --json", seenFirst);
+  contract("relay list", await readRelay(peer));
+  assert.equal(Buffer.from(seenFirst.content, "base64").toString(), "version one");
+  process.env[tokenEnv] = env.WRITE;
+  writeFileSync(join(root, "plan.txt"), "version two");
+  const second = await pushCloud(root, {}, "relay");
+  process.env[tokenEnv] = env.READ;
+  assert.equal(
+    Buffer.from((await readRelay(peer, "plan.txt")).content, "base64").toString(),
+    "version two",
+  );
+  // Now the relay replays the first, authentic snapshot.
+  globalThis.fetch = async (url, init) => {
+    const key = String(url).replace(origin, "").replace(second.revision, first.revision);
+    const body = recorded.get(key);
+    return body === undefined
+      ? realFetch(url, init)
+      : new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+  };
+  t.after(() => {
+    globalThis.fetch = realFetch;
+  });
+  await assert.rejects(readRelay(peer, "plan.txt"), /rollback/);
+  await assert.rejects(readRelay(peer), /rollback/);
+  const status = await cloudStatus(peer, true, "relay");
+  assert.equal(status.remote.history, "older");
+  assert.match(status.remote.warning, /rollback/);
+  // A revision the reader pins explicitly is its own check, and is still served.
+  assert.equal(
+    Buffer.from((await readRelay(peer, "plan.txt", first.revision)).content, "base64").toString(),
+    "version one",
+  );
+  globalThis.fetch = realFetch;
+  // Logging out forgets the history, as configuring a device again should.
+  contract("cloud logout", await removeCloud(peer, false, false, "relay"));
+  await configureCloud(peer, config, "relay");
+  assert.equal((await cloudStatus(peer, true, "relay")).remote.history, "first");
 });

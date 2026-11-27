@@ -78,7 +78,13 @@ async function runCloud(args, transport) {
     case "read": {
       if (!relay) throw new Error(usage);
       const argument = op === "read" ? args[2] : undefined;
-      const path = argument?.startsWith("--path=") ? argument.slice("--path=".length) : argument;
+      // `--path <p>` and `--path=<p>` both name a path that starts with a dash.
+      const path =
+        argument === "--path"
+          ? args[3]
+          : argument?.startsWith("--path=")
+            ? argument.slice("--path=".length)
+            : argument;
       if (
         (op === "read" && (!path || argument === "--json" || argument === "--revision")) ||
         (args.includes("--revision") && !flag(args, "--revision"))

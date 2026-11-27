@@ -24,6 +24,8 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 - Ten commands leave the Labs group: `taste`, `uicheck`, `imagine`, `lean`, `anchor`, `diagnose`, `deja`, `reuse`, `rank` and `collide`.
 - `forge taste --json` and `forge anchor set|show|clear --json` print JSON; before, only the drift check had it.
+- `forge cloud` and `forge relay` leave Labs for a new Sync group, which empties Labs.
+- The relay client catches a receiver that serves an older authentic snapshot.
 - `forge dash` and `forge report` leave Labs too, for the Core group.
 
 **Changed**
@@ -32,6 +34,7 @@ CI when it falls behind, so it cannot drift from the release notes again.
 - `forge uicheck --help` now documents `interact` and the `--remote`, `--record` and `--enforce` flags, and `forge rank --help` documents `--task`; all of them existed but were missing from the help.
 - The dashboard page is served with a full Content-Security-Policy: only its own script runs, carrying a nonce minted at each start, it may connect only to its own server, and nothing can be loaded from elsewhere.
 - `forge report` writes a Content-Security-Policy and a generator mark into the file.
+- A cloud or relay request that cannot reach the receiver now says why, for example `Cloud request to https://relay.example.org failed: ECONNREFUSED. Any pending upload is kept`, instead of the bare `fetch failed` that Node reports.
 - `forge dash` stops cleanly on Ctrl+C or SIGTERM and exits 0, and a port that is in use or not allowed is reported as such (`port 4242 is in use — choose another with --port, or --port 0 for any free port`).
 
 **Fixed**

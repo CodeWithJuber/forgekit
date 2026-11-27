@@ -133,7 +133,12 @@ function unseal(keys, path, revision, artifact, expected) {
 }
 
 export function manifestFiles(keys, state) {
-  if (!state.manifest) return [];
+  return manifestIndex(keys, state).files;
+}
+
+/** The authenticated manifest's parent revision and files. */
+export function manifestIndex(keys, state) {
+  if (!state.manifest) return { parent: null, files: [] };
   const raw = unseal(keys, RELAY_MANIFEST, state.revision, state.manifest, state.manifest.sha256);
   let index;
   try {
@@ -171,7 +176,44 @@ export function manifestFiles(keys, state) {
     total += row.bytes;
   }
   if (total > MAX_TOTAL) invalid();
-  return index.files;
+  return { parent: index.parent, files: index.files };
+}
+
+/**
+ * Where a served revision sits relative to the revisions this device has seen, oldest
+ * first. The receiver keeps a linear chain (a sync must name the current revision as its
+ * parent), so an authentic revision this device saw before its latest, or one that builds
+ * on such a revision, can only be an older state served again: a rollback or a fork. An
+ * unknown revision whose parent is unknown or the latest is newer work by another device.
+ * Only history this device saw is covered; a revision that arrived over an independent
+ * channel (`--revision`) remains the check for a first-time reader.
+ * @param {string[]} seen
+ * @param {string|null} revision
+ * @param {string|null} [parent]
+ * @returns {{state: "first"|"current"|"newer"|"older"|"fork"|"missing", reason?: string}}
+ */
+export function relayHistory(seen, revision, parent = null) {
+  const last = seen.at(-1);
+  if (!last) return { state: "first" };
+  const reset =
+    "If the receiver was restored from a backup on purpose, verify the revision independently, then run forge relay logout and configure this device again";
+  if (revision === null)
+    return {
+      state: "missing",
+      reason: `the relay holds no revision, but this device saw ${last}. ${reset}`,
+    };
+  if (revision === last) return { state: "current" };
+  if (seen.includes(revision))
+    return {
+      state: "older",
+      reason: `the relay served revision ${revision}, which this device saw before ${last}: an older state (rollback). ${reset}`,
+    };
+  if (parent && parent !== last && seen.includes(parent))
+    return {
+      state: "fork",
+      reason: `the relay served revision ${revision}, which builds on ${parent}, older than ${last} that this device has seen: a fork. ${reset}`,
+    };
+  return { state: "newer" };
 }
 
 export function relayChange(keys, prior, snapshot) {
@@ -225,7 +267,7 @@ export async function remoteRelayIndex(keys, getRemote, expectedRevision) {
   const { revision } = status;
   if (!status.files.length) {
     if (expectedRevision !== undefined || status.events?.length) invalid();
-    return { revision, manifest: null, files: [] };
+    return { revision, parent: null, manifest: null, files: [] };
   }
   if (!revision) invalid();
   if (status.files.some((row) => !row || typeof row.path !== "string")) invalid();
@@ -242,7 +284,7 @@ export async function remoteRelayIndex(keys, getRemote, expectedRevision) {
     advertised.bytes !== Buffer.byteLength(manifest.content, "base64")
   )
     invalid();
-  const files = manifestFiles(keys, { revision, manifest });
+  const { parent, files } = manifestIndex(keys, { revision, manifest });
   if (remote.size !== files.length + 1) invalid();
   for (const f of files) {
     const sealed = remote.get(objectId(keys, f.path));
@@ -255,14 +297,19 @@ export async function remoteRelayIndex(keys, getRemote, expectedRevision) {
     )
       invalid();
   }
-  return { revision, manifest, files };
+  return { revision, parent, manifest, files };
 }
 
 export async function inspectRelay(keys, getRemote, path, expectedRevision) {
   const index = await remoteRelayIndex(keys, getRemote, expectedRevision);
   if (path === undefined) {
     const files = index.files.map(({ cipherHash, revision, ...metadata }) => metadata);
-    return { revision: index.revision, authenticated: Boolean(index.manifest), files };
+    return {
+      revision: index.revision,
+      parent: index.parent ?? null,
+      authenticated: Boolean(index.manifest),
+      files,
+    };
   }
   if (!validPath(path)) throw new Error("Provide a workspace-relative artifact path");
   const row = index.files.find((f) => f.path === path);
@@ -273,6 +320,7 @@ export async function inspectRelay(keys, getRemote, path, expectedRevision) {
   if (bytes.length !== row.bytes || sha(bytes) !== row.sha256) invalid();
   return {
     revision: index.revision,
+    parent: index.parent ?? null,
     path,
     kind: row.kind,
     redacted: row.redacted,
