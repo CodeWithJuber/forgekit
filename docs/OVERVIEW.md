@@ -460,7 +460,9 @@ the project policy and verifier to tool calls made inside that run.
 
 - **Beta software.** The CLI is released, CI-tested and semantically versioned (a breaking
   change is a major version); "beta" is about maturity and evidence, not about interface churn.
-  Support is maintainer-led and best-effort; there is no SLA.
+  Support is maintainer-led and best-effort; there is no SLA. [STABILITY.md](STABILITY.md) lists
+  what is frozen today (14 of 64 commands have a versioned contract), the deprecation policy and
+  the evidence that would end the beta label.
 - **Claude Code is the deepest-tested integration.** Other emitters and MCP configuration are
   implemented, but the repository does not provide equivalent real-world exercise evidence for
   every supported host.
