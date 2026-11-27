@@ -19,8 +19,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { arch, availableParallelism, platform } from "node:os";
-import { dirname, join } from "node:path";
-import { build as buildAtlas, has, isStale, load as loadAtlas } from "./atlas.js";
+import { dirname, extname, join } from "node:path";
+import { build as buildAtlas, CODE_EXTS, has, isStale, load as loadAtlas } from "./atlas.js";
 import { BRAND } from "./brand.js";
 import { duplicateGate } from "./duplicate_gate.js";
 import { readForgeConfig } from "./repo_config.js";
@@ -38,11 +38,53 @@ import { userStateDir } from "./util.js";
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
 
-import { extractCalledSymbols } from "./extract.js";
+import { extractCalledSymbols, importedBindings } from "./extract.js";
 
 /** Pure: which called symbols are defined nowhere in the atlas (possible hallucinations). */
 export function findUnknownSymbols(atlas, symbols) {
   return symbols.filter((s) => !has(atlas, s));
+}
+
+/** A whole-line comment (`//`, `/*`, ` * `, `#`): prose like "one comparator (see …)" is not a call. */
+const isCommentLine = (line) => /^\s*(?:\/\/|\/\*|\*|#)/.test(line);
+
+/** A path the symbol rules parse (src/atlas.js CODE_EXTS), so its text can contain calls. */
+const isCodePath = (path) => CODE_EXTS.has(extname(path));
+
+/**
+ * The added text of source files only: `+` lines of a `--unified=0` diff whose file is code,
+ * plus the bodies of untracked code files. Pure on the diff; reads untracked files.
+ * @param {string} diff @param {string[]} untracked @param {string} root
+ */
+export function codeAdditions(diff, untracked, root) {
+  const out = [];
+  let code = false;
+  // `+++ ` is a header only between `diff --git` and the first hunk: an added source line that
+  // itself starts with "++ " also begins with `+++ ` inside a hunk.
+  let header = false;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) header = true;
+    else if (line.startsWith("@@")) header = false;
+    else if (header && line.startsWith("+++ ")) {
+      // A path with unusual characters is C-quoted (`+++ "b/na\303\257ve.js"`); only its
+      // extension matters here, so the quotes and the destination prefix are dropped.
+      const path = line
+        .slice(4)
+        .trim()
+        .replace(/^"(.*)"$/, "$1")
+        .replace(/^b\//, "");
+      code = path !== "/dev/null" && isCodePath(path);
+    } else if (!header && code && line.startsWith("+") && !isCommentLine(line.slice(1)))
+      out.push(line.slice(1));
+  }
+  for (const f of untracked) {
+    if (!isCodePath(f)) continue;
+    try {
+      const body = readFileSync(join(root, f), "utf8").split("\n");
+      out.push(body.filter((l) => !isCommentLine(l)).join("\n"));
+    } catch {}
+  }
+  return out.join("\n");
 }
 
 // git output can be large (a lockfile regen, a generated asset): the 1 MiB execFileSync
@@ -155,10 +197,28 @@ export const provenanceMac = (prov) =>
     prov?.event?.runId ?? "",
   ]);
 
+/**
+ * A short public name for this profile's evidence key: an HMAC of a fixed label, so it
+ * reveals nothing about the key. A receipt carries it next to its signature, which lets a
+ * reviewer on another profile or machine tell "signed by a key I don't hold" from "modified
+ * after minting". It is outside the MAC on purpose: it only changes the explanation, and a
+ * forged one can at most turn REFUTED into UNVERIFIABLE, which is never accepted either.
+ * @returns {string|null}
+ */
+export function signerId() {
+  const key = evidenceKey();
+  if (!key) return null;
+  return createHmac("sha256", key).update("forge-evidence-signer-id").digest("hex").slice(0, 16);
+}
+
 /** Sign a provenance object in place (no-op when no key is available). */
 export function signProvenance(prov) {
   const mac = provenanceMac(prov);
-  if (mac) prov.signature = mac;
+  if (mac) {
+    prov.signature = mac;
+    const signer = signerId();
+    if (signer) prov.signer = signer;
+  }
   return prov;
 }
 
@@ -167,8 +227,9 @@ export function signProvenance(prov) {
  * where the receipt is `forge verify --json` output. No re-run is needed when the
  * tree is unchanged — the MAC'd, fingerprint-bound stamp IS the evidence. A changed
  * tree cannot be confirmed or refuted from the receipt; it is STALE and must be
- * re-verified. (The MAC key is machine-local: a receipt minted on another machine
- * reads as INVALID here — tampered-or-foreign is the honest bucket for both.)
+ * re-verified. The MAC key is per user, so a receipt from another profile or machine cannot
+ * be checked here: when it names a signer that is not this profile's, it is UNVERIFIABLE
+ * with that reason; a receipt with no signer name that fails the MAC is still REFUTED.
  * @param {any} receipt parsed `forge verify --json` output
  * @param {{cwd?: string}} [opts]
  * @returns {{verdict: "CONFIRMED"|"STALE"|"REFUTED"|"UNVERIFIABLE"|"INVALID", signature: "VALID"|"INVALID"|"UNAVAILABLE", tree: "MATCHED"|"CHANGED"|"UNKNOWN", claim: object|null, reason: string}}
@@ -232,13 +293,23 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
     ? `run ${claim.runId}${claim.finishedAt ? ` (${claim.finishedAt})` : ""}`
     : "the receipt";
 
+  // A receipt that names a signer other than this profile's key was minted elsewhere: this
+  // machine cannot check that signature at all, which is not evidence against the claim.
+  const local = signature === "INVALID" ? signerId() : null;
+  const foreign =
+    signature === "INVALID" &&
+    typeof prov.signer === "string" &&
+    /^[0-9a-f]{16}$/.test(prov.signer) &&
+    local !== null &&
+    prov.signer !== local;
+  if (foreign) signature = "UNAVAILABLE";
   if (signature === "INVALID")
     return {
       verdict: "REFUTED",
       signature,
       tree,
       claim,
-      reason: `signature does not verify — ${where} was modified after minting, or minted on another machine (the evidence key is machine-local)`,
+      reason: `signature does not verify — ${where} was modified after minting, or minted by a profile or machine whose receipts do not name their signer (the evidence key is per user). If it came from someone else, run \`forge verify\` here to check the tree yourself`,
     };
   if (tree === "CHANGED")
     return {
@@ -247,6 +318,14 @@ export function verifyClaim(receipt, { cwd = process.cwd() } = {}) {
       tree,
       claim,
       reason: `tree changed since ${where} — the claim cannot be confirmed or refuted from this receipt; re-run \`forge verify\``,
+    };
+  if (foreign)
+    return {
+      verdict: "UNVERIFIABLE",
+      signature,
+      tree,
+      claim,
+      reason: `unknown signer on this machine — ${where} was signed by key ${prov.signer} and this profile signs as ${local}, so its signature cannot be checked here. The tree matches; run \`forge verify\` here to check it locally`,
     };
   if (signature === "UNAVAILABLE")
     return {
@@ -1348,7 +1427,9 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   ).trim();
   if (!revision && base !== "HEAD")
     throw new Error("Verification baseline does not resolve to a commit");
-  const diffArgs = ["diff", "--no-ext-diff", "--no-textconv"];
+  // Fixed prefixes: a user's diff.noprefix or diff.mnemonicPrefix would otherwise change
+  // the `+++ b/<path>` headers codeAdditions reads.
+  const diffArgs = ["diff", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"];
   const diff =
     (revision && git([...diffArgs, "--unified=0", revision, "--"], targetRoot)) ||
     git([...diffArgs, "--unified=0", "--cached", "--"], targetRoot);
@@ -1391,10 +1472,24 @@ export function verify({ targetRoot = process.cwd(), base = "HEAD", onProgress }
   // incremental build only re-parses the files that changed, so this stays cheap.
   const cached = loadAtlas(targetRoot);
   const atlas = cached && !isStale(targetRoot, cached) ? cached : buildAtlas({ root: targetRoot });
-  const symbols = extractCalledSymbols(added);
+  // Only source files can call a symbol. Prose and config fed to the call extractor read
+  // "word (aside)" as a call: right after `forge init`, AGENTS.md and CLAUDE.md alone made
+  // verify report a dozen English words as possible hallucinations in a repo with no edits.
+  const symbols = extractCalledSymbols(codeAdditions(diff, untracked, targetRoot));
+  // A name the changed file imports (`readFileSync` from node:fs, a package's export) is bound,
+  // not invented, even though no project file defines it.
+  const imported = new Set();
+  for (const f of changedFiles) {
+    if (!isCodePath(f)) continue;
+    try {
+      for (const n of importedBindings(readFileSync(join(targetRoot, f), "utf8"))) imported.add(n);
+    } catch {}
+  }
   // When the graph was capped (huge repo, files dropped), "defined nowhere" is unreliable — a
   // symbol may live in a dropped file — so don't assert hallucinations.
-  const unknown = atlas.capped ? [] : findUnknownSymbols(atlas, symbols);
+  const unknown = atlas.capped
+    ? []
+    : findUnknownSymbols(atlas, symbols).filter((n) => !imported.has(n));
 
   const runId = randomUUID();
   const startedAt = new Date().toISOString();

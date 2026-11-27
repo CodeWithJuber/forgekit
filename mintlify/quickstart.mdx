@@ -1,6 +1,6 @@
 ---
 title: "Quickstart"
-description: "Install Forge, emit your tools' config from one source, and run your first pre-action gate — in about 60 seconds."
+description: "Install Forge, watch the demo catch a broken test, then emit your tools' config from one source and run your first pre-action gate."
 ---
 
 Get from zero to a configured repo and your first substrate check in about a minute.
@@ -15,7 +15,17 @@ For a feature that has reached the repository ahead of the registry release, ins
 `github:CodeWithJuber/forgekit` with the same command. See [Installation](/installation)
 for the Kimi, Codex and Claude Code setup steps.
 
-## 2. Configure a repo
+## 2. See it work first
+
+```bash
+forge demo
+```
+
+The demo builds its own throwaway project, so it touches nothing of yours: a test passes, a
+one-line change breaks it and `forge verify` reports the failure, then the fix passes again.
+`forge demo --json` prints the same result as one JSON document.
+
+## 3. Configure a repo
 
 <Steps>
   <Step title="Emit your tools' config">
@@ -48,7 +58,7 @@ for the Kimi, Codex and Claude Code setup steps.
   </Step>
 </Steps>
 
-## 3. Run the pre-action gate
+## 4. Run the pre-action gate
 
 The substrate is the layer that runs _before_ the model edits code. One command runs
 the whole gate:
@@ -74,7 +84,7 @@ forge substrate "<task>" --json   # machine-readable verdict
 forge impact <symbol-or-file>     # the blast radius on its own
 ```
 
-## 4. Explore the extras
+## 5. Explore the extras
 
 ```bash
 forge atlas build          # index this repo's symbols → .forge/atlas.json
@@ -84,7 +94,7 @@ forge recall add "db port" "Postgres is on 5433 here, not 5432"
 forge catalog              # the Start-Here index of everything
 ```
 
-## 5. Day two: the ledger is learning
+## 6. Day two: the ledger is learning
 
 Everything the substrate learned on day one landed as claims in `.forge/ledger/`. This
 is proof-carrying memory — now it starts paying off:

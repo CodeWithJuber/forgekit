@@ -340,3 +340,46 @@ test("parallel catalog registration retains every successful add", async (t) => 
     ids.sort(),
   );
 });
+
+test("nodeRangeFits reads engines.node ranges the way npm's semver does", async () => {
+  const { nodeRangeFits } = await import("../src/tool_adoption.js");
+  const { createRequire } = await import("node:module");
+  const { dirname, join } = await import("node:path");
+  const { existsSync } = await import("node:fs");
+  const table = [
+    [">=18", "20.11.1", true],
+    [">=18", "16.20.2", false],
+    [">= 18.17", "18.16.9", false],
+    ["^20 || >=22", "21.7.0", false],
+    ["^20 || >=22", "22.23.5", true],
+    ["^20.1", "20.0.9", false],
+    ["^0.2.3", "0.3.0", false],
+    ["^0.0.3", "0.0.3", true],
+    ["~18.17", "18.18.0", false],
+    ["~18", "18.99.1", true],
+    ["18.x", "18.4.0", true],
+    ["18", "19.0.0", false],
+    [">=16 <21", "21.0.0", false],
+    [">16", "16.9.0", false],
+    [">16", "17.0.0", true],
+    ["<=20.10", "20.10.7", true],
+    ["<20.10", "20.10.0", false],
+    ["18 - 20", "20.9.0", true],
+    ["18.0.0 - 20.1", "20.2.0", false],
+    ["*", "1.0.0", true],
+    [">=18.0.0-rc.1", "20.0.0", null], // a prerelease tag is not read: refuse, do not guess
+  ];
+  for (const [range, version, want] of table)
+    assert.equal(nodeRangeFits(range, version), want, `${range} vs ${version}`);
+  // Where npm sits beside node (most installs), the reader must agree with npm's semver.
+  const dir = dirname(process.execPath);
+  const cli = [
+    join(dir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    join(dir, "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find((p) => existsSync(p));
+  if (!cli) return;
+  const semver = createRequire(cli)("semver");
+  for (const [range, version, want] of table)
+    if (want !== null)
+      assert.equal(semver.satisfies(version, range), want, `npm semver: ${range} vs ${version}`);
+});

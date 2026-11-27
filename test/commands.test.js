@@ -35,3 +35,37 @@ test("registry ↔ dispatch stay in sync: every COMMANDS entry has a handler, no
   assert.deepEqual(noHandler, [], "commands registered without a dispatch handler");
   assert.deepEqual(noCommand, [], "handlers wired with no COMMANDS registration");
 });
+
+test("bare --help leads with the Start-here commands and still names every command", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { START_HERE, commandSummary } = await import("../src/commands.js");
+  const { fileURLToPath } = await import("node:url");
+  const cli = fileURLToPath(new URL("../src/cli.js", import.meta.url));
+  const env = { ...process.env, FORGE_NO_HINT: "1" };
+  const help = execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8", env });
+  const names = START_HERE.map((c) => c.name);
+  assert.ok(names.length >= 6 && names.length <= 8, "a short first step, not the whole surface");
+  assert.equal(new Set(names).size, names.length, "no command listed twice");
+  const grouped = Object.values(GROUPS).flat();
+  for (const { name, why } of START_HERE) {
+    assert.ok(grouped.includes(name), `${name} is a real, grouped command`);
+    assert.ok(help.includes(`  ${name.padEnd(12)} ${why}`), `${name} shows its plain why`);
+  }
+  const start = help.indexOf("Start here:");
+  const more = help.indexOf("More commands:");
+  assert.ok(start > 0 && more > start, "Start here comes before the rest");
+  // Nothing is hidden: every advertised command is named somewhere on the short screen.
+  for (const name of grouped) assert.match(help, new RegExp(`\\b${name}\\b`), `${name} is named`);
+  assert.ok(help.includes("--help --all"), "points to the full list");
+  for (const line of help.split("\n")) assert.ok(line.length <= 80, `fits 80 columns: ${line}`);
+  // The full list keeps today's grouped summaries, and `forge help --all` is the same screen.
+  const all = execFileSync(process.execPath, [cli, "--help", "--all"], { encoding: "utf8", env });
+  for (const [group, cmds] of Object.entries(GROUPS)) {
+    assert.ok(all.includes(`${group}:`), `${group} group in --all`);
+    for (const name of cmds)
+      assert.ok(all.includes(`  ${name.padEnd(12)} ${commandSummary(name)}`));
+  }
+  assert.ok(!all.includes("Start here:"), "--all is the reference list");
+  const word = execFileSync(process.execPath, [cli, "help", "--all"], { encoding: "utf8", env });
+  assert.equal(word, all);
+});

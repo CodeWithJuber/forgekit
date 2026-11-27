@@ -19,7 +19,7 @@ import { bar, heading, paint, table } from "./cli/shared.js";
 import verificationHandlers from "./cli/verification.js";
 // The command surface lives in commands.js as data — docs_check.js reconciles the
 // README/GUIDE tables against the same table this help is rendered from.
-import { COMMANDS, commandHelp, commandSummary, GROUPS } from "./commands.js";
+import { COMMANDS, commandHelp, commandSummary, GROUPS, START_HERE } from "./commands.js";
 import { printCommandHelp } from "./help.js";
 import { suggest } from "./math.js";
 import { hasProjectConfig } from "./repo_config.js";
@@ -41,18 +41,64 @@ function maybeFirstRunHint() {
   );
 }
 
-function printHelp() {
+/**
+ * `prefix` + names joined by ", ", wrapped at `width` columns with continuation lines
+ * indented under the first name.
+ * @param {string} prefix @param {string[]} names @param {number} width
+ */
+function wrapList(prefix, names, width) {
+  const indent = " ".repeat(prefix.length);
+  const lines = [];
+  let line = prefix;
+  names.forEach((name, i) => {
+    const piece = i < names.length - 1 ? `${name},` : name;
+    if (line.length > indent.length && line.length + 1 + piece.length > width) {
+      lines.push(line.trimEnd());
+      line = indent;
+    }
+    line += line.endsWith(" ") ? piece : ` ${piece}`;
+  });
+  lines.push(line);
+  return lines.join("\n");
+}
+
+/**
+ * Top-level help. Bare `forge --help` shows the eight Start-here commands and one line per
+ * remaining group; `--all` prints every command grouped, as the README table does.
+ * @param {{all?: boolean}} [opts]
+ */
+function printHelp({ all = false } = {}) {
   printVersion();
   console.log(`\n${BRAND.tagline}\n`);
   console.log(`Usage: ${BRAND.cli} <command> [options]\n`);
-  for (const [group, cmds] of Object.entries(GROUPS)) {
-    console.log(`${group}:`);
-    for (const name of cmds) {
-      if (COMMANDS[name]) console.log(`  ${name.padEnd(12)} ${commandSummary(name)}`);
+  const advertised = Object.values(GROUPS)
+    .flat()
+    .filter((n) => COMMANDS[n]);
+  if (all) {
+    for (const [group, cmds] of Object.entries(GROUPS)) {
+      console.log(`${group}:`);
+      for (const name of cmds) {
+        if (COMMANDS[name]) console.log(`  ${name.padEnd(12)} ${commandSummary(name)}`);
+      }
+      console.log();
+    }
+  } else {
+    console.log("Start here:");
+    for (const { name, why } of START_HERE) console.log(`  ${name.padEnd(12)} ${why}`);
+    console.log(
+      `\nTry it in a throwaway repo: \`${BRAND.cli} demo\` breaks a test and verify catches it.\n`,
+    );
+    const core = new Set(START_HERE.map((c) => c.name));
+    console.log("More commands:");
+    for (const [group, cmds] of Object.entries(GROUPS)) {
+      const rest = cmds.filter((n) => COMMANDS[n] && !core.has(n));
+      if (rest.length) console.log(wrapList(`  ${group.padEnd(12)} `, rest, 80));
     }
     console.log();
   }
-  console.log(`Start here: \`${BRAND.cli} catalog\``);
+  if (!all)
+    console.log(`All ${advertised.length} commands with summaries: \`${BRAND.cli} --help --all\``);
+  console.log(`Browse every tool, crew and guard: \`${BRAND.cli} catalog\``);
   console.log(`Run \`${BRAND.cli} <command> --help\` for details.`);
 }
 
@@ -77,6 +123,9 @@ async function run(argv) {
   const [cmd] = argv;
   // Top-level help/version — flag AND word forms (`forge help`, `forge version`).
   if (!cmd) maybeFirstRunHint();
+  // `forge --help --all` / `forge help --all` / `forge -h --all`: the full grouped list.
+  if ((cmd === "-h" || cmd === "--help" || cmd === "help") && argv[1] === "--all" && !argv[2])
+    return printHelp({ all: true });
   if (!cmd || cmd === "-h" || cmd === "--help" || (cmd === "help" && !argv[1])) return printHelp();
   if (cmd === "-v" || cmd === "--version" || cmd === "version") return printVersion();
   // Per-command help by word form: `forge help <cmd>`.
@@ -309,9 +358,23 @@ HANDLERS.init = async (argv) => {
     );
   }
   console.log(`  active:   tools · crew · guards  →  \`${BRAND.cli} catalog\``);
-  console.log(`  verify:   \`${BRAND.cli} doctor\``);
+  if (process.exitCode === 1) {
+    console.log(`  verify:   \`${BRAND.cli} doctor\``);
+    return;
+  }
+  // The first five minutes: four commands that each show one job working in this repo.
+  console.log("\n  Next, in this repo:");
+  for (const [cmd, why] of INIT_NEXT_STEPS) console.log(`    ${cmd.padEnd(32)} ${why}`);
   return;
 };
+
+/** What `forge init` suggests once it succeeds: check, remember, inspect, verify. */
+export const INIT_NEXT_STEPS = [
+  [`${BRAND.cli} doctor`, "check the wiring (--fix repairs it)"],
+  [`${BRAND.cli} remember <name> "<fact>"`, "a fact for every agent (then `sync`)"],
+  [`${BRAND.cli} impact <symbol>`, "files an edit will probably touch"],
+  [`${BRAND.cli} verify`, "run the tests on this exact tree"],
+];
 HANDLERS.update = async (argv) => {
   const { applyUpdate, applyUpdateTo, updateStatus } = await import("./update.js");
   const json = argv.includes("--json");

@@ -16,6 +16,7 @@ import { test } from "node:test";
 import {
   CODE_STATE_SCHEME,
   classifySuiteFailure,
+  codeAdditions,
   computeCodeState,
   defaultVerifyBudgetMs,
   extractCalledSymbols,
@@ -94,6 +95,74 @@ test("findUnknownSymbols flags symbols absent from the atlas", () => {
   const atlas = { symbols: [{ name: "computeTax" }, { name: "helper" }] };
   const unknown = findUnknownSymbols(atlas, ["computeTax", "helper", "totallyMadeUpFn"]);
   assert.deepEqual(unknown, ["totallyMadeUpFn"]);
+});
+
+test("codeAdditions keeps added source lines and drops prose, config and diff headers", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-verify-code-"));
+  writeFileSync(join(root, "new.js"), "export const x = () => brandNew();\n");
+  writeFileSync(join(root, "NOTES.md"), "Keep the cache lean (see docs).\n");
+  const diff = [
+    "diff --git a/src/a.js b/src/a.js",
+    "--- a/src/a.js",
+    "+++ b/src/a.js",
+    "@@ -1,0 +2,2 @@",
+    "+callsHelper();",
+    "+// one comparator (see the docs) is prose in a comment",
+    "+ * and so is a JSDoc line like parse(this)",
+    "+++ counter;", // an added line that itself starts with "++ ", inside a hunk
+    "diff --git a/AGENTS.md b/AGENTS.md",
+    "--- a/AGENTS.md",
+    "+++ b/AGENTS.md",
+    "@@ -1,0 +1 @@",
+    "+Rules stay free (no lock-in) and the substrate (advisory) runs first.",
+    "diff --git a/.mcp.json b/.mcp.json",
+    "+++ b/.mcp.json",
+    "@@ -0,0 +1 @@",
+    '+{"args": ["schema(x)"]}',
+    'diff --git "a/src/na\\303\\257ve.py" "b/src/na\\303\\257ve.py"',
+    '+++ "b/src/na\\303\\257ve.py"',
+    "@@ -0,0 +1 @@",
+    "+quoted_path_call()",
+  ].join("\n");
+  const text = codeAdditions(diff, ["new.js", "NOTES.md"], root);
+  assert.deepEqual(extractCalledSymbols(text).sort(), [
+    "brandNew",
+    "callsHelper",
+    "quoted_path_call",
+  ]);
+  assert.ok(text.includes("++ counter;"), "a hunk line starting with ++ is content, not a header");
+  assert.ok(!/free|substrate|schema|lean/.test(text), "prose and config never reach the extractor");
+  assert.ok(!/comparator|parse\(this\)/.test(text), "comment lines never reach the extractor");
+});
+
+test("verify right after forge-style docs and config are added reports no possible hallucination", () => {
+  const root = gitRepo();
+  writeFileSync(join(root, "math.js"), "export function add(a, b) { return a + b; }\n");
+  execFileSync("git", ["add", "-A"], { cwd: root });
+  execFileSync("git", ["commit", "-qm", "init"], { cwd: root });
+  // What `forge init` leaves untracked: prose rules and MCP config, no code edits.
+  writeFileSync(
+    join(root, "AGENTS.md"),
+    "Keep rules free (no lock-in); run the substrate (advisory).\n",
+  );
+  writeFileSync(join(root, ".mcp.json"), JSON.stringify({ args: ["schema(x)", "input(y)"] }));
+  writeFileSync(
+    join(root, "use.js"),
+    [
+      "import { add } from './math.js';",
+      'import { readFileSync as read } from "node:fs";',
+      "// read(path) below is imported, so it is not a hallucination",
+      "export const t = add(1, 2) + madeUp() + read('x').length + new URL('a:b').href.length;",
+      "",
+    ].join("\n"),
+  );
+  const r = verify({ targetRoot: root });
+  assert.deepEqual(
+    r.unknown,
+    ["madeUp"],
+    "only the invented call is unknown: not imports, globals or comments",
+  );
+  assert.ok(r.changedFiles.includes("AGENTS.md"), "the docs are still part of the change");
 });
 
 test("extractCalledSymbols dedupes", () => {

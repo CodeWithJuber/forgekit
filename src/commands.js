@@ -1107,6 +1107,25 @@ export const GROUPS = {
   // goes back into a "Labs (experimental)" group here until it meets the bar too.
 };
 
+/**
+ * What bare `forge --help` shows a new user: the eight commands of the everyday loop (set up,
+ * remember, check impact, verify, guard installs and commits), each with a plain one-line why
+ * instead of its full summary. `forge --help --all` prints every group above. Two reviews of
+ * 1.20.0 found 61 commands on one screen too many to find a first step in; this list is that
+ * first step, and nothing outside it is removed or hidden.
+ * @type {{name: string, why: string}[]}
+ */
+export const START_HERE = [
+  { name: "init", why: "set up ForgeKit for the coding agents this repo uses" },
+  { name: "doctor", why: "check that hooks, providers and MCP wiring work (--fix repairs)" },
+  { name: "sync", why: "rewrite every agent's config after you edit the shared rules" },
+  { name: "remember", why: "save a fact for every agent (run sync to deliver it)" },
+  { name: "impact", why: "list the files an edit to a symbol will probably touch" },
+  { name: "verify", why: "run the repo's tests and report PASS, FAIL or INCOMPLETE" },
+  { name: "precommit", why: "stop a commit that leaks a secret or changes code without docs" },
+  { name: "vet", why: "check a package is real and not known malicious before installing" },
+];
+
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */
 export const HIDDEN_COMMANDS = ["cortex-mcp"];
 

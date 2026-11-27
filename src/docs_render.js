@@ -13,11 +13,11 @@
 // Registry-derived blocks (tables, counts) are enforced as ERRORS; tree-derived output
 // (the repo-map diagram, mermaid theme normalization) is advisory — a moved file should
 // not fail an unrelated PR, but a new command with a stale table must.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { CHANGELOG_PAGE, renderChangelogPage } from "./changelog_page.js";
-import { commandHelp, commandSummary, GROUPS } from "./commands.js";
+import { commandHelp, commandSummary, GROUPS, START_HERE } from "./commands.js";
 import { CONTRACTS } from "./contracts.js";
 import { HOSTS } from "./hosts.js";
 import { TOOLS } from "./mcp_tools.js";
@@ -76,6 +76,54 @@ export function renderCommandsTable() {
     });
   }
   return mdTable(["Group", "Command", "Does"], rows);
+}
+
+/** The README's Start-here table: the commands bare `--help` shows first, with the same why. */
+export function renderStartHereTable() {
+  return mdTable(
+    ["Command", "What it does"],
+    START_HERE.map(({ name, why }) => [`\`${BRAND.cli} ${name}\``, why]),
+  );
+}
+
+/**
+ * The inventory counts in docs/EVIDENCE.md, read from the tree instead of copied by hand
+ * (two reviews of 1.21.0 found the hand-written 61 commands and 14 emitters stale).
+ * @param {string} root
+ */
+export function renderInventoryTable(root) {
+  const readJson = (rel) => {
+    try {
+      return JSON.parse(readFileSync(join(root, rel), "utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const list = (rel) => (existsSync(join(root, rel)) ? readdirSync(join(root, rel)) : []);
+  const hooks = readJson("hooks/hooks.json")?.hooks ?? {};
+  const hookCommands = Object.values(hooks)
+    .flat()
+    .reduce((n, m) => n + (m?.hooks?.length ?? 0), 0);
+  const advertised = Object.values(GROUPS).flat().length;
+  const emitters = list("src/emit").filter((f) => f.endsWith(".js") && f !== "_shared.js").length;
+  const skills = list("skills").filter((d) =>
+    existsSync(join(root, "skills", d, "SKILL.md")),
+  ).length;
+  const budgets = Object.keys(readJson("hooks/budget.json")?.events ?? {}).length;
+  return mdTable(
+    ["Inventory", "Count"],
+    [
+      [`CLI commands (\`${BRAND.cli} --help --all\`)`, advertised],
+      [
+        `Lifecycle hook commands across ${Object.keys(hooks).length} events (\`hooks/hooks.json\`)`,
+        hookCommands,
+      ],
+      ["Config emitters (`src/emit/`, excluding the shared helper)", emitters],
+      ["Installable skill packs (`skills/`)", skills],
+      ["Explicit per-event hook byte budgets (`hooks/budget.json`)", budgets],
+      ["MCP tools in an ordinary project (`tools/list`)", TOOLS.length],
+    ],
+  );
 }
 
 /** The GUIDE group map — same grouping as `--help`, one row per group. */
@@ -227,8 +275,20 @@ export function normalizeMermaid(text) {
 const BLOCK_TARGETS = [
   {
     file: "README.md",
+    name: "start-here",
+    render: () => renderStartHereTable(),
+    strict: true,
+  },
+  {
+    file: "README.md",
     name: "commands-table",
     render: () => renderCommandsTable(),
+    strict: true,
+  },
+  {
+    file: "docs/EVIDENCE.md",
+    name: "inventory",
+    render: (root) => renderInventoryTable(root),
     strict: true,
   },
   {
@@ -275,6 +335,8 @@ const BLOCK_TARGETS = [
 // Files whose "N MCP tools" phrases are auto-corrected (the six the count lives in).
 const COUNT_FILES = [
   "README.md",
+  "docs/OVERVIEW.md",
+  "docs/EVIDENCE.md",
   "docs/GUIDE.md",
   "ARCHITECTURE.md",
   "ROADMAP.md",

@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `forge --help` leads with eight Start-here commands (`init`, `doctor`, `sync`, `remember`, `impact`, `verify`, `precommit`, `vet`), each with a one-line reason, and names the rest by group. `forge --help --all` prints every command with its summary, as `--help` did before. The README's Start-here table is generated from the same list.
+- `forge init` ends with four next steps that each show one job working in the repository: `doctor`, `remember`, `impact` and `verify`. `forge demo` ends by pointing at `forge init`.
+
+### Changed
+
+- The README is now a short first read: 193 lines outside the collapsed command table, against 885 before. The quickstart starts with `forge demo`, which needs no setup, and the page leads with what ForgeKit catches. Status notes, setup, orchestration, advisor pairing, team memory, retrieval and every limit moved to [docs/OVERVIEW.md](docs/OVERVIEW.md); measurements, refutations and the research prototypes moved to [docs/EVIDENCE.md](docs/EVIDENCE.md). `forge docs check` reads both pages for env vars, MCP tools, prices and benchmark figures, as it did for the README.
+- The inventory counts in docs/EVIDENCE.md (commands, hook commands, emitters, skill packs, hook budgets, MCP tools) are generated from the tree by `forge docs render`, and the docs check fails when they fall behind. The README had said 61 commands and 14 emitters; the tree has 64 and 15.
+- The "18,262 B of durable memory to an 826 B index" figure is gone: no measurement procedure or fixture for it was ever recorded. The hook byte budgets it sat next to are in `hooks/budget.json`.
+- A `forge verify --json` receipt names its signer, a public tag of the profile's evidence key. `forge verify --claim` on a receipt from another profile or machine now reads `UNVERIFIABLE` with "unknown signer on this machine" and the next step (run `forge verify` here), instead of `REFUTED`: a key this machine does not hold says nothing against the claim. A receipt changed after signing is still `REFUTED`.
+
+### Fixed
+
+- Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations. The symbol check now reads added lines of source files only; prose and config stay part of the change.
+- `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout. stdout is now the JSON document alone, the steps go to stderr, and a test parses the whole of stdout.
+- `forge integrations install` failed with "Install npm alongside the Node executable" wherever npm lives outside Node's own directory (a distro package, a version manager, some containers), and six tests failed there too. A built-in reader for `engines.node` ranges now takes over when npm's semver is not beside Node; it agrees with npm's semver on the tested ranges and refuses a range it cannot read instead of guessing.
+
 ## [1.22.0] - 2026-11-27
 
 ### Added
