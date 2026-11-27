@@ -238,12 +238,12 @@ function applies(file, rule) {
 }
 
 /** @param {string} s */
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** @param {Rule} rule */
 function lineTest(rule) {
   if (rule.kind === "no-import") {
-    const mod = escape(rule.subject);
+    const mod = escapeRe(rule.subject);
     const js = new RegExp(
       String.raw`(?:\bfrom\s+|\bimport\s*\(?\s*|\brequire\s*\(\s*)["'\x60]${mod}(?:/[^"'\x60]*)?["'\x60]`,
     );
@@ -252,7 +252,7 @@ function lineTest(rule) {
     );
     return (/** @type {string} */ line) => js.test(line) || py.test(line);
   }
-  const re = new RegExp(rule.pattern ?? escape(rule.subject));
+  const re = new RegExp(rule.pattern ?? escapeRe(rule.subject));
   return (/** @type {string} */ line) => re.test(line);
 }
 
