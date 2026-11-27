@@ -14,6 +14,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The docs auto-update job renders the adversarial doctor demo again. Its capture accepts the warning count that doctor prints since 1.19.5, and a test checks the capture against the CLI output in pull requests.
 - `ping` from a handshake-era MCP client is answered with an empty result. It used to come back as "unknown method", which a client that checks liveness reads as a dead server.
 
 ## [1.19.5] - 2026-11-26
