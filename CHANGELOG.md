@@ -26,6 +26,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations. The symbol check now reads added lines of source files only; prose and config stay part of the change.
 - `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout. stdout is now the JSON document alone, the steps go to stderr, and a test parses the whole of stdout.
 - `forge integrations install` failed with "Install npm alongside the Node executable" wherever npm lives outside Node's own directory (a distro package, a version manager, some containers), and six tests failed there too. A built-in reader for `engines.node` ranges now takes over when npm's semver is not beside Node; it agrees with npm's semver on the tested ranges and refuses a range it cannot read instead of guessing.
+- Reading a local CSV, TSV, spreadsheet, PDF or Office source could stall until its timeout on macOS when the file was large, and report "table extraction exceeded limits or failed" instead of the real reason (for example the row limit). The converter now reads the bytes from a private file on stdin, which is removed afterwards, instead of a pipe; it still never opens the source path itself.
 
 ## [1.22.0] - 2026-11-27
 
