@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The path guard read many spellings of a dangerous command as harmless: a quoted or escaped name (`"rm" -rf /`), a variable (`R=rm; $R -rf /`, `f=.env; cat $f`), `$(echo rm)`, `find -name .env -exec cat {}`, `source .env`, an editor or archiver, and inline programs (`python3 -c "open('.env')"`, `node -e "fs.rmSync('/')"`). It also blocked text that only mentioned one, such as `git commit -m "block rm -rf /"`. Commands are now normalized the way the shell reads them before they are judged, data arguments stay out of the destructive patterns, and unknowns that decide the verdict fail closed (a computed command name that would be destructive, a recursive delete of an unknown path, `eval` or `sh -c` of downloaded or decoded text). On a held-out set of 25 bypasses and 20 ordinary commands, the old guard blocked 4 and wrongly blocked 3; the new one blocked 23 and wrongly blocked none at first measurement, and the two misses are fixed.
+
 ## [1.23.0] - 2026-11-27
 
 ### Added
@@ -29,7 +33,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The path guard read many spellings of a dangerous command as harmless: a quoted or escaped name (`"rm" -rf /`), a variable (`R=rm; $R -rf /`, `f=.env; cat $f`), `$(echo rm)`, `find -name .env -exec cat {}`, `source .env`, an editor or archiver, and inline programs (`python3 -c "open('.env')"`, `node -e "fs.rmSync('/')"`). It also blocked text that only mentioned one, such as `git commit -m "block rm -rf /"`. Commands are now normalized the way the shell reads them before they are judged, data arguments stay out of the destructive patterns, and unknowns that decide the verdict fail closed (a computed command name that would be destructive, a recursive delete of an unknown path, `eval` or `sh -c` of downloaded or decoded text). On a held-out set of 25 bypasses and 20 ordinary commands, the old guard blocked 4 and wrongly blocked 3; the new one blocked 23 and wrongly blocked none at first measurement, and the two misses are fixed.
 - `forge verify`'s test-integrity check read a line such as `todo: 0,` in a test's expected data as a newly added skip marker, and marked the change `SUSPECT`. A falsy option value (`false`, `0`, `null`, `undefined`, an empty string) now marks nothing; `skip: <reason>` and `todo: <reason>` are still caught.
 - Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations. The symbol check now reads added lines of source files only; prose and config stay part of the change.
 - `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout. stdout is now the JSON document alone, the steps go to stderr, and a test parses the whole of stdout.
