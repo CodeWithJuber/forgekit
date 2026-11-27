@@ -309,9 +309,11 @@ const ADDED_LATER = "added-after-assessment";
  * A claim whose commit is not in this clone (a shallow checkout) is listed in `unchecked`.
  * Returns null when git is unavailable.
  *
- * With `since`, every claim is compared with that one revision instead of its own
- * `source_commit`: the result is the claims whose evidence a branch has touched, which is the
- * question a pull request has to answer. The branch point with HEAD is used when there is one.
+ * With `since`, a claim is compared with that revision instead of its own `source_commit`: the
+ * result is the claims whose evidence a branch has touched, which is the question a pull
+ * request has to answer. The branch point with HEAD is used when there is one. A claim that
+ * was re-assessed on the branch (its `source_commit` descends from that revision) is compared
+ * with its own assessment, so recording a re-assessment is what takes it off the list.
  * @param {string} root
  * @param {any} registry a valid registry
  * @param {{since?: string|null}} [opts]
@@ -351,7 +353,13 @@ export function freshness(root, registry, { since = null } = {}) {
   const claims = [];
   const unchecked = [];
   for (const c of registry.claims) {
-    const at = base ?? c.source_commit;
+    // A claim assessed on the branch itself, after the base, is compared with its own
+    // assessment: re-reading a claim and recording the commit is what clears it.
+    const reassessed =
+      base !== null &&
+      c.source_commit !== base &&
+      attempt(["merge-base", "--is-ancestor", base, c.source_commit]) !== null;
+    const at = base === null || reassessed ? c.source_commit : base;
     if (attempt(["cat-file", "-e", `${at}^{commit}`]) === null) {
       unchecked.push(c.id);
       continue;

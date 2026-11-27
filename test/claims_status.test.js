@@ -404,6 +404,26 @@ test("freshness: evidence is valid while byte-identical, stale once changed, unr
       elsewhere: "stale",
     });
     assert.throws(() => freshness(root, registry, { since: "no-such-ref" }), /--since/);
+
+    // A claim re-assessed on the branch is measured from its own assessment, not the base.
+    git("add", "-A");
+    git("commit", "-q", "-m", "branch work");
+    const reassessed = {
+      claims: [
+        claim({
+          id: "read-again",
+          source_commit: git("rev-parse", "HEAD"),
+          evidence: ["src/a.js"],
+        }),
+        claim({ id: "not-read", source_commit: assessed, evidence: ["src/a.js"] }),
+      ],
+    };
+    assert.deepEqual(states(freshness(root, reassessed, { since: later })), {
+      "read-again": "valid",
+      "not-read": "stale",
+    });
+    write("src/a.js", "export const a = 4;\n");
+    assert.equal(states(freshness(root, reassessed, { since: later }))["read-again"], "stale");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
