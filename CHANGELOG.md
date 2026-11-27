@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-11-27
+
 ### Added
 
 - The built-in MCP server now speaks revision 2026-07-28 as well as the handshake revisions. That revision removed the `initialize` handshake and sessions, and its compatibility table lists a modern client against a handshake-only server as a failure, which is what `forge cortex-mcp` was: it answered `2024-11-05` and nothing else. It now answers `server/discover`, reads the revision each request names in `_meta`, marks modern results `resultType: "complete"` with the required cache hints (`ttlMs: 0`, `cacheScope: "private"`, because the listed tools follow the checkout's harness activation), and refuses an unknown revision with error -32022 and the supported list. Handshake clients are unaffected except that `2025-11-25` and `2025-06-18` are now agreed when asked for, where every request used to be answered `2024-11-05`. Responses to a handshake client are otherwise byte for byte what they were.
@@ -3936,7 +3938,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...HEAD
+[1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
 [1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
 [1.19.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...v1.19.4
 [1.19.3]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.2...v1.19.3

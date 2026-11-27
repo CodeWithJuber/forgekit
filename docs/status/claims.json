@@ -234,7 +234,7 @@
       "component": "Universal router prior (data/router_prior.json)",
       "version": "fitted 2026-09-22, k=1, scale 4; cost fields added 2026-11-27",
       "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.20.0",
       "status": "measured",
       "evidence": [
         "bench/universal-router/README.md",
@@ -280,7 +280,7 @@
       "component": "Universal router (src/router, forge route universal)",
       "version": "1.5.0",
       "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.20.0",
       "status": "partial",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
@@ -306,7 +306,7 @@
       "component": "Universal router cost model (src/router/policy.js)",
       "version": "outcome-conditioned cascade cost (2026-11-27)",
       "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.20.0",
       "status": "refuted",
       "evidence": [
         "bench/universal-router/README.md",
@@ -322,7 +322,7 @@
       "component": "Universal router cost model (src/router/policy.js, src/router/cost.js)",
       "version": "outcome-conditioned cascade cost (2026-11-27)",
       "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.20.0",
       "status": "measured",
       "evidence": [
         "bench/universal-router/README.md",
@@ -753,7 +753,7 @@
       "component": "Consequence simulation (src/imagine.js, forge imagine)",
       "version": "dry-run with an optional sandbox runtime (2026-11-27)",
       "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.20.0",
       "status": "partial",
       "evidence": [
         "src/imagine.js",
@@ -927,7 +927,7 @@
       "component": "Source MCP probe (src/source_mcp.js, forge sources probe)",
       "version": "tool-surface pin (2026-11-27)",
       "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.20.0",
       "status": "implemented",
       "evidence": [
         "src/source_mcp.js",
