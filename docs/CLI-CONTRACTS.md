@@ -64,6 +64,10 @@ is on stderr. Commands whose JSON also carries a refusal say so in the table.
 | `forge reuse mint`          | v1       | `{ok, id?, reason?}`                                                                                                         | 0, 1          |
 | `forge reuse stats`         | v1       | `{events, byOutcome, savedEstimate}`                                                                                         | 0, 1          |
 | `forge rank`                | v1       | `{built, nodes, edges, topFiles, topSymbols, cycles, chokepoints}`                                                           | 0, 1          |
+| `forge dash`                | v1       | `{url, port, root}`                                                                                                          | 0, 1          |
+| `forge dash refused`        | v1       | `{error}`                                                                                                                    | 1             |
+| `forge report`              | v1       | `{path, bytes}`                                                                                                              | 0, 1          |
+| `forge report refused`      | v1       | `{error}`                                                                                                                    | 1             |
 | `forge collide`             | v1       | `{risk, sessions, mine}`                                                                                                     | 0             |
 <!-- forge:render:cli-contracts:end -->
 
@@ -77,3 +81,6 @@ is on stderr. Commands whose JSON also carries a refusal say so in the table.
   one they exit 0 and report `skipped`, so their JSON is not covered by a contract yet.
 - The guard checks the shape of a command line, not the meaning of free text. A task or
   goal that itself starts with `--` is read as a flag.
+- `dash --json` promises only its start line. The dashboard's HTTP routes (`/api/data`,
+  `/api/harness` and the rest) are the page's own interface and can change in any release.
+- The report's HTML layout is for people; read the ledger itself (`forge ledger`) for data.

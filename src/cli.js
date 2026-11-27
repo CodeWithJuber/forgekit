@@ -1895,51 +1895,70 @@ HANDLERS.scope = async (argv) => {
 };
 /** The last line of a `uicheck design|visual` run, per overall verdict. */
 HANDLERS.report = async (argv) => {
-  // Static twin of `dash`: emit ONE self-contained HTML file (no server, opens
-  // offline) instead of serving a live localhost lens. `--out <path>` overrides the
-  // default `.forge/report.html`.
-  const { renderReport, writeReport } = await import("./report.js");
+  // Static twin of `dash`: emit ONE self-contained HTML file (no server, opens offline)
+  // instead of serving a live localhost lens. `--out <path>` overrides `.forge/report.html`
+  // and never overwrites a file that is not a ForgeKit report without --force.
+  const { writeReport, writeReportFile } = await import("./report.js");
+  const json = argv.includes("--json");
   const oi = argv.indexOf("--out");
-  heading(`${BRAND.brand} report — static snapshot of .forge/\n`);
+  const root = process.cwd();
+  let r;
   if (oi >= 0) {
-    const out = argv[oi + 1];
-    if (!out) {
-      console.error("usage: forge report [--out <path>]");
-      process.exitCode = 1;
-      return;
-    }
-    const { writeFileSync } = await import("node:fs");
-    writeFileSync(out, renderReport(process.cwd()));
-    console.log(`  wrote ${out}`);
+    r = writeReportFile(root, argv[oi + 1], { force: argv.includes("--force") });
+  } else {
+    const { statSync } = await import("node:fs");
+    const path = writeReport(root);
+    r = { ok: true, path, bytes: statSync(path).size };
+  }
+  if (!r.ok) {
+    process.exitCode = 1;
+    if (json) return console.log(JSON.stringify({ error: r.reason }, null, 2));
+    console.error(`${BRAND.cli} report: ${r.reason}`);
     return;
   }
-  const path = writeReport(process.cwd());
-  console.log(`  wrote ${path}`);
+  if (json) return console.log(JSON.stringify({ path: r.path, bytes: r.bytes }, null, 2));
+  heading(`${BRAND.brand} report — static snapshot of .forge/\n`);
+  console.log(`  wrote ${r.path}`);
   console.log("  open it in a browser — fully offline, no server needed.");
   return;
 };
 HANDLERS.dash = async (argv) => {
   const { serve } = await import("./dash.js");
+  const json = argv.includes("--json");
   const i = argv.indexOf("--port");
   const port = i >= 0 ? Number(argv[i + 1]) : 4242;
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    console.error("usage: forge dash [--port N]");
-    process.exitCode = 1;
-    return;
-  }
   const { sourceWorkspaceRoot } = await import("./sources.js");
   const root = sourceWorkspaceRoot(process.cwd());
   const server = serve(root, { port });
   server.on("listening", () => {
     const addr = /** @type {import("node:net").AddressInfo} */ (server.address());
+    const url = `http://127.0.0.1:${addr.port}`;
+    // One line, so a script can read it and then talk to the server; the write token is
+    // never printed, it lives only in the page.
+    if (json) return console.log(JSON.stringify({ url, port: addr.port, root }));
     heading(`${BRAND.brand} project dashboard\n`);
-    console.log(`  Open http://127.0.0.1:${addr.port} in your browser.`);
+    console.log(`  Open ${url} in your browser.`);
     console.log(`  Project: ${root}\n  Press Ctrl+C to stop.`);
   });
   server.on("error", (err) => {
-    console.error(`  ${err.message}`);
+    const code = /** @type {NodeJS.ErrnoException} */ (err).code;
+    const reason =
+      code === "EADDRINUSE"
+        ? `port ${port} is in use — choose another with --port, or --port 0 for any free port`
+        : code === "EACCES"
+          ? `not allowed to listen on port ${port} — choose a port above 1023`
+          : err.message;
+    if (json) console.log(JSON.stringify({ error: reason }));
+    else console.error(`${BRAND.cli} dash: ${reason}`);
     process.exitCode = 1;
   });
+  // Ctrl+C or a service manager's SIGTERM: stop accepting, let open requests finish, exit 0.
+  const stop = () => {
+    server.close(() => process.exit(process.exitCode ?? 0));
+    server.closeAllConnections?.();
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   return; // the process stays alive serving — that's the command
 };
 HANDLERS.tools = async (argv) => {

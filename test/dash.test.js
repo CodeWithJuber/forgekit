@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -572,5 +572,45 @@ test("F13: writes need the session token AND this exact origin", async () => {
     assert.equal(ok.status, 200, `normal same-origin dashboard use still works: ${ok.body}`);
   } finally {
     server.close();
+  }
+});
+
+test("page policy: only the page's own nonce-tagged script runs, and nothing loads from elsewhere", async () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-dash-csp-"));
+  const server = serve(root, { port: 0 });
+  await new Promise((r) => server.once("listening", r));
+  const base = `http://127.0.0.1:${/** @type {any} */ (server.address()).port}`;
+  try {
+    const page = await fetch(`${base}/`);
+    const csp = page.headers.get("content-security-policy") ?? "";
+    const html = await page.text();
+    const nonce = /script-src 'nonce-([A-Za-z0-9+/=]+)'/.exec(csp)?.[1];
+    assert.ok(nonce, csp);
+    assert.ok(html.includes(`<script nonce="${nonce}">`), "the page's script carries the nonce");
+    assert.equal((html.match(/<script\b/g) ?? []).length, 1, "one script, the page's own");
+    assert.ok(!html.includes("__FORGE_DASH_NONCE__"), "the placeholder is filled");
+    for (const directive of [
+      "default-src 'none'",
+      "connect-src 'self'",
+      "base-uri 'none'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+    ])
+      assert.ok(csp.includes(directive), `${directive} in ${csp}`);
+    assert.equal(page.headers.get("x-content-type-options"), "nosniff");
+    const data = await fetch(`${base}/api/data`);
+    assert.equal(data.headers.get("x-content-type-options"), "nosniff");
+    // A second server gets a different nonce: it is per start, not a constant.
+    const other = serve(root, { port: 0 });
+    await new Promise((r) => other.once("listening", r));
+    const otherCsp =
+      (await fetch(`http://127.0.0.1:${/** @type {any} */ (other.address()).port}/`)).headers.get(
+        "content-security-policy",
+      ) ?? "";
+    other.close();
+    assert.notEqual(otherCsp, csp);
+  } finally {
+    server.close();
+    rmSync(root, { recursive: true, force: true });
   }
 });

