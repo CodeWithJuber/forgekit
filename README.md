@@ -157,7 +157,9 @@ Refutations, boundaries and the research prototypes are in [docs/EVIDENCE.md](do
 
 - **Beta.** Releases follow Semantic Versioning, and support is best effort with no SLA.
 - **Impact is heuristic.** A regex-derived code graph, not a sound call graph: it can miss
-  files and over-warn.
+  files and over-warn. On this repository it named 40% of the test files that broke when a
+  function broke; `forge impact --record` adds the tests that actually run the code, which named
+  all of them, but only for code some test runs.
 - **Guardrails are defence in depth, not a sandbox.** A creative shell command can still get
   past a regex guard.
 - **Memory is external state.** Facts live in files and are retrieved into context; no model is

@@ -129,6 +129,7 @@ test("ensureForgePrivateIgnored keeps .forge/sessions out of git (B5)", () => {
     ".forge/metrics.jsonl",
     ".forge/trace/failures.jsonl",
     ".forge/provenance.json",
+    ".forge/runtime-map.json",
   ])
     assert.equal(ignored(p), true, `${p} is ignored`);
   assert.equal(ignored(".forge/decisions.md"), false, "committable .forge content is not");
@@ -140,6 +141,6 @@ test("ensureForgePrivateIgnored keeps .forge/sessions out of git (B5)", () => {
   ensureForgePrivateIgnored(other);
   assert.equal(
     readFileSync(join(other, ".forge", ".gitignore"), "utf8"),
-    "cache/\nsessions/\ntrace/\natlas.cache.json\nmetrics.jsonl\nprovenance.json\n",
+    "cache/\nsessions/\ntrace/\natlas.cache.json\nmetrics.jsonl\nprovenance.json\nruntime-map.json\n",
   );
 });

@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`forge impact --record`** runs each test file in its own process under V8's built-in coverage and saves which functions it executed (`.forge/runtime-map.json`, kept out of git). Every later `forge impact <symbol|file>` then lists the test files that actually ran the target and marks the ones the import graph missed (a computed import, a registry, a child process), and `forge test-select` adds them to its selection. A source file changed since the recording is reported as stale. The per-file command follows the project's runner (`node --test`, vitest, jest, mocha) or `--command`.
+
 ## [1.23.0] - 2026-11-27
 
 ### Added
