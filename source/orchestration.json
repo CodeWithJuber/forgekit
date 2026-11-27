@@ -2,7 +2,9 @@
   "id": "orchestration",
   "title": "Agent orchestration",
   "intro": "Rules for a lead agent that runs sub-agents, and for unattended agents. Each rule has a stable id; turn one off with `forge orchestration off <id>` (per repo, or --global), then `forge sync`.",
-  "params": { "parallelCap": 2 },
+  "params": {
+    "parallelCap": 2
+  },
   "rules": [
     {
       "id": "orch.no-polling",
@@ -17,6 +19,24 @@
       "rationale": "Agents beyond what the shared resource can serve do no work; they wait, and waiting agents re-read their context. Seven agents on one e2e environment mostly queued."
     },
     {
+      "id": "orch.multi-agent-gate",
+      "default": true,
+      "text": "Use sub-agents only when the work splits into independent parts that together exceed one context window. Otherwise one agent does it; most coding has few parallel parts.",
+      "rationale": "Agents use about 4x the tokens of a chat and multi-agent runs about 15x (Anthropic's research system). The extra spend pays off on broad, independent work, not on tightly coupled edits."
+    },
+    {
+      "id": "orch.split-by-angle",
+      "default": true,
+      "text": "Split by independent angle, one sub-agent each, started together within the parallel cap. Each brief names the objective, output format, tools and sources, and what is out of bounds.",
+      "rationale": "Vague briefs make sub-agents duplicate each other or miss the gap between them. Parallel starts turn sequential search time into one round."
+    },
+    {
+      "id": "orch.scale-effort",
+      "default": true,
+      "text": "Size effort to the question: a fact is one agent and a few tool calls, a comparison two to four sub-agents, deep work more. Never more agents than angles.",
+      "rationale": "Without a stated budget, early research agents spawned many sub-agents for simple questions. Writing the budget into the brief keeps cost in line with the question."
+    },
+    {
       "id": "orch.ci-heavy-checks",
       "default": true,
       "text": "Run full e2e and integration suites in CI. Locally, run only fast checks (typecheck, lint, unit tests of the code you touched) before pushing.",
@@ -25,8 +45,8 @@
     {
       "id": "orch.fresh-subagents",
       "default": true,
-      "text": "Give each sub-agent one small task and a fresh context. Hand back a concise report (what changed, checks run, open items), not a transcript.",
-      "rationale": "A small fresh context is cheap to re-read; a long one is re-read on every turn. A concise report keeps the lead's context small too."
+      "text": "Give each sub-agent one small task and a fresh context. It writes findings to a file and hands back the path and a short report (changes, checks, open items).",
+      "rationale": "A small fresh context is cheap to re-read; a long one is re-read on every turn. Passing a file path instead of the findings keeps large output out of the lead's context."
     },
     {
       "id": "orch.route-models",

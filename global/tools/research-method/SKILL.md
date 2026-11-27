@@ -34,6 +34,21 @@ question: a quick comparison needs steps 1, 3 and 6, not the whole drill.
 Finish by recording the result and what stays open: `forge remember <name> "<finding>"`, or a
 decision with `forge decide`. Label each claim as established, inferred, conjectured or open.
 
+## Searching, alone or as a team
+
+- **Start wide, then narrow.** Long, specific queries return little. Begin with short, broad
+  queries, read what exists, then go specific. Prefer primary sources (the project's own
+  docs, the paper, the standard, the code) over pages written to rank. Drop a lead that keeps
+  finding nothing.
+- **Decide whether a team pays.** Split the question only if it has independent angles that
+  together exceed one context window. A single fact is one agent and a few searches; a
+  comparison is two to four sub-agents; deep work gets more. Never more agents than angles.
+- **Brief each angle fully.** Objective, output format, tools and sources to use, and what is
+  out of bounds. Start the sub-agents together.
+- **Files, not retelling.** Each sub-agent writes its findings, with sources, to
+  `research/<angle>.md` and hands back only the path. The lead reads the files, ties every
+  claim to its source, then writes the answer, and reports what the team spent.
+
 ## Breakthrough drill (five minutes, any crowded problem)
 
 Use this when the obvious approaches are taken and you want the one nobody is looking at.

@@ -33,6 +33,9 @@ const agentsMd = (root) => readFileSync(join(root, "AGENTS.md"), "utf8");
 const REQUIRED = [
   "orch.no-polling",
   "orch.parallel-cap",
+  "orch.multi-agent-gate",
+  "orch.split-by-angle",
+  "orch.scale-effort",
   "orch.ci-heavy-checks",
   "orch.fresh-subagents",
   "orch.route-models",
