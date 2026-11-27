@@ -19,7 +19,7 @@ import { bar, heading, paint, table } from "./cli/shared.js";
 import verificationHandlers from "./cli/verification.js";
 // The command surface lives in commands.js as data — docs_check.js reconciles the
 // README/GUIDE tables against the same table this help is rendered from.
-import { COMMANDS, commandSummary, GROUPS } from "./commands.js";
+import { COMMANDS, commandHelp, commandSummary, GROUPS } from "./commands.js";
 import { printCommandHelp } from "./help.js";
 import { suggest } from "./math.js";
 import { hasProjectConfig } from "./repo_config.js";
@@ -102,7 +102,15 @@ async function run(argv) {
   }
   // Dispatch table: migrated commands resolve here; run() is the thin dispatcher.
   const handler = HANDLERS[cmd];
-  if (handler) return handler(argv, cmd);
+  if (handler) {
+    // A command with a complete help entry (`strict`) has its flags checked against that
+    // entry first, so a misspelt flag is refused instead of read as text or ignored.
+    if (commandHelp(cmd)?.strict) {
+      const { guardArgs } = await import("./cli/args.js");
+      if (!guardArgs(cmd, argv)) return;
+    }
+    return handler(argv, cmd);
+  }
   if (!(cmd in COMMANDS)) {
     const near = suggest(cmd, Object.keys(COMMANDS));
     console.error(
@@ -449,8 +457,16 @@ HANDLERS.catalog = async () => {
 };
 HANDLERS.taste = async (argv) => {
   const t = await import("./taste.js");
-  const style = argv[1];
+  const json = argv.includes("--json");
+  const words = argv.slice(1).filter((a) => a !== "--json");
+  if (words.length > 1) {
+    console.error(`usage: ${BRAND.cli} taste [<style>] [--json]  (one style per repo)`);
+    process.exitCode = 1;
+    return;
+  }
+  const style = words[0];
   if (!style) {
+    if (json) return console.log(JSON.stringify({ styles: t.list() }, null, 2));
     console.log(
       `${BRAND.brand} taste — pick ONE visual direction per repo (every tool then follows it):\n`,
     );
@@ -459,6 +475,17 @@ HANDLERS.taste = async (argv) => {
     return;
   }
   const res = t.apply(style, process.cwd());
+  if (json) {
+    console.log(
+      JSON.stringify(
+        res.ok ? { style: res.style, action: res.action } : { error: res.reason },
+        null,
+        2,
+      ),
+    );
+    if (!res.ok) process.exitCode = 1;
+    return;
+  }
   if (res.ok) {
     console.log(
       `  DESIGN.md ${res.action} → taste: ${res.style}. Every AI tool now builds in this direction.`,
@@ -1621,6 +1648,7 @@ HANDLERS.anchor = async (argv) => {
       process.exitCode = 1;
       return;
     }
+    if (json) return console.log(JSON.stringify({ goal: r.goal }, null, 2));
     console.log(
       `goal set: ${r.goal}\n(injected each session start; \`forge anchor\` checks against it)`,
     );
@@ -1628,11 +1656,22 @@ HANDLERS.anchor = async (argv) => {
   }
   if (sub === "show") {
     const g = getGoal(process.cwd());
+    if (json) return console.log(JSON.stringify({ goal: g ?? null }, null, 2));
     console.log(g ? `active goal: ${g}` : 'no active goal — set one: forge anchor set "<goal>"');
     return;
   }
   if (sub === "clear") {
-    clearGoal(process.cwd());
+    const r = clearGoal(process.cwd());
+    if (json) {
+      console.log(JSON.stringify({ cleared: r.ok }, null, 2));
+      if (!r.ok) process.exitCode = 1;
+      return;
+    }
+    if (!r.ok) {
+      console.error(`${BRAND.cli} anchor clear: the stored goal could not be removed`);
+      process.exitCode = 1;
+      return;
+    }
     console.log("goal cleared.");
     return;
   }

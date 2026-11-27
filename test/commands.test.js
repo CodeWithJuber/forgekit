@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { HANDLER_NAMES } from "../src/cli.js";
-import { COMMANDS, GROUPS, HIDDEN_COMMANDS } from "../src/commands.js";
+import { COMMANDS, commandHelp, GROUPS, HIDDEN_COMMANDS } from "../src/commands.js";
 
 test("every command appears in exactly one help group (P1-01 grouping stays complete)", () => {
   const cmds = Object.keys(COMMANDS);
@@ -16,8 +16,13 @@ test("every command appears in exactly one help group (P1-01 grouping stays comp
 
 test("Labs group exists and holds experimental commands (not the core loop)", () => {
   const labs = GROUPS["Labs (experimental)"] || [];
-  assert.ok(labs.includes("taste") && labs.includes("imagine"), "labs holds experiments");
   assert.ok(!labs.includes("verify") && !labs.includes("substrate"), "core loop is not in labs");
+  // A command leaves Labs once it meets docs/CLI-CONTRACTS.md: strict, complete help.
+  for (const name of labs) assert.equal(commandHelp(name)?.strict, false, `${name} is still Labs`);
+  for (const graduated of ["taste", "imagine", "uicheck", "reuse"]) {
+    assert.ok(!labs.includes(graduated), `${graduated} has left Labs`);
+    assert.equal(commandHelp(graduated)?.strict, true, `${graduated} is strict`);
+  }
 });
 
 test("registry ↔ dispatch stay in sync: every COMMANDS entry has a handler, no phantom handlers (item 38)", () => {
