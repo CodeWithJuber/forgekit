@@ -243,6 +243,82 @@ export const CONTRACTS = {
   },
   "report refused": { version: 1, spec: errorBody, exit: [1] },
 
+  "cloud status": {
+    version: 1,
+    note: "enrolled false has no other field; remote appears with --remote",
+    spec: obj(
+      {
+        enrolled: bool,
+        revision: strOrNull,
+        pending: { type: "boolean", nullable: true },
+        remote: { type: "object", nullable: true },
+      },
+      ["enrolled"],
+    ),
+  },
+  "cloud preview": {
+    version: 1,
+    spec: obj({
+      bytes: int,
+      files: list(obj({ path: str, kind: str, redacted: bool, sha256: str, bytes: int })),
+      skipped: { type: "object" },
+    }),
+  },
+  "cloud logout": { version: 1, spec: obj({ enrolled: bool, remoteDeleted: bool }) },
+  "relay status": {
+    version: 1,
+    note: "with --remote: remote.history is first, current, newer, older, fork or missing, and older, fork and missing carry remote.warning",
+    spec: obj(
+      {
+        enrolled: bool,
+        revision: strOrNull,
+        pending: { type: "boolean", nullable: true },
+        remote: {
+          type: "object",
+          nullable: true,
+          props: {
+            revision: strOrNull,
+            authenticated: bool,
+            files: int,
+            history: {
+              type: "enum",
+              values: ["first", "current", "newer", "older", "fork", "missing"],
+            },
+            warning: strOrNull,
+          },
+          required: ["authenticated", "files", "history"],
+        },
+      },
+      ["enrolled"],
+    ),
+  },
+  "relay push": {
+    version: 1,
+    spec: obj({ revision: strOrNull, modified: int, removed: int, skipped: { type: "object" } }),
+  },
+  "relay list": {
+    version: 1,
+    spec: obj({
+      revision: strOrNull,
+      parent: strOrNull,
+      authenticated: bool,
+      files: list(obj({ path: str, kind: str, redacted: bool, sha256: str, bytes: int })),
+    }),
+  },
+  "relay read --json": {
+    version: 1,
+    spec: obj({
+      revision: str,
+      parent: strOrNull,
+      path: str,
+      kind: str,
+      redacted: bool,
+      sha256: { type: "string", pattern: /^[a-f0-9]{64}$/ },
+      bytes: int,
+      content: str,
+    }),
+  },
+
   collide: {
     version: 1,
     spec: obj({

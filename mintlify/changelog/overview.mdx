@@ -24,12 +24,15 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 - `forge harness supervise on|off` switches native supervision in one step: it writes `nativeMode` into `harness/policy.yaml` and trusts exactly that change, and refuses when the controls already differ from what was trusted.
 - `forge dash` and `forge report` leave Labs too, for the Core group.
+- `forge cloud` and `forge relay` leave Labs for a new Sync group, which empties Labs.
+- The relay client catches a receiver that serves an older authentic snapshot.
 
 **Changed**
 
 - The dashboard page is served with a full Content-Security-Policy: only its own script runs, carrying a nonce minted at each start, it may connect only to its own server, and nothing can be loaded from elsewhere.
 - `forge report` writes a Content-Security-Policy and a generator mark into the file.
 - `forge dash` stops cleanly on Ctrl+C or SIGTERM and exits 0, and a port that is in use or not allowed is reported as such (`port 4242 is in use — choose another with --port, or --port 0 for any free port`).
+- A cloud or relay request that cannot reach the receiver now says why, for example `Cloud request to https://relay.example.org failed: ECONNREFUSED. Any pending upload is kept`, instead of the bare `fetch failed` that Node reports.
 
 **Fixed**
 

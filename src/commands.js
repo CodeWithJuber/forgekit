@@ -18,15 +18,186 @@
 
 export const COMMANDS = {
   relay: {
-    summary: "synchronize encrypted workspace evidence through a private relay",
+    summary:
+      "synchronize encrypted workspace evidence through a private relay that stores only ciphertext",
     usage:
-      "forge relay <configure|preview|push|watch|status|list|read|logout|delete|serve> [options]",
-    examples: ["forge relay status", "forge relay list"],
+      "forge relay configure --full-workspace [--include-ignored] --url <origin> --tenant <id> --workspace <id> --token-env <variable> --key-env <variable> | preview [--include-ignored] | push [--replace-remote --confirm] | watch [--interval <seconds>] | status [--remote] | list [--revision <id>] | read <path> [--revision <id>] [--json] | logout | delete --confirm | serve --config <server.json>",
+    strict: true,
+    subcommands: [
+      "configure",
+      "preview",
+      "push",
+      "watch",
+      "status",
+      "list",
+      "read",
+      "logout",
+      "delete",
+      "serve",
+      "help",
+    ],
+    defaultSub: "help",
+    flags: [
+      {
+        flag: "--full-workspace",
+        for: ["configure"],
+        desc: "required: confirms that project files and recorded sessions, prompts, traces and repo memory are included",
+      },
+      {
+        flag: "--include-ignored",
+        for: ["configure", "preview"],
+        desc: "also include files Git ignores (secrets are still redacted)",
+      },
+      {
+        flag: "--url <origin>",
+        for: ["configure"],
+        desc: "the relay's origin, https in production",
+      },
+      { flag: "--tenant <id>", for: ["configure"], desc: "the tenant this workspace belongs to" },
+      {
+        flag: "--workspace <id>",
+        for: ["configure"],
+        desc: "the workspace ID; a new key generation needs a new ID",
+      },
+      {
+        flag: "--token-env <variable>",
+        for: ["configure"],
+        desc: "the environment variable that holds this device's scoped bearer credential (the name is stored, never the value)",
+      },
+      {
+        flag: "--key-env <variable>",
+        for: ["configure"],
+        desc: "the environment variable that holds the workspace encryption key: 32 random bytes, standard base64",
+      },
+      {
+        flag: "--replace-remote",
+        for: ["push"],
+        desc: "rebuild the baseline from what the relay holds now, dropping a pending upload (needs --confirm)",
+      },
+      {
+        flag: "--confirm",
+        for: ["push", "delete"],
+        desc: "confirm --replace-remote or a remote delete",
+      },
+      {
+        flag: "--interval <seconds>",
+        for: ["watch"],
+        int: { min: 1, max: 86400 },
+        desc: "seconds between pushes (default 30); failures back off up to 5 minutes",
+      },
+      {
+        flag: "--remote",
+        for: ["status"],
+        desc: "also fetch and authenticate the relay's current revision, and compare it with this device's history",
+      },
+      {
+        flag: "--revision <id>",
+        for: ["list", "read"],
+        desc: "require exactly this revision, received over an independent channel; without it the served revision is checked against what this device has seen",
+      },
+      {
+        flag: "--path <path>",
+        for: ["read"],
+        desc: "the artifact to read, for a path that starts with a dash",
+      },
+      {
+        flag: "--json",
+        for: ["read", "preview"],
+        desc: "read: print the verified artifact as JSON with its bytes in base64, instead of the raw bytes",
+      },
+      {
+        flag: "--config <server.json>",
+        for: ["serve"],
+        desc: "the receiver's operator configuration",
+      },
+    ],
+    env: [
+      "FORGE_HOME   where enrollment, the encrypted queue and the revision history are kept (outside the project)",
+    ],
+    exit: [
+      "0  done; every form prints JSON, except read without --json (the verified bytes) and serve",
+      "1  refused or failed: no enrollment, authentication or validation failed, the relay served an older or forked revision than this device has seen, the relay could not be reached, HTTP 4xx/5xx, or a usage error",
+    ],
+    examples: [
+      "forge relay configure --full-workspace --url https://relay.example.org --tenant team --workspace demo --token-env WORKSPACE_ACCESS --key-env WORKSPACE_RELAY_KEY",
+      "forge relay push",
+      "forge relay status --remote",
+      'forge relay read README.md --revision "$EXPECTED_REVISION" --json',
+    ],
   },
   cloud: {
     summary: "synchronize an enrolled workspace with its private dashboard",
-    usage: "forge cloud <configure|preview|push|watch|status|logout|delete|serve> [options]",
-    examples: ["forge cloud status", "forge cloud preview"],
+    usage:
+      "forge cloud configure --full-workspace [--include-ignored] --url <origin> --workspace <id> --token-env <variable> | preview [--include-ignored] [--json] | push [--replace-remote --confirm] | watch [--interval <seconds>] | status [--remote] | logout | delete --confirm | serve --config <server.json>",
+    strict: true,
+    subcommands: [
+      "configure",
+      "preview",
+      "push",
+      "watch",
+      "status",
+      "logout",
+      "delete",
+      "serve",
+      "help",
+    ],
+    defaultSub: "help",
+    flags: [
+      {
+        flag: "--full-workspace",
+        for: ["configure"],
+        desc: "required: confirms that project files and recorded sessions, prompts, traces and repo memory are included",
+      },
+      {
+        flag: "--include-ignored",
+        for: ["configure", "preview"],
+        desc: "also include files Git ignores (secrets are still redacted)",
+      },
+      {
+        flag: "--url <origin>",
+        for: ["configure"],
+        desc: "the dashboard's origin, https in production",
+      },
+      { flag: "--workspace <id>", for: ["configure"], desc: "the workspace ID on that dashboard" },
+      {
+        flag: "--token-env <variable>",
+        for: ["configure"],
+        desc: "the environment variable that holds this device's scoped bearer credential (the name is stored, never the value)",
+      },
+      {
+        flag: "--replace-remote",
+        for: ["push"],
+        desc: "rebuild the baseline from what the dashboard holds now, dropping a pending upload (needs --confirm)",
+      },
+      {
+        flag: "--confirm",
+        for: ["push", "delete"],
+        desc: "confirm --replace-remote or a remote delete",
+      },
+      {
+        flag: "--interval <seconds>",
+        for: ["watch"],
+        int: { min: 1, max: 86400 },
+        desc: "seconds between pushes (default 30); failures back off up to 5 minutes",
+      },
+      { flag: "--remote", for: ["status"], desc: "also fetch the dashboard's current revision" },
+      {
+        flag: "--json",
+        for: ["preview"],
+        desc: "accepted for symmetry; preview always prints JSON",
+      },
+      {
+        flag: "--config <server.json>",
+        for: ["serve"],
+        desc: "the dashboard's operator configuration",
+      },
+    ],
+    env: ["FORGE_HOME   where enrollment and the pending upload are kept (outside the project)"],
+    exit: [
+      "0  done; every form prints JSON except serve, which prints its address",
+      "1  refused or failed: no enrollment, a pending upload outside its scope, the dashboard could not be reached, HTTP 4xx/5xx, or a usage error",
+    ],
+    examples: ["forge cloud status", "forge cloud preview", "forge cloud push"],
   },
   init: {
     summary:
@@ -931,7 +1102,9 @@ export const GROUPS = {
     "models",
     "taste",
   ],
-  "Labs (experimental)": ["cloud", "relay"],
+  Sync: ["cloud", "relay"],
+  // Every Labs command met the production bar on 2026-11-27. A new experimental command
+  // goes back into a "Labs (experimental)" group here until it meets the bar too.
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

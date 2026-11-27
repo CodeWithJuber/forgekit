@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { BRAND } from "../src/brand.js";
-import { COMMANDS } from "../src/commands.js";
+import { COMMANDS, GROUPS } from "../src/commands.js";
 import {
   mermaidInit,
   normalizeMermaid,
@@ -33,7 +33,8 @@ test("renderCommandsTable names every command exactly as the docs check requires
 
 test("renderGroupsTable and renderMcpToolsTable derive fully from their registries", () => {
   const groups = renderGroupsTable();
-  assert.ok(groups.includes("**Labs (experimental)**"), "group labels come from GROUPS keys");
+  for (const label of Object.keys(GROUPS))
+    assert.ok(groups.includes(`**${label}**`), `group label ${label} comes from GROUPS`);
   const tools = renderMcpToolsTable();
   for (const t of TOOLS) assert.ok(tools.includes(`\`${t.name}\``), `tool row for ${t.name}`);
 });

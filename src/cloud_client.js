@@ -19,6 +19,7 @@ import {
   queueRelayChange,
   RELAY_MANIFEST,
   relayChange,
+  relayHistory,
   relayKeys,
   remoteRelayIndex,
 } from "./cloud_relay.js";
@@ -61,6 +62,32 @@ function get(path) {
     throw e;
   }
 }
+/** Revisions this device has pushed or read without a pin, oldest first (bounded). */
+const SEEN_LIMIT = 1024;
+function seenRevisions(dir) {
+  const v = get(join(dir, "seen.json"));
+  return Array.isArray(v?.revisions) ? v.revisions.filter((r) => typeof r === "string") : [];
+}
+function recordSeen(dir, ...revisions) {
+  const seen = seenRevisions(dir);
+  let changed = false;
+  for (const r of revisions) {
+    if (!r || seen.at(-1) === r) continue;
+    seen.push(r);
+    changed = true;
+  }
+  if (changed) save(join(dir, "seen.json"), { revisions: seen.slice(-SEEN_LIMIT) });
+}
+/** Refuse a served revision this device knows to be older (see relayHistory). */
+function checkSeen(dir, revision, parent) {
+  const h = relayHistory(seenRevisions(dir), revision, parent);
+  if (h.state === "older" || h.state === "fork" || h.state === "missing")
+    throw Object.assign(new Error(`Relay history check failed: ${h.reason}`), {
+      code: "relay_rollback",
+    });
+  return h;
+}
+
 function save(path, value) {
   const tmp = `${path}.${randomUUID()}`;
   try {
@@ -206,16 +233,31 @@ async function request(config, method, sub = "", body = undefined) {
   if (relay) relayKeys(config);
   const prefix = relay ? "/v1/relay/" + config.tenant + "/" : "/v1/workspaces/";
   const encoded = body === undefined ? undefined : JSON.stringify(body);
-  const r = await fetch(`${config.endpoint}${prefix}${config.workspace}${sub}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${authorization(config)}`,
-      "Content-Type": "application/json",
-    },
-    body: encoded,
-    redirect: "error",
-    signal: AbortSignal.timeout(cloudDeadline(encoded ? Buffer.byteLength(encoded) : 0)),
-  });
+  let r;
+  try {
+    r = await fetch(`${config.endpoint}${prefix}${config.workspace}${sub}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${authorization(config)}`,
+        "Content-Type": "application/json",
+      },
+      body: encoded,
+      redirect: "error",
+      signal: AbortSignal.timeout(cloudDeadline(encoded ? Buffer.byteLength(encoded) : 0)),
+    });
+  } catch (e) {
+    // fetch reports every network failure as "fetch failed"; the cause says which one
+    // (ECONNREFUSED, ENOTFOUND, a TLS error, a timeout). Keep it, never the credentials.
+    const err = /** @type {Error & {cause?: {code?: string, message?: string}}} */ (e);
+    const cause =
+      err.name === "TimeoutError"
+        ? "timed out"
+        : (err.cause?.code ?? err.cause?.message ?? err.message ?? "network error");
+    throw Object.assign(
+      new Error(`Cloud request to ${config.endpoint} failed: ${cause}. Any pending upload is kept`),
+      { code: "cloud_unreachable", cause: err },
+    );
+  }
   if (!r.ok) {
     await r.body?.cancel();
     throw Object.assign(
@@ -280,10 +322,14 @@ export async function cloudStatus(root, remote = false, transport = "cloud") {
         (sub) => request(config, "GET", sub),
         undefined,
       );
+      // Status reports the history check instead of failing on it.
+      const history = relayHistory(seenRevisions(dir), index.revision, index.parent);
       remoteState = {
         revision: index.revision,
         authenticated: Boolean(index.manifest),
         files: index.files.length,
+        history: history.state,
+        ...(history.reason ? { warning: history.reason } : {}),
       };
     } else remoteState = await request(config, "GET");
   }
@@ -322,6 +368,8 @@ export async function pushCloud(
       const base = replaceRemote
         ? await remoteRelayIndex(keys, (sub) => request(config, "GET", sub), undefined)
         : (get(cursor) ?? { revision: null, manifest: null });
+      // Rebuilding on what the relay serves must not rebuild on a state it rolled back to.
+      if (replaceRemote) checkSeen(dir, base.revision, base.parent);
       if (replaceRemote) {
         save(cursor, { revision: base.revision, manifest: base.manifest });
         rmSync(queued, { force: true });
@@ -353,6 +401,7 @@ export async function pushCloud(
       const manifest = change.files.find((f) => f.path === RELAY_MANIFEST);
       save(cursor, { revision: change.id, manifest });
       rmSync(queued);
+      recordSeen(dir, change.parent, change.id);
       return {
         revision: change.id,
         modified: change.files.length - 1,
@@ -412,8 +461,22 @@ export async function pushCloud(
   });
 }
 export async function readRelay(root, path = undefined, revision = undefined) {
-  const config = configured(directory(root, "relay"), "relay");
-  return inspectRelay(relayKeys(config), (sub) => request(config, "GET", sub), path, revision);
+  const dir = directory(root, "relay");
+  const config = configured(dir, "relay");
+  const result = await inspectRelay(
+    relayKeys(config),
+    (sub) => request(config, "GET", sub),
+    path,
+    revision,
+  );
+  // A revision the caller pinned was checked against that pin; otherwise the served one is
+  // checked against this device's history, and on success becomes part of it. A refused
+  // read returns no content.
+  if (revision === undefined) {
+    checkSeen(dir, result.revision, result.parent);
+    recordSeen(dir, result.revision);
+  }
+  return result;
 }
 export async function removeCloud(root, remote = false, confirmed = false, transport = "cloud") {
   if (remote && !confirmed)
@@ -421,7 +484,7 @@ export async function removeCloud(root, remote = false, confirmed = false, trans
   const dir = directory(root, transport);
   return locked(dir, async () => {
     if (remote) await request(configured(dir, transport), "DELETE");
-    for (const name of ["config.json", "pending.json", "cursor.json"])
+    for (const name of ["config.json", "pending.json", "cursor.json", "seen.json"])
       rmSync(join(dir, name), { force: true });
     return { enrolled: false, remoteDeleted: remote };
   });
