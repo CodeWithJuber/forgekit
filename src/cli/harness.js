@@ -5,6 +5,7 @@ import {
   initHarness,
   loadHarnessConfig,
   localVerifier,
+  setHarnessNativeMode,
   trustHarness,
 } from "../harness_config.js";
 import { readHarnessConfigData } from "../harness_config_data.js";
@@ -63,6 +64,22 @@ async function command(root, op, args) {
     if (action === "set" && file && !rest.length)
       return localVerifier(root, readHarnessConfigData(resolve(file)));
     throw new Error("Use verifier show, set <container.json> or clear");
+  }
+  if (op === "supervise") {
+    // The operator's switch for native supervision: on sends host tools through the
+    // harness, off returns them to the coding client. One step, and only from controls
+    // that are already trusted (see setHarnessNativeMode).
+    const [state, ...rest] = args;
+    if (rest.length || !["on", "off"].includes(state ?? ""))
+      throw new Error("Use forge harness supervise on|off");
+    const r = setHarnessNativeMode(root, state === "on" ? "supervised" : "parallel");
+    return {
+      ...r,
+      next:
+        state === "on"
+          ? "Host tools now go through forge_harness_run. Check a route first: forge harness routes"
+          : "Host tools are back with the coding client; forge harness run still works from the CLI",
+    };
   }
   if (op === "jobs" || op === "council") {
     const { handleHarnessJobs } = await import("../harness_jobs_cli.js");

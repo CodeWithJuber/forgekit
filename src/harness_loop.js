@@ -372,7 +372,12 @@ export async function runHarness(options) {
           "project_spend_ceiling",
           "daily_spend_ceiling",
         ].includes(e.code);
-        throw statusError(budgetStop ? "budget_exhausted" : "provider_failed", e.message);
+        // The router's hint names the route, the likely cause and the operator's fix,
+        // from configuration only; it rides in the run's reason so a host can relay it.
+        throw statusError(
+          budgetStop ? "budget_exhausted" : "provider_failed",
+          e.hint ? `${e.message}: ${e.hint}` : e.message,
+        );
       }
       s.inFlight = null;
       s.lastRoute = typeof reply.route === "string" ? evidenceText(reply.route, 256) : s.lastRoute;
