@@ -613,9 +613,9 @@ export const COMMANDS = {
   },
   orchestration: {
     summary:
-      "agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global",
+      "agent-orchestration rule pack (no polling, parallel cap, CI for heavy checks, fresh sub-agents, model routing, risk review, isolated envs, lean lead), the working-method pack (goal and means, evidence first, isolate, proof of done, fix without breaking) and the unattended routing policy — list, switch rules on/off, set routing mode/gates, per repo or --global",
     usage:
-      "forge orchestration [list] [--json]   |   forge orchestration on|off <rule-id|all|pack> [--global]   |   forge orchestration set <key> <value> [--global]",
+      "forge orchestration [list] [--json]   |   forge orchestration on|off <rule-id|all|pack|method> [--global]   |   forge orchestration set <key> <value> [--global]",
     flags: [
       {
         flag: "--global",
@@ -626,6 +626,8 @@ export const COMMANDS = {
     examples: [
       "forge orchestration",
       "forge orchestration off orch.parallel-cap",
+      "forge orchestration off method.smallest-cases",
+      "forge orchestration off method",
       "forge orchestration set parallelCap 3",
       "forge orchestration set route.mode unattended --global",
       "forge orchestration set route.topTier never",

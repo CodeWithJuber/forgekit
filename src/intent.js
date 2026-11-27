@@ -74,6 +74,34 @@ export const INTENT_EXEMPLARS = [
   { text: "roll out the new build", intent: "release" },
   { text: "deploy karo", intent: "release" },
   { text: "release kar do production par", intent: "release" },
+  // research — proven vs assumed, look at the real thing, rule out, prove small
+  { text: "research the best approach for offline sync", intent: "research" },
+  { text: "investigate a better way to rank search results", intent: "research" },
+  { text: "compare the options for a job queue", intent: "research" },
+  { text: "explore new ideas for reducing memory use", intent: "research" },
+  { text: "find a new approach to deduplicate events", intent: "research" },
+  { text: "prototype an idea for faster cold starts", intent: "research" },
+  { text: "study how other projects handle rate limiting", intent: "research" },
+  { text: "benchmark the two parsers and pick one", intent: "research" },
+  { text: "research a better way to store sessions", intent: "research" },
+  { text: "research faster ways to build the index", intent: "research" },
+  { text: "find the best approach to sync data between devices", intent: "research" },
+  { text: "look for a better approach than polling", intent: "research" },
+  { text: "explore alternatives to the current design", intent: "research" },
+  { text: "is problem ka naya solution research karo", intent: "research" },
+  { text: "naya approach dhoondo is ke liye", intent: "research" },
+  { text: "kaunsi library best hai compare karo", intent: "research" },
+  // security — blast radius first, stable contracts, minimal diff, two proofs
+  { text: "fix the sql injection in search", intent: "security" },
+  { text: "patch the xss vulnerability in comments", intent: "security" },
+  { text: "rotate the leaked api key", intent: "security" },
+  { text: "upgrade the vulnerable dependency flagged by the audit", intent: "security" },
+  { text: "close the idor in the orders endpoint", intent: "security" },
+  { text: "fix the security issue without breaking clients", intent: "security" },
+  { text: "harden the auth token validation", intent: "security" },
+  { text: "patch the cve in our image library", intent: "security" },
+  { text: "security vulnerability thik karo bina kuch tode", intent: "security" },
+  { text: "cve patch karo", intent: "security" },
 ];
 
 // Function words ONLY (English + Hinglish auxiliaries/pronouns). Task verbs stay —
@@ -179,6 +207,7 @@ export function isDialogueTurn(text, intent) {
 export const INTENT_HELPERS = {
   bugfix: {
     skills: [
+      ["debug-method", "isolate the cause"],
       ["problem-solver", "root cause"],
       ["self-improve", "a check keeps failing"],
     ],
@@ -186,6 +215,7 @@ export const INTENT_HELPERS = {
   },
   feature: {
     skills: [
+      ["build-method", "contract, ease, tests"],
       ["explore-plan-code", "multi-file or unfamiliar"],
       ["reuse-first", "before new code"],
       ["tech-selector", "choosing a library"],
@@ -202,6 +232,20 @@ export const INTENT_HELPERS = {
       ["forge-impact", "blast radius"],
       ["lean", "smallest change"],
       ["code-modernization", "legacy or migration"],
+    ],
+    crew: [["independent-reviewer", "before merge"]],
+  },
+  research: {
+    skills: [
+      ["research-method", "proven vs assumed"],
+      ["tech-selector", "choosing a library"],
+    ],
+    crew: [["scout", "explore"]],
+  },
+  security: {
+    skills: [
+      ["secure-fix", "fix without breaking"],
+      ["forge-impact", "blast radius"],
     ],
     crew: [["independent-reviewer", "before merge"]],
   },
@@ -229,8 +273,8 @@ function helpers(intent) {
 export const PROTOCOL_CARDS = {
   bugfix: [
     `## Bugfix protocol (${BRAND.brand})`,
-    "1. Reproduce first — no fix without a failing observation.",
-    "2. Trace the CAUSE, not the symptom (the wrong-status UI is rarely a UI bug).",
+    "1. Read the error, log and inputs; reproduce — no fix without a failing observation.",
+    "2. Change one thing at a time to trace the CAUSE, not the symptom.",
     `3. Write the failing test BEFORE the fix; \`${BRAND.cli} diagnose "<error>"\` if this failure has repeated.`,
     `4. \`${BRAND.cli} impact <file>\` — sweep the blast radius (callers, configs, docs).`,
     `5. Full suite green, then \`${BRAND.cli} docs sync\` + \`${BRAND.cli} handoff\` — the gate checks.`,
@@ -253,6 +297,25 @@ export const PROTOCOL_CARDS = {
     `3. Sweep every old name — code AND prose: \`${BRAND.cli} docs sync\` after the rename.`,
     `4. \`${BRAND.cli} lean\` — keep the footprint proportional to the ask.`,
     helpers("refactor"),
+  ].join("\n"),
+  research: [
+    `## Research protocol (${BRAND.brand})`,
+    "1. Write two lists: what you know with proof, what you only assume. Assumptions are hypotheses.",
+    `2. Look at the real thing: run it, measure it. \`${BRAND.cli} evidence "<topic>"\` and \`${BRAND.cli} ledger query "<topic>"\` first.`,
+    "3. Rule hypotheses out one at a time with an observation that would prove each wrong.",
+    '4. Question "we always did it this way"; borrow mechanisms from other fields.',
+    "5. Prove it small (ten examples, two hours), then measure precisely.",
+    `6. Record the result and what stays open: \`${BRAND.cli} remember\` or \`${BRAND.cli} decide\`.`,
+    helpers("research"),
+  ].join("\n"),
+  security: [
+    `## Security fix protocol (${BRAND.brand})`,
+    `1. Map the blast radius before touching code: \`${BRAND.cli} impact <symbol>\` and the access logs.`,
+    "2. Fix behind the stable interface: same routes, shapes, status codes, signatures.",
+    "3. Smallest diff: no refactors, renames or unrelated upgrades in a security change.",
+    "4. A break that cannot be avoided ships in phases: warn, support both, then remove.",
+    `5. Two proofs: the exploit now fails, and valid old inputs still pass. \`${BRAND.cli} verify\`.`,
+    helpers("security"),
   ].join("\n"),
   release: [
     `## Release protocol (${BRAND.brand})`,

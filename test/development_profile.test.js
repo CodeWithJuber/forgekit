@@ -33,7 +33,7 @@ function fixture(t) {
 }
 test("both profiles share nine roles, sixteen situations and their observable proof", () => {
   const catalog = listDevelopmentPrompts();
-  assert.equal(catalog.roles.length, 9);
+  assert.equal(catalog.roles.length, 12);
   assert.equal(catalog.pains.length, 16);
   for (const c of [...catalog.roles, ...catalog.pains, { id: "master" }]) {
     const engineering = showDevelopmentPrompt(c.id),

@@ -432,7 +432,7 @@ For a custom model endpoint, copy the fingerprint from `forge harness routes` in
 
 ## Agent roles and MCP tools
 
-Use `forge prompts show reviewer` to print a portable role brief, or `forge team "<task>" --handoff kimi` to prepare evidence for an independent reviewer. Nine role briefs cover planning, research, coding, debugging, review, security, testing, memory and coordination. The Claude Code plugin also registers five native role definitions:
+Use `forge prompts show reviewer` to print a portable role brief, or `forge team "<task>" --handoff kimi` to prepare evidence for an independent reviewer. Twelve role briefs cover planning, research, coding, debugging, review, security, testing, memory, mediation, impact mapping, compatibility review and coordination. The Claude Code plugin also registers five native role definitions:
 
 - `scout` — read-only repository investigation;
 - `verifier` — fresh-context correctness review;

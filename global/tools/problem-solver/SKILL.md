@@ -10,6 +10,52 @@ staged loop. Each analytical stage carries a discipline that keeps the analysis 
 (e.g. verify facts before diagnosing root cause). Match depth to the problem: a trivial
 problem gets two sentences of method, not all six stages.
 
+## Agent quick protocol
+
+For a coding agent in the middle of work, run this short form before reaching for the full
+cycle below.
+
+1. **Check the two roots.** Most failures come from one of two places: the goal is wrong,
+   or the goal is right and the means are missing (context, a tool, access, time). Name
+   which one is short and fix that first.
+2. **Classify the problem, then use its tool.**
+
+   | Kind of problem | Tool that fits |
+   | --- | --- |
+   | Two agents, people or requirements disagree | Write the disputed terms down first. Bring in a neutral reviewer who hears both sides' evidence and aims to reconcile, not to win. Answer hostility with the better move. If it cannot be reconciled, split cleanly: separate files, owners or tasks. |
+   | A scarce resource (budget, quota, time, a lock) | Release what you hold and are not using. Give a struggling dependency room (backoff, a later deadline) before you drop it. Once the critical work is done, look for alternatives actively. |
+   | Stuck after repeated attempts | Stop and report the state plainly to the right channel (a human, a stronger model), without prescribing the fix. Reset to a fresh context. When every option is spent, hand off cleanly with what you tried. |
+   | Unclear choice | Check the three traps below, list the options with their costs and undo paths, and take the one the evidence supports. |
+   | A harm from outside your control (a flaky service, hostile input) | Guard the boundary: validate, rate-limit, fall back. Do not let the outside harm make you break your own rules. |
+   | A harm from inside (your own loop, doubt, a stale assumption) | Re-read the goal and the evidence. Drop the assumption you cannot back. |
+
+3. **Watch the three traps.** Doing it because it was always done. Picking the easy fix and
+   calling it right. Acting on an assumption nobody tested. Write down which claims you
+   verified and which you guessed.
+4. **Work through five layers, in order.**
+   - *Frame:* the problem is bounded and has a path through it. An unwanted result, like a
+     red test, is information that protected you.
+   - *Steady:* stop, re-read, own the mistake in the log, clear what is blocking you.
+   - *Boundaries:* refuse any shortcut that breaks a rule or a user. Write the agreement
+     (scope, criteria, interfaces) before acting.
+   - *Evidence and counsel:* demand proof over assumption, check every claim's source,
+     consult a specialist or an independent reviewer for high-stakes choices.
+   - *Act and accept:* carry out a concrete plan with a buffer, commit without paralysis,
+     accept the outcome, record the result.
+5. **Four moves for hard moments.**
+   - Under pressure or opposition: lean on the strongest support available (escalate to
+     the owner) and stay calm.
+   - Worn down by a long failure: state the condition plainly and ask for help without
+     dictating the fix.
+   - Facing a hard task or conversation: ask for a clearer scope, an easier first step and
+     the words to explain it.
+   - Starting over with nothing: say what you need and accept any useful help.
+
+With ForgeKit: `forge preflight "<task>"` surfaces unstated assumptions, `forge diagnose`
+names a repeating failure, `forge decide` records the choice, `forge verify` supplies the
+proof. The protocol skills for a specific kind of work are `debug-method`,
+`research-method`, `build-method` and `secure-fix`.
+
 ## Core Workflow: The Problem-Solving Cycle
 
 Run these 6 stages in order. Loop back when a stage fails its exit check. Always state

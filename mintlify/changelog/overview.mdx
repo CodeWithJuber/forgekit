@@ -22,6 +22,10 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 **Added**
 
+- **Working method for every agent.**
+- Four protocol skills ship with the plugin: `debug-method`, `research-method` (with a five-minute drill for crowded problems), `build-method` (agents, apps and UI, with grounding and memory rules against invented answers and lost state) and `secure-fix` (fix a vulnerability …
+- The prompt hook recognizes research and security work and injects their protocol cards, alongside bugfix, feature, refactor and release; the bugfix and feature cards now point at `debug-method` and `build-method`.
+- Three role briefs: `mediator`, `impact-cartographer` and `compatibility-critic` (`forge prompts show <id>`).
 - `forge verify` runs Maven and Gradle builds.
 - `forge --help` leads with eight Start-here commands (`init`, `doctor`, `sync`, `remember`, `impact`, `verify`, `precommit`, `vet`), each with a one-line reason, and names the rest by group.
 - `forge init` ends with four next steps that each show one job working in the repository: `doctor`, `remember`, `impact` and `verify`.
@@ -29,7 +33,7 @@ CI when it falls behind, so it cannot drift from the release notes again.
 **Changed**
 
 - `forge impact` lists the **direct references** first, the files that use the target itself, then counts the **downstream** files that reach it only through one of them, by hop.
-- The README is now a short first read: 193 lines outside the collapsed command table, against 885 before.
+- The README is now a short first read: about 200 lines outside the collapsed command table, against 885 before.
 - The inventory counts in docs/EVIDENCE.md (commands, hook commands, emitters, skill packs, hook budgets, MCP tools) are generated from the tree by `forge docs render`, and the docs check fails when they fall behind.
 - The "18,262 B of durable memory to an 826 B index" figure is gone: no measurement procedure or fixture for it was ever recorded.
 - A `forge verify --json` receipt names its signer, a public tag of the profile's evidence key.

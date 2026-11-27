@@ -9,7 +9,7 @@ const HANDLERS = {};
 
 const USAGE = [
   `usage: ${BRAND.cli} orchestration [list] [--json]`,
-  `       ${BRAND.cli} orchestration on|off <rule-id|all|pack> [--global]`,
+  `       ${BRAND.cli} orchestration on|off <rule-id|all|pack|method> [--global]`,
   `       ${BRAND.cli} orchestration set <key> <value> [--global]`,
 ].join("\n");
 
@@ -20,15 +20,15 @@ const fail = (msg) => {
 };
 
 async function list(root, json) {
-  const { loadPack, resolveOrchestration, resolveRoutePolicy } = await import(
-    "../orchestration.js"
-  );
+  const { loadMethodPack, loadPack, resolveMethod, resolveOrchestration, resolveRoutePolicy } =
+    await import("../orchestration.js");
   const { userConfigPath } = await import("../repo_config.js");
   const state = resolveOrchestration(root);
+  const method = resolveMethod(root);
   const route = resolveRoutePolicy(root);
   if (json)
     return console.log(
-      JSON.stringify({ ...state, route, configs: { global: userConfigPath() } }, null, 2),
+      JSON.stringify({ ...state, method, route, configs: { global: userConfigPath() } }, null, 2),
     );
   heading(`${BRAND.brand} orchestration — agent rules and unattended routing\n`);
   console.log(`  ${loadPack().intro}\n`);
@@ -38,6 +38,14 @@ async function list(root, json) {
   for (const r of state.rules) {
     const mark = state.enabled && r.enabled ? "on " : "off";
     console.log(`  ${mark}  ${r.id.padEnd(22)} ${paint(`(${r.source})`, "dim")}`);
+    console.log(`       ${r.text}`);
+    console.log(paint(`       why: ${r.rationale}`, "dim"));
+  }
+  console.log(`\n  ${loadMethodPack().title}: ${loadMethodPack().intro}\n`);
+  console.log(`  method pack: ${method.enabled ? "on" : "off"} (${method.enabledSource})`);
+  for (const r of method.rules) {
+    const mark = method.enabled && r.enabled ? "on " : "off";
+    console.log(`  ${mark}  ${r.id.padEnd(26)} ${paint(`(${r.source})`, "dim")}`);
     console.log(`       ${r.text}`);
     console.log(paint(`       why: ${r.rationale}`, "dim"));
   }
@@ -73,10 +81,15 @@ HANDLERS.orchestration = async (argv) => {
   const scope = global ? "global" : "project";
   if (sub === "on" || sub === "off") {
     const [id] = rest;
-    if (!id) return fail(`${sub} needs a rule id (or all, or pack)`);
+    if (!id) return fail(`${sub} needs a rule id (or all, pack, method)`);
     const res = setRule(root, id, sub === "on", { global });
     if (res.ok === false) return fail(res.reason);
-    const what = id === "pack" ? "the orchestration pack" : res.ids.join(", ");
+    const what =
+      id === "pack"
+        ? "the orchestration pack"
+        : id === "method"
+          ? "the working-method pack"
+          : res.ids.join(", ");
     console.log(`  ${what}: ${sub} (${scope}) — written to ${res.path}`);
     console.log(paint(`  run \`${BRAND.cli} sync\` to re-emit the rules`, "dim"));
     return;

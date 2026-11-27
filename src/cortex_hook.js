@@ -268,7 +268,7 @@ export function doomLoopAdvisory(events, opts = {}) {
   const what = r.files.length
     ? "Different edits aren't fixing it."
     : "Nothing was edited between the runs — re-running without changing anything cannot fix it.";
-  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. ${what} Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.${hint}`;
+  return `Forge Cortex — doom loop: the SAME test failure has recurred ${r.count}× this session${where}. ${what} Stop, find the root cause (re-read the failing assertion and the code it exercises), or ask a human — don't keep patching.${hint} Isolate it: check the inputs and the log, question the assumption you keep testing, then change one thing at a time (skill: debug-method).`;
 }
 
 /** Drive the orchestrator from a session's events (called by the Stop hook). */
