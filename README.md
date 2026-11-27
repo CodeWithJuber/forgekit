@@ -834,6 +834,7 @@ not an AI application deployment.
 | [`examples/`](examples/) | Runnable pain-point solution demos (cost governance, adversarial doctor) — each with copy-paste steps, a demo script, and a GIF |
 | [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) | Per-tool behaviour: config emission, MCP registration, automatic hooks, blocking — and how each is tested |
 | [`docs/UNIVERSAL_ROUTING.md`](docs/UNIVERSAL_ROUTING.md) | The cross-provider router: model, shipped prior, evidence status and modeling limits |
+| [`docs/MATH-CORE.md`](docs/MATH-CORE.md) | Decision mathematics not yet wired into commands: anytime-valid evidence bounds, exact cascade order, the replay engine, merge batching and flaky-test inference |
 | [`docs/ORCHESTRATION.md`](docs/ORCHESTRATION.md) | Agent-orchestration rule pack, on/off controls, and routing for unattended agents |
 | [`docs/status/`](docs/status/README.md) | Machine-readable status of every load-bearing claim (generated table) |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Runtime layers, emitters, state, and design decisions |
