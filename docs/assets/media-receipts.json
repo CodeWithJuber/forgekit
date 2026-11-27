@@ -1,6 +1,6 @@
 {
   "demos": {
-    "input": "1b668315b45691c921e895d528f52a0c9d00c1b4d4864aca3ab9a4552fddb277",
+    "input": "3cddc07d99ee9bef8a49855901d77f54b5bc1cf42999af6e2506718292feae60",
     "artifacts": {
       "docs/assets/demo.gif": "d069e21acb1e7c49a1ebf837706cf6f4cfe6c35dd48131443ec606fc97ff1fa8",
       "mintlify/images/supervised-setup.gif": "d069e21acb1e7c49a1ebf837706cf6f4cfe6c35dd48131443ec606fc97ff1fa8",
@@ -8,11 +8,11 @@
       ".github/assets/forgekit-precommit.gif": "d0ea25494d7eaa4ce8d561c1e98f591fec2f7c5f02b51bdc2ba8803d573728b1",
       ".github/assets/forgekit-memory.gif": "fb70346e88f2a3790dcc86c820defb6e659e9d41e3c07935be52d4a35393aff8",
       "mintlify/images/cost-governance.gif": "82f3ad5a980fd94321a7c78d0ea985ea99890bd58e4cd19c4acd4276f5a850d2",
-      "mintlify/images/adversarial-doctor.gif": "622a152eb97a7ad8cf24513776acdb975de5eb2800a57323873223983c0f72a1"
+      "mintlify/images/adversarial-doctor.gif": "bf468e8c7efa6ba1344632c3c4c43543dff0b95aca1fdf9fbc421e879cacfe1f"
     }
   },
   "hero": {
-    "input": "6ca68aff36002aa0a834b5869349b67185d9110beffc56879ab1a2378fdf9477",
+    "input": "47a91db74c80f5e89c5e595b3ebb1ca8e3f2232e39808d7b1c2876540c8dcdb7",
     "artifacts": {
       "docs/assets/hero-light.svg": "d23e7e77d48282b0e4144f54aeb2c2e62f51bb61a6485b16c966d12c2121b07f",
       "docs/assets/hero-dark.svg": "98b6b2b3e8486068f6b1694085cc16054bfa42f65291155c00b947914098d300"
@@ -27,7 +27,7 @@
     }
   },
   "dashboard": {
-    "input": "e9cf611b8a0dc0f6411729513c2d4c4d80a4c8611cfe2303926855add80a9dcc",
+    "input": "ca21b47a455300fe1c90fd959b5d1bfd5cc228341efbf8b692b6a5e65bbd5cd3",
     "artifacts": {
       "docs/assets/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b",
       "mintlify/images/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b"

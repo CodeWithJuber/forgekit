@@ -121,10 +121,12 @@ def capture_scenes(key, c):
                 screen("forge budget status", excerpt(status, [r"today ", r"per-task budget", r"no sessions", r"spend is unknown"])),
                 screen("forge budget check --session-id demo", excerpt(check, [r"decision:", r"reason:"]))]
     result = c.forge("doctor --adversarial")
+    # The summary is the measured count: a warning count, or all clear when no probe
+    # warns. Show whichever passing summary was printed. A run with problems exits 1.
     return [screen("forge doctor --adversarial", excerpt(result, patterns)) for patterns in (
         [r"adv: sed-inplace", r"adv: cp-exfil", r"adv: read-secret", r"adv: grep-env", r"adv: env-template"],
         [r"adv: truncated-json", r"adv: garbage-stdin", r"adv: empty-stdin"],
-        [r"adv: settings-bypass", r"adv: live-bypass", r"^all clear$"],
+        [r"adv: settings-bypass", r"adv: live-bypass", r"^(?:all clear|\d+ warnings?)$"],
     )]
 
 

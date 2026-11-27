@@ -10,6 +10,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Decision mathematics as tested library modules, not yet wired into any command ([docs/MATH-CORE.md](docs/MATH-CORE.md)): an evidence bound that stays valid when re-read after every observation, a change detector and a paired canary test (`src/mathcore/sequential.js`); exact cascade ordering over attempt sets that returns what the router's `choose` returns (`src/router/cascade.js`); a replay engine that serves a repeated request from verified traces only where every step argument has a source and the step has earned its evidence (`src/replay/`); merge-queue batch sizing, flaky-test inference and evidence packing under non-additive token cost.
 
+### Fixed
+
+- The docs auto-update job renders the adversarial doctor demo again. Its capture accepts the warning count that doctor prints since 1.19.5, and a test checks the capture against the CLI output in pull requests.
+
 ## [1.19.5] - 2026-11-26
 
 ### Fixed
