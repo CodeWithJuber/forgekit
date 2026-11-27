@@ -959,7 +959,7 @@
       "component": "Encrypted relay client (src/cloud_relay.js relayHistory, src/cloud_client.js)",
       "version": "relay history check (2026-11-27)",
       "source_commit": "6169ff5437a9a7c31d200a3d4e77b538ff0980e5",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.22.0",
       "status": "implemented",
       "evidence": [
         "src/cloud_relay.js",
@@ -975,7 +975,7 @@
       "component": "CLI argument guard and output contracts (src/cli/args.js, src/contracts.js)",
       "version": "production bar v1 (2026-11-27)",
       "source_commit": "6169ff5437a9a7c31d200a3d4e77b538ff0980e5",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.22.0",
       "status": "implemented",
       "evidence": [
         "src/cli/args.js",
