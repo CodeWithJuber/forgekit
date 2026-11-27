@@ -1,6 +1,6 @@
 {
   "$comment": "The claim/status registry. Edit this file, then run `node scripts/claims-status.mjs` to regenerate the table in docs/status/README.md; `--check` fails CI-style on drift. source_commit is the commit each status was assessed against and assessed_release the release that ships that commit (\"unreleased\" until one does: scripts/bump.mjs stamps it when it cuts a release, and a checkout with release tags fails the check on a stale one). counterexamples link the review findings that tested a claim. After a fix lands, re-assess the claim and update status, source_commit, assessed_release and the counterexample's resolution together.",
-  "as_of": "2026-09-27",
+  "as_of": "2026-11-27",
   "statuses": {
     "implemented": "the code exists and does what the claim says; tests exercise it",
     "measured": "a number produced by a stated procedure on stated data, reproducible from this repository",
@@ -232,9 +232,9 @@
       "id": "universal-router-prior-refit",
       "claim": "The shipped prior (data/router_prior.json) refits exactly from pinned public data with this repository's own tooling.",
       "component": "Universal router prior (data/router_prior.json)",
-      "version": "fitted 2026-09-22, k=1, scale 4",
-      "source_commit": "d2abfa69fb77531199ffc67c5c076b524af69040",
-      "assessed_release": "1.4.3",
+      "version": "fitted 2026-09-22, k=1, scale 4; cost fields added 2026-11-27",
+      "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
+      "assessed_release": "unreleased",
       "status": "measured",
       "evidence": [
         "bench/universal-router/README.md",
@@ -243,7 +243,7 @@
         "bench/universal-router/compare_priors.mjs",
         "bench/universal-router/fit_prior.mjs"
       ],
-      "notes": "Reproduced on 2026-09-26 by the project in its own environment (Node v22.22.2, Python 3.11.15, 4-vCPU Intel Xeon @ 2.80GHz): from an empty work directory all 176 fitted values are identical, only provenance.fittedAt differs, with the router code of d2abfa6 and again with aedddf5; the refit takes 413-424 s. The external review's refit stopped at a 180 s limit, which was too short; the 37.6 s / 45.9 s in the 2026-09-22 report were the 150-issue dev fit. Tasks: Hugging Face SWE-bench/SWE-bench_Verified at revision 78f471b (not princeton-nlp/SWE-bench_Verified). reproduce.sh and sources.json were added after the assessed commit. A calculation reproduction, not an independent third-party replication."
+      "notes": "Reproduced on 2026-09-26 by the project in its own environment (Node v22.22.2, Python 3.11.15, 4-vCPU Intel Xeon @ 2.80GHz): from an empty work directory all 176 fitted values are identical, only provenance.fittedAt differs, with the router code of d2abfa6 and again with aedddf5; the refit takes 413-424 s. The external review's refit stopped at a 180 s limit, which was too short; the 37.6 s / 45.9 s in the 2026-09-22 report were the 150-issue dev fit. Tasks: Hugging Face SWE-bench/SWE-bench_Verified at revision 78f471b (not princeton-nlp/SWE-bench_Verified). reproduce.sh and sources.json were added after the assessed commit. A calculation reproduction, not an independent third-party replication. Re-run on 2026-11-27 at 86fed0c (Node v22.23.5, 2 vCPU, refit 311 s) after the cost model gained a smearing factor and a fail/success cost ratio: fit_prior.mjs on the input built by build_input.py from the pinned sources reproduces all 176 earlier values exactly, and compare_priors.mjs reports 182 of 182 values of the shipped prior identical, the six new ones being cost.smear, cost.failLogRatio and the four fields of cost.failLogRatioEvidence. The refit also writes diagnostics the shipped file does not carry (cost.counts, cost.alphaSE, cost.smearByModel, provenance.build), which the comparison lists as additions."
     },
     {
       "id": "universal-router-prior-transfer",
@@ -279,14 +279,14 @@
       "claim": "The budget:B objective returns a cascade whose expected cost is at most B, and says so explicitly when none exists.",
       "component": "Universal router (src/router, forge route universal)",
       "version": "1.5.0",
-      "source_commit": "2699aa02397ef148b9d6499d014b9fa59494eee9",
-      "assessed_release": "1.7.3",
+      "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
+      "assessed_release": "unreleased",
       "status": "partial",
       "evidence": [
         "docs/UNIVERSAL_ROUTING.md",
         "src/router/policy.js"
       ],
-      "notes": "B bounds expected cost, not spend: a cascade can cost the sum of all its attempts, and E[cost] is under-predicted by 5-22% in the in-repo replay (see universal-router-cascade-cost-independence). The explicit half holds (re-assessed on 2699aa0): an infeasible budget returns ok:false, feasible:false, budgetMet:false, minimumExpectedCost and a reason (the CLI prints INFEASIBLE), with the least-bad cascade only as a labeled fallback. Every recommendation reports estimatedCostIfAllAttemptsRun, the sum of each attempt's expected cost; it was called maxPossibleCost until the 2026-09-27 review pointed out it is a modeled figure, not a bound on billed cost.",
+      "notes": "B bounds expected cost, not spend: a cascade can cost the sum of all its attempts, and E[cost] is under-predicted in the in-repo replay: by 5-22% before the cost formula conditioned on outcomes, and by 0.5-20.5% (mean 8.5%) since 86fed0c (see universal-router-cascade-cost-independence). The explicit half holds (re-assessed on 2699aa0): an infeasible budget returns ok:false, feasible:false, budgetMet:false, minimumExpectedCost and a reason (the CLI prints INFEASIBLE), with the least-bad cascade only as a labeled fallback. Every recommendation reports estimatedCostIfAllAttemptsRun, the sum of each attempt's expected cost given that the attempts before it failed; it was called maxPossibleCost until the 2026-09-27 review pointed out it is a modeled figure, not a bound on billed cost.",
       "counterexamples": [
         {
           "review": "2026-09-26",
@@ -304,16 +304,33 @@
       "id": "universal-router-cascade-cost-independence",
       "claim": "A later cascade attempt costs the same in expectation whether or not earlier attempts failed.",
       "component": "Universal router cost model (src/router/policy.js)",
-      "version": "1.5.0",
-      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
-      "assessed_release": "1.5.0",
+      "version": "outcome-conditioned cascade cost (2026-11-27)",
+      "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
+      "assessed_release": "unreleased",
       "status": "refuted",
       "evidence": [
         "bench/universal-router/README.md",
         "bench/universal-router/holdout_eval.mjs",
-        "docs/UNIVERSAL_ROUTING.md"
+        "docs/UNIVERSAL_ROUTING.md",
+        "test/router_conditioned_cost.test.js"
       ],
-      "notes": "The cascade cost formula assumes E[cost_i | earlier attempts failed, x] = E[cost_i | x]. On the recorded SWE-bench Verified runs (in-repo replay, holdout_eval.mjs) expected cascade cost was under-predicted in all six splits, by 5-22% of the replayed cost ($0.102 expected against $0.124 replayed per task for seed 20260926): a failed attempt costs on average 1.2-2.0 times a successful one, for every model, and a later attempt is reached only after a failure. Corrected wording: this formula's E[cost] is optimistic until the cost model conditions on earlier outcomes. Unchanged at 7eef611."
+      "notes": "Still false as a statement about the data, and since 86fed0c no longer assumed by the router. Until then the cascade cost formula took E[cost_i | earlier attempts failed, x] = E[cost_i | x] and under-predicted replayed cost in all six splits of the in-repo replay, by 5-22% (mean 12.2%): a failed attempt costs on average 1.2-2.0 times a successful one, for every model, and a later attempt is reached only after a failure. The formula now charges an attempt at latent node q the cost k_m(q) = c_m(P + (1-P)r)/(p + (1-p)r), with r the fail/success cost ratio fitted within each model and pooled (1.55 in the shipped prior, from 3,923 passed and 1,575 failed attempts), and turns log cost into a mean with one smearing factor instead of exp(s2/2). Re-run on the same six splits with cascades chosen again (holdout_eval.mjs, --cost-model fitted against legacy, 10,000 draws): the gap is 0.5-20.5% (mean 8.5%), still an under-prediction in every split; held-out cost ($0.0943 against $0.0944 per task) and solve rate (1 task fewer of 2,100) did not change. The split left near 20% over-predicts success by 9 points, which is the calibration defect of universal-router-target-guarantee. A smearing factor per model reached a mean gap of 5.9% and was not adopted: its cascades cost 1.8% more on held-out tasks (5.6% more on one split, 95% interval 2.3-9.0%). Corrected wording: the router's E[cost] conditions on earlier outcomes and remains optimistic by about a tenth on recorded runs of one benchmark."
+    },
+    {
+      "id": "universal-router-cost-forecast-gap",
+      "claim": "With the outcome-conditioned cost formula, the router's expected cascade cost is within 8.5% of replayed cost on average across six held-out splits.",
+      "component": "Universal router cost model (src/router/policy.js, src/router/cost.js)",
+      "version": "outcome-conditioned cascade cost (2026-11-27)",
+      "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
+      "assessed_release": "unreleased",
+      "status": "measured",
+      "evidence": [
+        "bench/universal-router/README.md",
+        "bench/universal-router/holdout_eval.mjs",
+        "docs/UNIVERSAL_ROUTING.md",
+        "test/router_conditioned_cost.test.js"
+      ],
+      "notes": "holdout_eval.mjs on the pinned SWE-bench Verified input, seeds 20260926 and 1-5 (150 dev tasks, 350 held out, objective match-best-single, 10,000 bootstrap draws), run with --cost-model fitted and --cost-model legacy on 2026-11-27. Expected minus replayed cost per split: legacy -17.7, -6.7, -21.9, -10.4, -11.6, -5.0%; fitted -10.3, -4.3, -20.5, -6.0, -9.2, -0.5%. Mean size 12.2% against 8.5%. The forecast improved and the decisions did not: 86 of 2,100 held-out decisions changed, replayed cost was $0.0943 against $0.0944 per task and one task fewer was solved. Limits: one benchmark, one scaffold, one recorded attempt per model and task, costs as recorded in February 2026, and a replay that assumes a perfect free check between attempts. The per-task run files are not committed, because the downloaded results are not redistributed; reproduce.sh builds the input and the command above regenerates each split."
     },
     {
       "id": "route-outcome-provenance",
@@ -734,15 +751,17 @@
       "id": "imagine-sandbox",
       "claim": "forge imagine --run executes the selected tests in a sandbox.",
       "component": "Consequence simulation (src/imagine.js, forge imagine)",
-      "version": "1.5.0",
-      "source_commit": "7eef61179d16f6cdf8b5e929ce35a023aa17d1b0",
-      "assessed_release": "1.5.0",
-      "status": "refuted",
+      "version": "dry-run with an optional sandbox runtime (2026-11-27)",
+      "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
+      "assessed_release": "unreleased",
+      "status": "partial",
       "evidence": [
         "src/imagine.js",
-        "docs/GUIDE.md"
+        "docs/GUIDE.md",
+        "src/sandbox.js",
+        "test/sandbox.test.js"
       ],
-      "notes": "Still false at 7eef611, and no longer claimed: it is an isolated git checkout (a detached-HEAD worktree) that isolates checkout files, not network, credentials, the home directory or process permissions, and it tests the committed baseline, not uncommitted patches. The CLI and docs now say \"an isolated checkout of HEAD, not a security sandbox\", and a suite that is not node:test gets an explicit unsupported-runner result."
+      "notes": "Re-assessed on 86fed0c. Holds only when a sandbox runtime is installed: with Anthropic's Sandbox Runtime (srt) on the PATH the selected tests are started through it with the network denied, writes limited to the throwaway checkout and credential stores unreadable, and --sandbox required refuses to run without it. Without the runtime, which is the default on a fresh machine, the run is what it was at 7eef611: an isolated git checkout (a detached-HEAD worktree) that isolates checkout files, not network, credentials, the home directory or process permissions; the result's first line and its isolation field say which of the two applied. Two limits on the first half: ForgeKit implements no confinement itself, and this repository tests only that the suite is handed to the runtime with that policy (a stand-in srt records the call); the real runtime was not exercised, because the machine that made the change had no bubblewrap. The dry-run still tests the committed baseline, not uncommitted patches, and a suite that is not node:test gets an explicit unsupported-runner result."
     },
     {
       "id": "integrations-emission",
@@ -901,6 +920,21 @@
         "research/cognitive-substrate/evidence/evidence_map.md"
       ],
       "notes": "Not a finding about 59.4% of all 500 tasks. It limits what any SWE-bench Verified replay, including the universal router's, can show."
+    },
+    {
+      "id": "mcp-tool-surface-pin",
+      "claim": "A configured MCP endpoint whose tool list differs from its pinned digest is refused by the probe.",
+      "component": "Source MCP probe (src/source_mcp.js, forge sources probe)",
+      "version": "tool-surface pin (2026-11-27)",
+      "source_commit": "86fed0c5ea41805cc31f1722d5226af2377ee566",
+      "assessed_release": "unreleased",
+      "status": "implemented",
+      "evidence": [
+        "src/source_mcp.js",
+        "test/source_mcp.test.js",
+        "docs/AGENT-EVIDENCE.md"
+      ],
+      "notes": "The digest is SHA-256 over each tool's name, title, description, input and output schema and annotations, independent of listing order and of key order inside a schema; icons and _meta are excluded because they do not reach a model. With mcp.surface set in the private source config, a probe that computes any other digest throws surface-changed, and forge sources route <id> read --probe then reports the endpoint unavailable. Scope: it applies where ForgeKit itself probes, that is to configured source endpoints and only when a probe is requested. MCP servers that a host connects to directly are never seen by ForgeKit and are not covered. The pin detects a change; it does not judge whether the pinned tool text was safe to begin with."
     }
   ]
 }

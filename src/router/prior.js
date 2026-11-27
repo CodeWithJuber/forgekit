@@ -1,6 +1,6 @@
 // Fit the universal router from per-task outcome data (tasks × models, sparse allowed):
 // features → standardisation → MIRT with k and prior scale chosen by cross-validation → cost model.
-import { fitCost } from "./cost.js";
+import { failLogRatio, fitCost } from "./cost.js";
 import { fitScaler, rawFeatures, standardise } from "./features.js";
 import { selectAndFit } from "./mirt.js";
 import { loadRegistry } from "./registry.js";
@@ -39,7 +39,8 @@ export function buildPrior(
   tasks.forEach((t, j) => {
     models.forEach((id, m) => {
       const o = input.outcomes[id][t.id];
-      if (o?.cost > 0) costObs.push({ model: m, x: X[j], cost: o.cost });
+      if (o?.cost > 0)
+        costObs.push({ model: m, x: X[j], cost: o.cost, passed: o.resolved === true });
     });
   });
   const prices = models.map((id) => {
@@ -47,6 +48,18 @@ export function buildPrior(
     return { priceIn: r?.price_in ?? null, priceOut: r?.price_out ?? null };
   });
   const cost = fitCost(costObs, models.length, scaler.mean.length, prices);
+  // How much more a failed attempt costs than a successful one, estimated within each model.
+  // The cascade cost formula uses it to charge a later attempt for the harder tasks it sees.
+  const ratio = failLogRatio(costObs, cost);
+  if (ratio.delta !== null) {
+    cost.failLogRatio = ratio.delta;
+    cost.failLogRatioEvidence = {
+      passed: ratio.passed,
+      failed: ratio.failed,
+      pairedWeight: ratio.weight,
+      standardError: ratio.se,
+    };
+  }
   return {
     version: 1,
     models,

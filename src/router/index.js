@@ -17,10 +17,11 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { join } from "node:path";
 import { validate } from "../schema.js";
 import { computeCodeState, readVerifyEvents } from "../verify.js";
-import { expectedCosts, fitCost } from "./cost.js";
+import { chooseBySubsets } from "./cascade.js";
+import { expectedCosts, failLogRatio, fitCost } from "./cost.js";
 import { rawFeatures, standardise } from "./features.js";
 import { fitMirt, marginals, nodeProbabilities } from "./mirt.js";
-import { choose, parseObjective } from "./policy.js";
+import { parseObjective } from "./policy.js";
 import { loadRegistry, servableBy } from "./registry.js";
 
 const SHIPPED_PRIOR = new URL("../../data/router_prior.json", import.meta.url);
@@ -114,7 +115,12 @@ export function routeUniversal(root, task, opts = {}) {
   const nodes = nodeProbabilities(aligned.mirt, x);
   const costs = expectedCosts(aligned.cost, x);
   const maxDepth = Math.max(1, Math.min(opts.maxDepth ?? 3, candidates.length));
-  const pick = choose(nodes, costs, candidates, objective, maxDepth);
+  // δ = log(cost of a failed attempt / cost of a successful one), learned from recorded outcomes
+  // (fitRouter). 0 when nothing has been recorded: the cascade cost is then the unconditioned
+  // estimate, and the recommendation says so.
+  const failLog = Number.isFinite(aligned.cost.failLogRatio) ? aligned.cost.failLogRatio : 0;
+  const failCostRatio = Math.exp(failLog);
+  const pick = chooseBySubsets(nodes, costs, candidates, objective, maxDepth, { failCostRatio });
   if (!pick) return { ok: false, reason: "no candidate model has a known cost for this provider" };
   const p1 = marginals(nodes);
   // Review A07: a registry entry is not availability. Each step names the providers that can
@@ -146,6 +152,13 @@ export function routeUniversal(root, task, opts = {}) {
     expectedCost: pick.cost,
     estimatedCostIfAllAttemptsRun: pick.estimatedCostIfAllAttemptsRun,
     minimumExpectedCost: pick.minimumExpectedCost,
+    // How the cascade cost treats outcomes. `conditioned: false` means no fail/success cost
+    // ratio has been learned, so a later attempt is charged as if it met an average task.
+    costModel: {
+      failCostRatio,
+      conditioned: failCostRatio !== 1,
+      evidence: aligned.cost.failLogRatioEvidence ?? null,
+    },
     objective,
     target: pick.target,
     targetMet: pick.targetMet,
@@ -458,7 +471,7 @@ export function fitRouter(
     const x = standardise(shipped.features, o.features);
     if (!byTask.has(o.task)) byTask.set(o.task, { x, obs: [] });
     byTask.get(o.task).obs.push([m, o.passed ? 1 : 0]);
-    if (o.cost > 0) costObs.push({ model: m, x, cost: o.cost });
+    if (o.cost > 0) costObs.push({ model: m, x, cost: o.cost, passed: o.passed === true });
   }
   const data = {
     nModels: base.ids.length,
@@ -485,12 +498,29 @@ export function fitRouter(
     const prior = alpha[m] ?? resid.reduce((s, v) => s + v, 0) / resid.length;
     alpha[m] = (prior + resid.reduce((s, v) => s + v, 0)) / (1 + resid.length);
   }
+  // Fail/success cost ratio: the shipped value (0 = "same cost either way" when the prior has
+  // none) is worth one paired observation, like α above; local attempts with both outcomes for
+  // a model move it.
+  const ratioFit = failLogRatio(costObs, base.cost);
+  const priorDelta = Number.isFinite(base.cost.failLogRatio) ? base.cost.failLogRatio : 0;
+  const failCost = {
+    failLogRatio:
+      ratioFit.delta === null
+        ? priorDelta
+        : (priorDelta + ratioFit.weight * ratioFit.delta) / (1 + ratioFit.weight),
+    failLogRatioEvidence: {
+      passed: ratioFit.passed,
+      failed: ratioFit.failed,
+      pairedWeight: ratioFit.weight,
+      standardError: ratioFit.se,
+    },
+  };
   const model = {
     version: 1,
     models: base.ids,
     features: shipped.features,
     mirt: params,
-    cost: { ...base.cost, alpha },
+    cost: { ...base.cost, alpha, ...failCost },
     selection: shipped.selection,
     provenance: {
       prior: shipped.provenance,

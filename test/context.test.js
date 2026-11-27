@@ -407,3 +407,49 @@ test("the token budget admits distinct evidence ahead of duplicate optional fact
   assert.match(report.block, /immutable transaction/);
   assert.ok(report.tokens <= 100);
 });
+
+test("rival facts: the newer value of a named fact is packed alone, a same-day clash is withheld", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-context-"));
+  const fact = (name, text, t) =>
+    mintClaim({ kind: "fact", body: { name, text }, scope: { level: "repo" }, t }).claim;
+  // A teammate's merged ledger left two live values for one name (nothing tombstones across
+  // authors), a same-day clash on another name, and one fact nobody disputes.
+  const oldBase = fact("api-base", "The API base is https://api.old.example.test", 10);
+  const newBase = fact("api-base", "The API base is https://api.new.example.test", 40);
+  const portA = fact("dev-port", "The dev server listens on 3000", 20);
+  const portB = fact("dev-port", "The dev server listens on 8080", 20);
+  const plain = fact("runner", "Tests run under node:test", 5);
+  const claims = [oldBase, newBase, portA, portB, plain];
+
+  const r = assemble(root, "call the api", { claims, budget: 6000, nowDay: 40 });
+  assert.match(r.block, /api\.new\.example/);
+  assert.doesNotMatch(r.block, /api\.old\.example/, "the superseded value never reaches the model");
+  assert.doesNotMatch(r.block, /3000|8080/, "an unordered clash packs neither value");
+  assert.match(r.block, /node:test/);
+  assert.deepEqual(r.rivals.superseded, [
+    { id: oldBase.id.slice(0, 8), by: newBase.id.slice(0, 8) },
+  ]);
+  assert.equal(r.rivals.conflicts.length, 1);
+  assert.equal(r.rivals.conflicts[0].name, "dev-port");
+  assert.deepEqual(
+    [...r.rivals.conflicts[0].ids].sort(),
+    [portA.id.slice(0, 8), portB.id.slice(0, 8)].sort(),
+  );
+  const shown = renderContext(r);
+  assert.match(shown, /fact "dev-port" has 2 different current values/);
+  assert.match(shown, /1 older fact value\(s\) left out/);
+
+  // Input order changes nothing, and a set with no rivals reports none.
+  const again = assemble(root, "call the api", {
+    claims: [...claims].reverse(),
+    budget: 6000,
+    nowDay: 40,
+  });
+  assert.equal(again.block, r.block);
+  const calm = assemble(root, "call the api", {
+    claims: [newBase, plain],
+    budget: 6000,
+    nowDay: 40,
+  });
+  assert.deepEqual(calm.rivals, { superseded: [], conflicts: [] });
+});

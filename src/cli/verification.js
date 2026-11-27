@@ -244,12 +244,15 @@ HANDLERS.imagine = async (argv) => {
   const doRun = argv.includes("--run");
   const allowDirty = argv.includes("--allow-dirty");
   const FLAGS = new Set(["--json", "--run", "--allow-dirty"]);
-  const task = argv
-    .slice(1)
-    .filter((a) => !FLAGS.has(a))
-    .join(" ");
-  if (!task) {
-    console.error('usage: forge imagine "<task>" [--run] [--allow-dirty] [--json]');
+  const USAGE =
+    'usage: forge imagine "<task>" [--run] [--sandbox auto|required|off] [--allow-dirty] [--json]';
+  // --sandbox takes a value; everything else that is not a flag is the task text.
+  const at = argv.indexOf("--sandbox");
+  const sandbox = at === -1 ? "auto" : argv[at + 1];
+  const words = argv.slice(1).filter((a, i) => !FLAGS.has(a) && i + 1 !== at && i !== at);
+  const task = words.join(" ");
+  if (!task || !["auto", "required", "off"].includes(sandbox)) {
+    console.error(USAGE);
     process.exitCode = 1;
     return;
   }
@@ -285,7 +288,7 @@ HANDLERS.imagine = async (argv) => {
       return;
     }
   }
-  const d = dryRun(root, { tests: r.tests });
+  const d = dryRun(root, { tests: r.tests, sandbox });
   // Metrics are best-effort telemetry (05-cost-model.md) — never let recording
   // failure break the verdict. Only a run that happened is worth counting.
   try {
@@ -309,8 +312,13 @@ HANDLERS.imagine = async (argv) => {
     process.exitCode = 1;
     return;
   }
+  const confined = d.isolation?.process && d.isolation.process !== "none";
   console.log(
-    `\n  dry-run (isolated checkout of HEAD — not a security sandbox · ${d.runner ?? "node --test"}):`,
+    `\n  dry-run (isolated checkout of HEAD · ${
+      confined
+        ? `confined by ${d.isolation.process}: no network, writes only in the checkout, credential stores unreadable`
+        : `NOT confined (${d.isolation?.reason ?? "no sandbox"}): tests ran with your network, credentials and permissions`
+    } · ${d.runner ?? "node --test"}):`,
   );
   console.log(
     `    pass ${d.passed} · fail ${d.failed} · ${d.durationMs}ms · worktree ${d.worktree}`,

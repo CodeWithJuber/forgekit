@@ -24,23 +24,77 @@
 // cost only. `estimatedCostIfAllAttemptsRun` is the sum of every attempt's EXPECTED cost —
 // a modeled figure for the path where each stage runs, not a bound on what a stochastic run can
 // bill (it was called `maxPossibleCost`, which overstated it). The ACTUAL charge is whatever the
-// attempts cost — enforce a hard cap at execution time if one is promised. The cost formula also assumes an attempt's cost does not depend on earlier
-// attempts having failed (E[cost_i | earlier failed, x] = E[cost_i | x]); hard residual tasks
-// may cost more, so treat expected cost as an estimate under that assumption.
+// attempts cost — enforce a hard cap at execution time if one is promised.
+//
+// Cost conditioned on outcomes. A failed attempt costs more than a successful one (1.2 to 2.0
+// times, for every model, in the recorded runs), and a later attempt is reached only on tasks
+// the earlier ones failed, where it is more likely to fail too. With `failCostRatio` r, the cost
+// of an attempt by m at node q is
+//
+//   k_m(q) = c_m · (P[m][q] + (1 − P[m][q])·r) / (p̄_m + (1 − p̄_m)·r),   p̄_m = Σ_q w_q P[m][q]
+//
+// so that Σ_q w_q k_m(q) = c_m: a FIRST attempt still costs exactly its fitted expectation,
+// and
+//
+//   E[cost of s]  = Σ_i Σ_q w_q · Π_{l<i} (1 − P[m_l][q]) · k_{m_i}(q)
+//
+// charges a later attempt for the harder tasks it actually sees. r = 1 is the old formula,
+// which assumed E[cost_i | earlier failed, x] = E[cost_i | x] and under-predicted cascade cost
+// by 5 to 22% in the in-repo replay. r comes from recorded outcomes (cost.js); with none it is
+// 1 and the result says so.
 
-/** @param {number[][]} P @param {number[]} w @param {number[]} costs @param {number[]} seq */
-export function cascadeStats(P, w, costs, seq) {
+/** Check a fail/success cost ratio. 1 means "an attempt costs the same whatever its outcome". */
+export function validRatio(ratio) {
+  if (!(ratio > 0) || !Number.isFinite(ratio))
+    throw new RangeError("failCostRatio must be a finite number above 0");
+  return ratio;
+}
+
+/**
+ * Per-node attempt cost k_m(q), normalised so its mean over the nodes is `cost`.
+ * @param {number[]} Pm success probability of one model at each node
+ * @param {number[]} w node weights
+ * @param {number} cost the model's fitted expected attempt cost for this task
+ * @param {number} ratio cost of a failed attempt over a successful one
+ */
+export function nodeCosts(Pm, w, cost, ratio) {
+  if (ratio === 1) return w.map(() => cost);
+  let mean = 0;
+  for (let q = 0; q < w.length; q++) mean += w[q] * Pm[q];
+  const success = cost / (mean + (1 - mean) * ratio);
+  return w.map((_, q) => success * (Pm[q] + (1 - Pm[q]) * ratio));
+}
+
+/**
+ * Success probability and expected cost of one ordered cascade. `ifAllRun` is the sum of each
+ * attempt's expected cost GIVEN that it is reached (every earlier attempt failed).
+ * @param {number[][]} P @param {number[]} w @param {number[]} costs @param {number[]} seq
+ * @param {number} [ratio] cost of a failed attempt over a successful one (1 = no conditioning)
+ */
+export function cascadeStats(P, w, costs, seq, ratio = 1) {
   const fail = w.map(() => 1);
   let cost = 0;
+  let ifAllRun = 0;
   for (const m of seq) {
     let reach = 0;
     for (let q = 0; q < w.length; q++) reach += w[q] * fail[q];
-    cost += costs[m] * reach;
+    if (ratio === 1) {
+      // The unconditioned formula, in its original arithmetic so results are unchanged bit for bit.
+      cost += costs[m] * reach;
+      ifAllRun += costs[m];
+    } else {
+      const k = nodeCosts(P[m], w, costs[m], ratio);
+      let charge = 0;
+      for (let q = 0; q < w.length; q++) charge += w[q] * fail[q] * k[q];
+      cost += charge;
+      // An attempt that can never be reached adds nothing; its conditional cost is undefined.
+      ifAllRun += reach > 0 ? charge / reach : 0;
+    }
     for (let q = 0; q < w.length; q++) fail[q] *= 1 - P[m][q];
   }
   let pf = 0;
   for (let q = 0; q < w.length; q++) pf += w[q] * fail[q];
-  return { p: 1 - pf, cost };
+  return { p: 1 - pf, cost, ifAllRun };
 }
 
 /** All ordered cascades of distinct candidates up to `maxDepth` models long. */
@@ -76,12 +130,14 @@ export function parseObjective(spec) {
  * @param {number[]} candidates model indices allowed
  * @param {{kind: string, target?: number, value?: number, budget?: number}} objective
  * @param {number} maxDepth
+ * @param {{failCostRatio?: number}} [options]
  */
-export function choose(nodes, costs, candidates, objective, maxDepth) {
+export function choose(nodes, costs, candidates, objective, maxDepth, { failCostRatio = 1 } = {}) {
   const { P, weights } = nodes;
+  const ratio = validRatio(failCostRatio);
   const usable = candidates.filter((m) => costs[m] !== null && Number.isFinite(costs[m]));
   if (!usable.length) return null;
-  const single = usable.map((m) => ({ m, ...cascadeStats(P, weights, costs, [m]) }));
+  const single = usable.map((m) => ({ m, ...cascadeStats(P, weights, costs, [m], ratio) }));
   const bestSingle = single.reduce((a, b) => (b.p > a.p ? b : a));
   const target =
     objective.kind === "match-best-single"
@@ -94,7 +150,7 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
   let evaluated = 0;
   const eps = 1e-12;
   for (const seq of cascades(usable, maxDepth)) {
-    const st = cascadeStats(P, weights, costs, seq);
+    const st = cascadeStats(P, weights, costs, seq, ratio);
     evaluated++;
     let key;
     if (target !== null)
@@ -114,7 +170,7 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
   const targetMet = target === null ? null : best.p >= target - eps;
   const budgetMet = objective.kind === "budget" ? best.cost <= objective.budget + eps : null;
   const minimumExpectedCost = Math.min(...single.map((x) => x.cost));
-  const estimatedCostIfAllAttemptsRun = best.seq.reduce((sum, m) => sum + costs[m], 0);
+  const { ifAllRun: estimatedCostIfAllAttemptsRun, ...chosen } = best;
   const feasible = targetMet !== false && budgetMet !== false;
   const reason = feasible
     ? undefined
@@ -122,7 +178,7 @@ export function choose(nodes, costs, candidates, objective, maxDepth) {
       ? `infeasible: no cascade's expected cost fits the budget $${objective.budget} (the cheapest expected cost is $${minimumExpectedCost.toFixed(4)})`
       : `infeasible: no cascade reaches P(success) ${target} (the best reachable is ${best.p.toFixed(4)})`;
   return {
-    ...best,
+    ...chosen,
     target,
     targetMet,
     budgetMet,

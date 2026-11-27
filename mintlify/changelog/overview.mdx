@@ -22,11 +22,21 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 **Added**
 
-- Decision mathematics as tested library modules, not yet wired into any command ([docs/MATH-CORE.md](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/MATH-CORE.md)): an evidence bound that stays valid when re-read after every observation, a change detector and a paired canary test (`src/mathcore/sequential.js`); exact …
+- The built-in MCP server now speaks revision 2026-07-28 as well as the handshake revisions.
+- `forge route universal` forecasts cascade cost more closely, and chooses with an exact method.
+- A configured MCP endpoint's tool list can be pinned.
+- `forge imagine --run` confines the test run when a sandbox runtime is installed.
+- `forge context` no longer packs two values for one named fact.
+- `node scripts/claims-status.mjs --since <rev>` lists the registered claims whose evidence files changed since a revision, which is the set a pull request should re-read; `--freshness` compares each claim with its own assessed commit.
+- Six more tested library modules that change no behaviour ([docs/MATH-CORE.md](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/MATH-CORE.md)): change impact over the old and new dependency graphs and claim states by content hash (`closure.js`), a two-sample drift test (`drift.js`), spectrum-based fault ranking (`sbfl.js`), …
+- A dated check of outside tools, protocols and papers, with the license and last commit of 137 repositories and the findings that changed what was built ([research/tool-landscape/](https://github.com/CodeWithJuber/forgekit/blob/HEAD/research/tool-landscape/README.md)).
+- Three library rules taken from 2026 studies ([docs/MATH-CORE.md](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/MATH-CORE.md)); the first is used by `forge context` (see below), the other two are tested library code.
+- Decision mathematics as tested library modules ([docs/MATH-CORE.md](https://github.com/CodeWithJuber/forgekit/blob/HEAD/docs/MATH-CORE.md)); the cascade ordering is now the router's chooser (see below), the rest changes no behaviour: an evidence bound that stays valid when re-read after every observation, a change detector and a …
 
 **Fixed**
 
 - The docs auto-update job renders the adversarial doctor demo again.
+- `ping` from a handshake-era MCP client is answered with an empty result.
 
 [Full notes for Unreleased →](https://github.com/CodeWithJuber/forgekit/blob/HEAD/CHANGELOG.md#unreleased)
 

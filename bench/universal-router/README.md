@@ -112,6 +112,39 @@ What this shows:
 - Five more seeds (1 to 5), run after the result above as a sensitivity check, show the same picture. Against the dev-chosen fixed cascade, the router's difference ranged from -0.6 to +1.1 points and from -$0.012 to +$0.026 per task, and in no split was it both more accurate and cheaper. Against the best single model on dev, the result depends on which model won dev. When an Opus model won (3 of 6 splits), the router saved $0.46 to $0.64 per task and solved 2.9 to 4.0 points more, with an interval excluding zero only for seed 20260926. When minimax-m2.5 won (the other 3), the router solved 0.0 to 1.1 points more at $0.003 to $0.026 more per task.
 - The chosen cascades' predicted success averaged 80.2% against 80.0% observed (across the six splits, predicted minus observed ranged from -2.8 to +9.1 points). Their expected cost was $0.102 per task against $0.124 replayed, and cost was under-predicted in all six splits, by 5% to 22% of the replayed cost. In these runs a failed attempt costs on average 1.2 to 2.0 times as much as a successful one, for every model, and a cascade reaches its second model only after a failure. The cost model does not condition on the outcome.
 
+### Cost model revision, 2026-11-27
+
+The last point above was the open defect. The router now charges a later attempt for the
+harder tasks that reach it, using the fail/success cost ratio fitted from recorded outcomes, and
+turns log cost into a mean with a smearing factor instead of `exp(s²/2)`
+(`docs/UNIVERSAL_ROUTING.md`). `--cost-model` selects what the replay uses: `fitted` (the
+default, what the router does), `legacy` (the formula before this change), and three ablations.
+All six splits were re-run with 10,000 bootstrap draws, cascades chosen again under each model:
+
+| Cost model | Expected minus replayed cost, six splits | Mean size of the gap | Replayed cost per task | Solved | Decisions changed against legacy |
+|---|---|---|---|---|---|
+| `legacy` | -21.9% to -5.0% | 12.2% | $0.0944 | 77.19% | 0 |
+| `fitted` (ratio and one smearing factor) | -20.5% to -0.5% | 8.5% | $0.0943 | 77.14% | 86 of 2,100 |
+| `per-model-smear` (ratio and a factor per model) | -17.0% to +0.3% | 5.9% | $0.0961 | 77.38% | 397 of 2,100 |
+
+- The adopted model cuts the forecast gap by about a third and changes neither cost nor solve
+  rate beyond noise: per split the paired cost difference against `legacy` ranged from -2.0% to
+  +1.0%, with an interval excluding zero only for seed 5 (-2.0%, 95% interval -3.7% to -0.7%,
+  one task fewer solved).
+- A factor per model forecasts best and was not adopted. Its cascades cost more on held-out
+  tasks: +5.6% for seed 3 (95% interval +2.3% to +9.0%), +4.5% for seed 1 (-0.5% to +8.4%), and
+  +1.8% averaged over the six splits, for 4 more solved tasks of 2,100. On seeds 1 and 3 the
+  `ratio-only` ablation changed 23 and 33 decisions against 181 and 105 for `per-model-smear`,
+  so the per-model factors are what move the choices.
+- Seed 2 stays at -20.5%. Its predicted success is 83.4% against 74.3% observed, so the formula
+  expects cascades to stop earlier than they do. That is a calibration error in the success
+  model, and no cost formula fixes it.
+- For seed 20260926 under `fitted` the router row of the table above becomes 80.0% solved at
+  $0.125 per task, with 8 of 350 decisions changed; the table is left as it was recorded.
+- The same code refits the shipped prior with every one of its 176 earlier values identical,
+  and adds `cost.smear` (1.265, against 1.245 for `exp(s²/2)`), `cost.failLogRatio` (a ratio of
+  1.55) and its evidence.
+
 Limits that apply to every number above:
 
 - One scaffold (mini-SWE-agent 2.0.0), one recorded attempt per model and task, twelve Python repositories (django alone is 231 of the 500 tasks), and the costs the runs recorded in February 2026, not today's prices.

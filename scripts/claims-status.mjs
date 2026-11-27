@@ -19,10 +19,18 @@
  *   3. the research copies under `docs/cognitive-substrate/`, which must stay byte-identical
  *      (sha256) to their canonical sources under `research/cognitive-substrate/`.
  *
+ * A fourth, report-only view answers "which claims should be read again?": `--freshness`
+ * compares every evidence file with its content at the claim's `source_commit`. A claim whose
+ * evidence is byte-identical is `valid`; one whose evidence changed is `stale`; one whose
+ * evidence was deleted is `unresolved`. It never fails the build, because evidence legitimately
+ * moves ahead of an assessment: it tells a reviewer where to look before a release.
+ *
  * Usage:
  *   node scripts/claims-status.mjs                  # validate, rewrite the table, check copies
  *   node scripts/claims-status.mjs --check          # validate + fail on any drift (CI mode)
  *   node scripts/claims-status.mjs --sync-copies    # re-copy canonical research files first
+ *   node scripts/claims-status.mjs --freshness      # which claims' evidence changed since assessment
+ *   node scripts/claims-status.mjs --since origin/master   # which claims this branch touched
  *   node scripts/claims-status.mjs --root <dir>     # operate on another checkout
  *
  * Exit codes: 0 ok · 1 invalid registry or drift · 2 usage error.
@@ -32,6 +40,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyClaims } from "../src/mathcore/closure.js";
 
 /** The closed set of statuses a claim may carry, in display order. */
 export const STATUSES = ["implemented", "measured", "partial", "reported", "hypothesis", "refuted"];
@@ -289,6 +298,87 @@ export function releaseProblems(root, registry, { unchecked = [] } = {}) {
   return problems;
 }
 
+/** Marks an evidence file that did not exist at the assessed commit. */
+const ADDED_LATER = "added-after-assessment";
+
+/**
+ * Compare each claim's evidence with its content at the claim's `source_commit`, by git blob
+ * id (a content hash). Evidence is `valid` when every cited file is byte-identical to what was
+ * assessed, `stale` when a file changed or was added after the assessment, and `unresolved`
+ * when a cited file no longer exists. URLs are outside the repository and are not checked.
+ * A claim whose commit is not in this clone (a shallow checkout) is listed in `unchecked`.
+ * Returns null when git is unavailable.
+ *
+ * With `since`, a claim is compared with that revision instead of its own `source_commit`: the
+ * result is the claims whose evidence a branch has touched, which is the question a pull
+ * request has to answer. The branch point with HEAD is used when there is one. A claim that
+ * was re-assessed on the branch (its `source_commit` descends from that revision) is compared
+ * with its own assessment, so recording a re-assessment is what takes it off the list.
+ * @param {string} root
+ * @param {any} registry a valid registry
+ * @param {{since?: string|null}} [opts]
+ * @returns {{results: {id:string, state:"valid"|"stale"|"unresolved", because:string[]}[],
+ *           unchecked: string[], base: string|null}|null}
+ */
+export function freshness(root, registry, { since = null } = {}) {
+  const g = (args) =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  const attempt = (args) => {
+    try {
+      return g(args);
+    } catch {
+      return null;
+    }
+  };
+  if (attempt(["rev-parse", "--git-dir"]) === null) return null;
+  /** @type {Record<string, string>} */
+  const hashes = {};
+  const now = (rel) => {
+    if (!(rel in hashes) && existsSync(path.join(root, rel))) {
+      const id = attempt(["hash-object", "--", rel]);
+      if (id) hashes[rel] = id;
+    }
+  };
+  let base = null;
+  if (since !== null) {
+    base =
+      attempt(["merge-base", since, "HEAD"]) ??
+      attempt(["rev-parse", "--verify", "--quiet", `${since}^{commit}`]);
+    if (base === null) throw new Error(`--since: no such revision in this checkout: ${since}`);
+  }
+  const claims = [];
+  const unchecked = [];
+  for (const c of registry.claims) {
+    // A claim assessed on the branch itself, after the base, is compared with its own
+    // assessment: re-reading a claim and recording the commit is what clears it.
+    const reassessed =
+      base !== null &&
+      c.source_commit !== base &&
+      attempt(["merge-base", "--is-ancestor", base, c.source_commit]) !== null;
+    const at = base === null || reassessed ? c.source_commit : base;
+    if (attempt(["cat-file", "-e", `${at}^{commit}`]) === null) {
+      unchecked.push(c.id);
+      continue;
+    }
+    const sources = [];
+    for (const e of c.evidence) {
+      if (URL_RE.test(e)) continue;
+      const rel = e.split("#")[0];
+      now(rel);
+      sources.push({
+        symbol: rel,
+        hash: attempt(["rev-parse", "--verify", "--quiet", `${at}:${rel}`]) ?? ADDED_LATER,
+      });
+    }
+    claims.push({ id: c.id, sources });
+  }
+  return { results: classifyClaims({ claims, hashes }), unchecked, base };
+}
+
 /**
  * Stamp every claim assessed on unreleased code with the release that ships it — what
  * `scripts/bump.mjs` does when it cuts `version`. Text-level, so the file's layout survives.
@@ -414,6 +504,8 @@ export function run(argv, io = {}) {
   let root = io.root ?? DEFAULT_ROOT;
   const pairs = io.pairs ?? COPY_PAIRS;
   const flags = new Set();
+  /** @type {string|null} */
+  let since = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--root") {
@@ -423,13 +515,22 @@ export function run(argv, io = {}) {
         return 2;
       }
       root = path.resolve(next);
-    } else if (a === "--check" || a === "--sync-copies") flags.add(a);
+    } else if (a === "--since") {
+      since = argv[++i] ?? null;
+      if (!since) {
+        error("--since needs a revision, for example origin/master");
+        return 2;
+      }
+      flags.add("--freshness");
+    } else if (a === "--check" || a === "--sync-copies" || a === "--freshness") flags.add(a);
     else if (a === "--help" || a === "-h") {
       log(
-        "usage: node scripts/claims-status.mjs [--check] [--sync-copies] [--root <dir>]\n" +
+        "usage: node scripts/claims-status.mjs [--check] [--sync-copies] [--freshness] [--since <rev>] [--root <dir>]\n" +
           "  (no flag)      validate the registry, rewrite the table in docs/status/README.md, check copies\n" +
           "  --check        validate and fail (exit 1) on a stale table or a drifted docs copy\n" +
-          "  --sync-copies  copy canonical research/ files over drifted docs/ copies first",
+          "  --sync-copies  copy canonical research/ files over drifted docs/ copies first\n" +
+          "  --freshness    report claims whose evidence files changed since their source_commit (never fails)" +
+          "\n  --since <rev>  report claims whose evidence changed since <rev> instead (what a branch touched)",
       );
       return 0;
     } else {
@@ -450,6 +551,30 @@ export function run(argv, io = {}) {
   if (problems.length) {
     for (const p of problems) error(`registry: ${p}`);
     return 1;
+  }
+  if (flags.has("--freshness")) {
+    let fresh;
+    try {
+      fresh = freshness(root, registry, { since });
+    } catch (e) {
+      error(/** @type {Error} */ (e).message);
+      return 2;
+    }
+    if (fresh === null) {
+      log("freshness check skipped: not a git checkout");
+      return 0;
+    }
+    const by = (state) => fresh.results.filter((r) => r.state === state);
+    for (const r of [...by("unresolved"), ...by("stale")])
+      log(`${r.state}  ${r.id}: ${r.because.join(", ")}`);
+    log(
+      `${fresh.base ? `evidence changed since ${fresh.base.slice(0, 12)}` : "freshness against each claim's source_commit"}: ` +
+        `${by("valid").length} valid, ${by("stale").length} stale, ${by("unresolved").length} unresolved` +
+        (fresh.unchecked.length
+          ? `, ${fresh.unchecked.length} not checked (their source_commit is not in this clone)`
+          : ""),
+    );
+    return 0;
   }
   /** @type {string[]} */
   const unchecked = [];

@@ -49,7 +49,11 @@ acceptance checks below describe which clients actually received context in a mo
 In any host with local stdio MCP support, add a server named `forge-cortex` with command
 `forge` and the single argument `cortex-mcp`. Start the server in the project directory,
 or set its `FORGE_ROOT` environment variable to the absolute project path. An MCP client
-can then list and call the tools. For a host that reads project instructions, use the
+can then list and call the tools. The server speaks MCP revision 2026-07-28, in which a
+client sends no handshake and names its revision on every request, and the handshake
+revisions 2025-11-25, 2025-06-18 and 2024-11-05. A client that asks for any other revision
+through `initialize` is answered with 2024-11-05; one that names an unsupported revision on
+a request receives error -32022 with the supported list. For a host that reads project instructions, use the
 shared `AGENTS.md` or export the instructions with `forge prompts show master --profile engineering`.
 Automatic context on every prompt requires a lifecycle callback that can deliver context
 in that host. For projects using other hosts, the CLI also supports explicit retrieval

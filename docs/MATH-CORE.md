@@ -6,10 +6,14 @@ how many changes to batch in a merge queue, and whether a failing test is flaky.
 
 > **Evidence status (2026-11-27).** Everything here is **implemented and tested against an
 > independent calculation** — exhaustive enumeration, direct summation, numeric integration, the
-> router's own `choose`, or a seeded simulation. **None of it is wired into a command**, so no
-> behaviour changes, and **nothing has been measured on a real repository, provider or user.**
-> In particular the replay engine has run only on generated procedures; what share of real
-> requests it can serve is a hypothesis until `replayOpportunity` is run on real logs.
+> router's own `choose`, or a seeded simulation. Three pieces are wired into commands:
+> `forge route universal` chooses its cascade with `chooseBySubsets`, `forge context` removes
+> rival fact values with `dropRivals`, and `scripts/claims-status.mjs --since` classifies
+> documented claims with `classifyClaims`. The rest is library code that changes no behaviour.
+> **Nothing here has been measured on a live repository, provider or user**; the router numbers
+> come from replaying recorded benchmark runs. In particular the replay engine has run only on
+> generated procedures; what share of real requests it can serve is a hypothesis until
+> `replayOpportunity` is run on real logs.
 
 | Module | Question | Checked against |
 | --- | --- | --- |
@@ -20,6 +24,15 @@ how many changes to batch in a merge queue, and whether a failing test is flaky.
 | `src/mathcore/grouptest.js` | Merge-queue batch size | Enumeration of every failure pattern up to 11 changes |
 | `src/mathcore/flaky.js` | Flaky test or real regression, and how many reruns settle it | Numeric integration of the Beta moments |
 | `src/mathcore/contextpack.js` | Which evidence fits a window when token cost is not additive | Brute force over all record subsets |
+| `src/mathcore/rivals.js` | Which statements compete with the evidence and must leave a context window | A per-key reference on 400 random sets, in two input orders |
+| `src/mathcore/vulnrank.js` | In which order to treat vulnerability findings when reachability is unknown | Hand-computed cases at each of the three reach values |
+| `src/mathcore/occlusion.js` | How much of a control can be clicked, and whether the click point is exposed | A pixel count on 300 random layouts |
+| `src/mathcore/closure.js` | What can a change affect, and which documented claims does it put in doubt? | Brute-force reachability on random graphs |
+| `src/mathcore/drift.js` | Has the distribution of a stream of vectors changed? | Seeded simulation with and without a shift |
+| `src/mathcore/sbfl.js` | Which code unit do the failing tests point at? | Hand-computed Ochiai, DStar and Tarantula scores |
+| `src/mathcore/bandit.js` | Which arm to try next, learning from verified outcomes | The ridge solution computed directly; a random policy and an oracle |
+| `src/mathcore/promotion.js` | Is a saved script or procedure worth keeping? | Hand-computed break-even cases |
+| `src/mathcore/interlock.js` | May this command be sent to a device? | Each limit at its boundary |
 
 Run them with `node --test --import ./test/_setup.js test/mathcore_*.test.js test/router_cascade.test.js test/replay.test.js`.
 The statistical tests print the rates they observe as diagnostics; the numbers below are those
@@ -100,7 +113,24 @@ g(∅) = 0        g(S) = min over i in S of [ g(S \ {i}) + c_i · F(S \ {i}) ]
 This is exact with correlated failures and costs `O(2^n · n)` where enumerating ordered cascades
 costs `O(n!)`. `chooseBySubsets` takes the arguments of `choose` and returned the same cascade and
 the same result fields on 3,600 random decisions across all four objectives, feasible and not.
-The router still calls `choose`; switching is a separate change.
+`forge route universal` now calls it.
+
+The charge itself was wrong in one respect, and the repository's own replay had measured it: a
+later attempt is reached only after a failure, a failed attempt costs 1.2 to 2.0 times a
+successful one, and so the formula under-predicted cascade cost by 5 to 22%. With `r` the
+fail/success cost ratio, an attempt by model `m` at latent node `q` costs
+
+```
+k_m(q) = c_m · (P[m][q] + (1 − P[m][q])·r) / (p̄_m + (1 − p̄_m)·r)
+```
+
+which averages to `c_m`, so a first attempt is unchanged. The recursion over sets stays exact,
+because the charge for an attempt still depends only on which attempts failed before it and not
+on their order. A simulation of 400,000 cascades agreed with the conditioned formula to 0.08%
+where the old one was 1.2% off, and `chooseBySubsets` matched `choose` on 1,600 more decisions
+at ratios from 0.6 to 2.0. On six held-out splits the mean forecast gap fell from 12.2% to 8.5%
+with cost and solve rate unchanged; the numbers and the variant that was measured and rejected
+are in [`docs/UNIVERSAL_ROUTING.md`](UNIVERSAL_ROUTING.md).
 
 Two consequences are worth stating. With independent attempts the best order of a fixed set sorts
 by cost divided by success probability, so sorting by price alone is right only when success
@@ -187,16 +217,111 @@ P(regression | k failures) = π / (π + (1 − π)·E[f^k])        E[f^k] = Π_{
 A test that failed 2 of 100 same-input reruns, with a 5% prior, reaches 64%, 97.9% and 99.9% after
 one, two and three failures. The model covers deterministic regressions only.
 
+## Three rules taken from 2026 evidence
+
+Each rule below replaces a common formula that a 2026 study showed to be unsafe or aimed at the
+wrong quantity.
+
+**Rival statements before length.** A retrieval study on five open models
+([arXiv:2611.04169](https://arxiv.org/abs/2611.04169)) found neutral filler leaves accuracy at
+0.97 to 1.00 up to 32K tokens, while statements in the same form as the evidence drop it to 0.16
+to 0.33, and one statement giving the queried key a rival value multiplies the loss 9 to 110
+times. So a context window is cleaned of rivals before it is trimmed for size. `dropRivals` keeps,
+per key, the statement with the latest order and reports every earlier one as superseded. Two
+different values with the same order cannot be ranked: neither is packed and the pair is returned
+as a conflict for the caller to resolve. The study used models of 0.5B to 3B parameters; whether
+the ratio holds for larger models is not established here.
+
+**Reachability has three values.** Scoring an unreachable finding zero assumes the graph is
+complete. In 78,612 SBOMs ([arXiv:2607.22140](https://arxiv.org/abs/2607.22140)) 52.9% declare no
+dependency edges and for 61.7% a missing path says nothing about reachability.
+
+```
+priority = EPSS × P(reach)
+P(reach) = 1              reach is "yes"
+         = residual       reach is "no" and the graph is complete
+         = unknownPrior   reach is "no" on an incomplete graph, or "unknown"
+```
+
+`unknownPrior` defaults to 1, which makes an unknown rank exactly as plain EPSS would, and
+`residual` defaults to 0. Only a finding that is "no" on a complete graph is marked suppressible.
+Both parameters should come from measurement; no measured value is supplied here.
+
+**Clickable area, not visibility.** A visibility assertion passes for a control under an overlay.
+`visibleFraction` is the exact share of a control's box not covered by boxes painted above it,
+measured on the grid cut by every box edge so overlapping covers count once. `clickPointExposed`
+says whether the point a click lands on is free. A 100 by 40 button under a 30 by 20 badge at its
+centre is 85% visible and not clickable at the default point. Which boxes are above the control is
+read from the browser by the caller; where a browser is driving the page, its own trial click is
+the simpler check and this function is for a stored layout snapshot.
+
+## Change impact, claims, drift, fault ranking, learning and limits
+
+Six smaller modules. Each header comment states the formula and what the module must not be
+used for; the summary here is what was checked.
+
+**Impact over two graphs.** `impacted` walks the union of the dependency graph before and after
+a change, because a consumer whose edge the change removed is still affected and a walk over
+the new graph alone misses it. An unknown node or a graph marked incomplete returns every node:
+"not found" is not evidence of "not affected". It agrees with brute-force reachability on random
+graphs.
+
+**Claims as hashes.** `classifyClaims` treats documentation as claims that cite sources, each
+with the content hash it was last checked against. A claim is `valid` while every source is
+unchanged, `stale` when one changed, and `unresolved` when one no longer exists; a source that
+only moved keeps its hash. `node scripts/claims-status.mjs --since origin/master` runs it over
+`docs/status/claims.json` and lists the claims whose evidence a branch touched. Against each
+claim's own assessed commit, 48 of the 49 registered claims were stale on 2026-11-27, which says
+the registry's commits are old, and is why the per-branch view is the useful one.
+
+**Distribution shift.** `mmdPermutationTest` is the unbiased MMD² statistic with a Gaussian
+kernel and a permutation p-value. With no shift it rejected in 0.033 of 300 seeded runs at the
+0.05 level, and with a shifted mean it rejected in every run. It is one fixed-sample test: a
+stream watched by re-running it spends its error rate on every look, and repeated monitoring
+belongs to the e-detector in `sequential.js`.
+
+**Fault ranking.** `suspiciousness` ranks code units by Ochiai, DStar or Tarantula from per-test
+coverage. Nothing in this project collects per-test coverage yet, and a 2026 study
+([arXiv:2610.36015](https://arxiv.org/abs/2610.36015)) found models locate most single-line
+faults in short programs from source alone, so this is for large suites that already have
+coverage.
+
+**Learning which arm to try.** `LinUCB` keeps a ridge estimate per arm and updates its inverse
+with the Sherman-Morrison identity. On a seeded linear problem its mean payoff was 0.878 against
+0.553 for a random policy and 0.885 for an oracle. It is not wired into routing, on purpose: two
+2026 studies ([arXiv:2606.07587](https://arxiv.org/abs/2606.07587),
+[arXiv:2601.07206](https://arxiv.org/abs/2601.07206)) found learned routers level off far below
+an oracle and often fail to beat a simple baseline. If it is ever used, the reward must be a
+verified outcome, never a model's opinion of its own answer.
+
+**Keeping a saved procedure.** `promotionDecision` keeps a script or skill when
+`reuse × (regenCost − invokeCost) × L > verifyCost + contextCost`, where `L` is a lower bound on
+the pass rate computed from held-out runs only. The reason is a measurement: of 21 skills that
+improved on their training tasks, 5 kept the whole gain on held-out tasks
+([arXiv:2609.39148](https://arxiv.org/abs/2609.39148)).
+
+**Limits for a physical command.** `checkCommand` allows a command only inside a declared range,
+step and rate, with a fresh reading from the device and, where the channel asks for it, a
+person's confirmation. `echoMatches` compares what the device reports with what was commanded.
+It executes nothing and talks to no device. No hardware integration exists in this project; the
+module is the fixed function such an integration would have to pass through.
+
 ## Adoption order
 
 Each piece goes in shadow first and ends on evidence, not on a date.
 
 1. Run `replayOpportunity` on existing request logs. If the cap is small, stop there for replay.
-2. Compute `chooseBySubsets` beside `choose` for real tasks and log both with the verified outcome.
+2. `chooseBySubsets` is the router's chooser. Log its choice with the verified outcome of each
+   real task: the recorded-run replay is the only evidence so far.
 3. Call `learn` on verified traces and `begin` on requests, record what would have been replayed,
    and execute nothing. Proceed after 299 consecutive agreeing would-be replays, a count fixed in
    advance that bounds the error rate below 1% at 95%.
 4. Replay `pure` and `read` steps live with an independent postcondition check. `write` steps wait
    for tool adapters that declare the effect class and an idempotency key.
+
+5. `dropRivals` now runs over the named facts `forge context` would pack and reports what it
+   withheld. Log how often that happens on real ledgers before extending it to lessons, which
+   have no key that says two of them answer the same question. Feed `rankVulnerabilities` from
+   `forge radar` once an EPSS value and a reach verdict are attached to each advisory.
 
 A changed model snapshot, tool version or tokenizer is a new hypothesis: its evidence starts again.

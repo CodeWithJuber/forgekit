@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { BRAND } from "../src/brand.js";
 import { processSession } from "../src/cortex_hook.js";
-import { handle } from "../src/cortex_mcp.js";
+import { handle, LEGACY_VERSIONS, MODERN_VERSIONS, SUPPORTED_VERSIONS } from "../src/cortex_mcp.js";
 import { mintClaim, val } from "../src/ledger.js";
 import { loadClaims, putClaim, repoLedger, stats } from "../src/ledger_store.js";
 import { TOOLS } from "../src/mcp_tools.js";
@@ -351,4 +351,133 @@ test("forge_remember reports a refusal instead of claiming it remembered", () =>
   assert.match(out[1], /Not remembered/);
   assert.match(out[1], /secret/i);
   assert.deepEqual(JSON.parse(out[2]).items, [], "and nothing was stored");
+});
+
+// ---- protocol revisions -------------------------------------------------------------
+// From 2026-07-28 MCP has no handshake: each request names its revision in `_meta`. The
+// specification lists "modern client, legacy server" as a failure, so both are served.
+const modernMeta = (version = MODERN_VERSIONS[0], client = "ExampleClient") => ({
+  "io.modelcontextprotocol/protocolVersion": version,
+  "io.modelcontextprotocol/clientInfo": { name: client, version: "1.0.0" },
+  "io.modelcontextprotocol/clientCapabilities": {},
+});
+
+test("server/discover answers a modern client without a handshake", async () => {
+  const r = await handle({
+    jsonrpc: "2.0",
+    id: "discover-1",
+    method: "server/discover",
+    params: { _meta: modernMeta() },
+  });
+  assert.equal(r.error, undefined);
+  assert.equal(r.result.resultType, "complete");
+  assert.deepEqual(r.result.supportedVersions, SUPPORTED_VERSIONS);
+  assert.equal(r.result.supportedVersions[0], "2026-07-28", "the modern revision leads");
+  assert.deepEqual(r.result.capabilities, { tools: {} });
+  assert.equal(r.result._meta["io.modelcontextprotocol/serverInfo"].name, "forge-cortex");
+  assert.equal(typeof r.result.instructions, "string");
+  // Every discovery result must carry cache hints; this server can only promise "stale".
+  assert.equal(r.result.ttlMs, 0);
+  assert.equal(r.result.cacheScope, "private");
+});
+
+test("a modern request for a revision this server does not speak is refused with the list", async () => {
+  for (const method of ["server/discover", "tools/list", "tools/call"]) {
+    const r = await handle({
+      jsonrpc: "2.0",
+      id: 7,
+      method,
+      params: { _meta: modernMeta("1900-01-01"), name: "cortex_status", arguments: {} },
+    });
+    assert.equal(r.result, undefined, method);
+    assert.equal(r.error.code, -32022, method);
+    assert.deepEqual(r.error.data, { supported: SUPPORTED_VERSIONS, requested: "1900-01-01" });
+  }
+  // A handshake-era revision named in `_meta` is not a modern revision either.
+  const legacyInMeta = await handle({
+    jsonrpc: "2.0",
+    id: 8,
+    method: "tools/list",
+    params: { _meta: modernMeta(LEGACY_VERSIONS[0]) },
+  });
+  assert.equal(legacyInMeta.error.code, -32022);
+});
+
+test("modern tools/list carries result type and cache hints; the handshake-era shape is unchanged", async () => {
+  const ask = () =>
+    handle({ jsonrpc: "2.0", id: 2, method: "tools/list", params: { _meta: modernMeta() } });
+  const modern = await ask();
+  assert.equal(modern.result.resultType, "complete");
+  assert.equal(modern.result.ttlMs, 0);
+  assert.equal(modern.result.cacheScope, "private");
+  // The same order on every call, so a host's prompt cache survives a re-list.
+  const again = await ask();
+  assert.deepEqual(
+    modern.result.tools.map((t) => t.name),
+    again.result.tools.map((t) => t.name),
+  );
+  const legacy = await handle({ jsonrpc: "2.0", id: 3, method: "tools/list" });
+  assert.deepEqual(Object.keys(legacy.result), ["tools"]);
+  assert.deepEqual(
+    legacy.result.tools.map((t) => t.name),
+    modern.result.tools.map((t) => t.name),
+  );
+});
+
+test("modern tools/call marks its result complete; a handshake-era call does not gain the field", async () => {
+  const call = (params) => handle({ jsonrpc: "2.0", id: 4, method: "tools/call", params });
+  const modern = await call({ _meta: modernMeta(), name: "cortex_status", arguments: {} });
+  assert.equal(modern.result.resultType, "complete");
+  assert.equal(modern.result.content[0].type, "text");
+  const legacy = await call({ name: "cortex_status", arguments: {} });
+  assert.deepEqual(Object.keys(legacy.result), ["content"]);
+  assert.equal(legacy.result.content[0].text, modern.result.content[0].text);
+});
+
+test("initialize answers with the revision asked for when it is one this server speaks", async () => {
+  const negotiated = async (protocolVersion) =>
+    (await handle({ jsonrpc: "2.0", id: 5, method: "initialize", params: { protocolVersion } }))
+      .result.protocolVersion;
+  for (const v of LEGACY_VERSIONS) assert.equal(await negotiated(v), v);
+  // 2025-03-26 obliges a server to accept batches, which this one does not: fall back.
+  for (const v of ["2025-03-26", "2099-01-01", undefined, 7])
+    assert.equal(await negotiated(v), "2024-11-05", String(v));
+  // The modern revision is never agreed through a handshake it does not have.
+  assert.equal(await negotiated("2026-07-28"), "2024-11-05");
+});
+
+test("ping is answered for handshake-era clients and is an unknown method for modern ones", async () => {
+  const legacy = await handle({ jsonrpc: "2.0", id: 6, method: "ping" });
+  assert.deepEqual(legacy.result, {});
+  const modern = await handle({
+    jsonrpc: "2.0",
+    id: 6,
+    method: "ping",
+    params: { _meta: modernMeta() },
+  });
+  assert.equal(modern.error.code, -32601);
+});
+
+test("a modern exchange over stdio needs no initialize first", () => {
+  const frames = [
+    { jsonrpc: "2.0", id: "d", method: "server/discover", params: { _meta: modernMeta() } },
+    { jsonrpc: "2.0", id: "l", method: "tools/list", params: { _meta: modernMeta() } },
+  ];
+  const r = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL("../src/cortex_mcp.js", import.meta.url))],
+    {
+      input: `${frames.map((f) => JSON.stringify(f)).join("\n")}\n`,
+      encoding: "utf8",
+      env: { ...process.env, FORGE_ROOT: mkdtempSync(join(tmpdir(), "forge-mcp-modern-")) },
+    },
+  );
+  const replies = r.stdout
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const byId = Object.fromEntries(replies.map((x) => [x.id, x]));
+  assert.equal(byId.d.result.supportedVersions[0], "2026-07-28");
+  assert.equal(byId.l.result.resultType, "complete");
+  assert.ok(byId.l.result.tools.length > 0);
 });
