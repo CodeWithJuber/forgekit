@@ -1,6 +1,6 @@
 {
   "demos": {
-    "input": "04c1ac73aba5ed082938c85134aa87edf561b8da2c00f9bad4b3dd04fed6c205",
+    "input": "b18a7a372ebaa4808d0ad65a22e213d4d461dea154c0fcaa3ee09e216f88c522",
     "artifacts": {
       "docs/assets/demo.gif": "d069e21acb1e7c49a1ebf837706cf6f4cfe6c35dd48131443ec606fc97ff1fa8",
       "mintlify/images/supervised-setup.gif": "d069e21acb1e7c49a1ebf837706cf6f4cfe6c35dd48131443ec606fc97ff1fa8",
@@ -27,7 +27,7 @@
     }
   },
   "dashboard": {
-    "input": "afc96b5cdae09a346c6905ba64a0f067b88bb108f1b03cb09d51426e13d539e0",
+    "input": "77768d3d3c23cd4357b658b768002ca3141b7912b5b7dc53d2121d45d243b606",
     "artifacts": {
       "docs/assets/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b",
       "mintlify/images/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b"
