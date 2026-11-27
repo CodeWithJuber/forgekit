@@ -245,14 +245,31 @@ function detectJvm(root, add) {
   // Kotlin DSL or kotlin plugin → Kotlin, else Java
   if (existsSync(join(root, "build.gradle.kts")) || blob.includes("kotlin")) add.language("Kotlin");
   add.language("Java");
+  // The project's own wrapper pins the build tool version, so it wins over a PATH install.
+  // `-B` keeps Maven's output plain for parsing; `--console=plain` makes Gradle print one
+  // `> Task :module:test` line per project, which verify reads as per-module results. `-fae`
+  // and `--continue` keep testing the other modules after one fails, so every module that can
+  // be tested reports a result instead of stopping at the first failure.
   if (pom) {
     add.evidence("pom.xml");
     add.pm("Maven");
-    add.runner({ bin: "mvn", args: ["test"], label: "mvn test" });
+    add.runner(
+      existsSync(join(root, "mvnw"))
+        ? { bin: "./mvnw", args: ["-B", "-fae", "test"], label: "./mvnw test" }
+        : { bin: "mvn", args: ["-B", "-fae", "test"], label: "mvn test" },
+    );
   } else {
     add.evidence(existsSync(join(root, "build.gradle.kts")) ? "build.gradle.kts" : "build.gradle");
     add.pm("Gradle");
-    add.runner({ bin: "./gradlew", args: ["test"], label: "./gradlew test" });
+    add.runner(
+      existsSync(join(root, "gradlew"))
+        ? {
+            bin: "./gradlew",
+            args: ["test", "--continue", "--console=plain"],
+            label: "./gradlew test",
+          }
+        : { bin: "gradle", args: ["test", "--continue", "--console=plain"], label: "gradle test" },
+    );
   }
   if (blob.includes("springframework") || blob.includes("spring-boot")) add.framework("Spring");
 }

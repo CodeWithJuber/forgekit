@@ -105,6 +105,7 @@ HANDLERS.verify = async (argv) => {
       console.log(
         `  suites ran:       ${t.executed.map((s) => `${s.label}=${s.status}`).join(", ")}`,
       );
+    printSuiteDetail(t.executed);
     if (t.notExecuted?.length)
       console.log(`  suites skipped:   ${t.notExecuted.join(", ")} (no built-in executor)`);
     const detail = t.output || (t.detected ?? []).join(", ");
@@ -180,6 +181,7 @@ HANDLERS.verify = async (argv) => {
     console.log(
       `  suites ran:       ${t.executed.map((s) => `${s.label}=${s.status}`).join(", ")}`,
     );
+  printSuiteDetail(t.executed);
   if (t.notExecuted?.length)
     console.log(`  suites skipped:   ${t.notExecuted.join(", ")} (no built-in executor)`);
   // Coverage (review F08): which package dirs the verdict actually speaks for.
@@ -681,6 +683,25 @@ HANDLERS.uicheck = async (argv) => {
   console.log(`  ADVISE (subjective, human-only): ${ADVISORY_ONLY.slice(0, 4).join(", ")} …`);
   return;
 };
+
+/**
+ * Under "suites ran": the test counts a runner printed and, for a Maven or Gradle build,
+ * one line per module, so a reviewer sees what passed, failed or was skipped.
+ * @param {import("../verify.js").SuiteResult[]|undefined} executed
+ */
+function printSuiteDetail(executed) {
+  for (const s of executed ?? []) {
+    const c = s.reportedCounts;
+    const counts = c
+      ? ` — ${c.total} test${c.total === 1 ? "" : "s"}, ${c.fail} failed, ${c.skipped} skipped`
+      : "";
+    if (s.modules?.length)
+      console.log(
+        `    ${s.label}${counts}: ${s.modules.map((m) => `${m.name}=${m.status}`).join(", ")}`,
+      );
+    else if (counts && /mvn|gradle/.test(s.label)) console.log(`    ${s.label}${counts}`);
+  }
+}
 
 HANDLERS.demo = async (argv) => {
   // The README hero as a runnable: green → broken → green, with forge verify

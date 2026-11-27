@@ -147,3 +147,32 @@ test("untrusted pathspecs and git diff helpers cannot run or override the compar
   symlinkSync(join(f.root, ".git", "config"), join(f.root, name));
   assert.equal(f.scan().status, "unavailable");
 });
+
+test("a falsy option or a data field named todo is not a skip marker", (t) => {
+  const f = fixture(t, { "counts.test.js": js("counts", "assert.equal(a, b);") });
+  f.commit();
+  f.write(
+    "counts.test.js",
+    [
+      "test('counts', { skip: 0, todo: null }, () => {",
+      "  const want = {",
+      "    total: 5,",
+      "    skipped: 1,",
+      "    todo: 0,",
+      "  };",
+      "  assert.deepEqual(count(), want);",
+      "});",
+      "test('opt', {",
+      "  skip: '',",
+      "}, () => assert.equal(a, b));",
+      "",
+    ].join("\n"),
+  );
+  assert.equal(f.scan().status, "clear", JSON.stringify(f.scan().findings));
+  // A real marker in the same shapes is still caught.
+  f.write(
+    "counts.test.js",
+    "test('counts', {\n  todo: 'later',\n}, () => {\n  assert.equal(a, b);\n});\n",
+  );
+  assert.equal(f.scan().status, "suspect");
+});

@@ -495,6 +495,13 @@ impacts all co-members) and a data-driven threshold from PageRank centrality
 and ledger incident history. `--basic` reverts to the fixed-threshold mode.
 Run `forge atlas build` first.
 
+The answer comes in two parts when it has both. **Direct references** are the files that use
+the target itself, listed source first, then tests, then docs and config: they are what a
+review reads. **Downstream** files reach the target only through one of them, counted by hop
+(`hop 2: 67 · hop 3: 71`), and are a weaker, different question. The file that defines the
+target is named separately (`defined in:`). `--json` carries the same split as `directFiles`,
+`hops` and `definedIn`, beside the full `impactedFiles` list.
+
 By default `forge impact` follows **reverse dependencies only** — the files that actually
 reference the target. (`forge substrate`, the ambient prompt hook and the Stop gate's repair
 checklist walk all three relations and tag each file.) `--all-relations` additionally walks the empirical refutation's
@@ -882,6 +889,25 @@ answers `CONFIRMED` (signature valid, tree unchanged), `STALE` (the tree moved o
 per user, so a receipt from a teammate's profile or machine names its signer and reads as
 "unknown signer on this machine": the signature cannot be checked here, which says nothing
 against the claim. Run `forge verify` yourself to check the same tree locally.
+
+**Java and Kotlin builds.** A `pom.xml` runs `./mvnw -B -fae test` when the project has a
+Maven wrapper and `mvn -B -fae test` otherwise; a `build.gradle` or `build.gradle.kts` runs
+`./gradlew test --continue --console=plain`, or `gradle` from `PATH` without a wrapper. The
+root build runs its own modules, so a module listed in the root pom's `<modules>` (outside
+`<profiles>`, which may be inactive) or `include`d by `settings.gradle` is covered by that one
+run instead of being run again on its own, which fails on unbuilt sibling modules. Each
+module's result is printed under the suite, along with Maven's Surefire test counts:
+
+```console
+  suites ran:       ./mvnw test=FAIL
+    ./mvnw test — 12 tests, 1 failed, 0 skipped: shop=PASS, pricing=FAIL, orders=SKIPPED
+```
+
+`-fae` and `--continue` keep testing the other modules after one fails, so every module that
+can be tested reports a result. Keep `target/` and `build/` in `.gitignore`, as Spring Initializr
+does: output written into tracked or unignored paths changes the tree during the run, and the
+result is then `INCOMPLETE`. On Windows the wrappers and installs are `.cmd` scripts, which
+verify does not run through a shell, so these suites are reported as not executed there.
 
 **What a PASS covers.** Every package that declares its own suite is planned and run in its
 own directory: the root, plus each nested package with an explicit `scripts.test`, a pytest

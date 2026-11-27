@@ -139,6 +139,11 @@ function bodyLine(line) {
     );
 }
 
+// A node:test option that marks the case: `skip: <reason or condition>` or `todo: …`. A falsy
+// literal (`false`, `0`, `null`, `undefined`, an empty string) marks nothing, which also keeps
+// a data object's `todo: 0` count field from reading as a skipped test.
+const OPTION_MARKER = /\b(?:skip|todo)\s*:\s*(?!(?:false|0|null|undefined)\b|""|''|``)[^\s,}]/;
+
 function inspect(file, text) {
   if (text.includes("\0")) throw new ScanError("A binary test cannot be inspected");
   const cases = [];
@@ -165,8 +170,8 @@ function inspect(file, text) {
     if (/^(@Test\b|#\[test\]|\[(?:Fact|Theory|Test)\b)/.test(s)) decorated = true;
     if (
       SKIP.test(s) ||
-      (/^(?:it|test)\s*\(/.test(s) && /\b(?:skip|todo)\s*:\s*(?!false\b)[^\s,}]/.test(s)) ||
-      /^(?:skip|todo)\s*:\s*(?!false\b)[^\s,}]/.test(s)
+      (/^(?:it|test)\s*\(/.test(s) && OPTION_MARKER.test(s)) ||
+      new RegExp(`^${OPTION_MARKER.source}`).test(s)
     ) {
       skips.push({ file, line: i + 1, signature: s.replace(/\s+/g, " ").slice(0, 500) });
     }
