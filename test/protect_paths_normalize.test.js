@@ -58,3 +58,18 @@ test("inline programs: secret paths, recursive deletes and the commands they run
   assert.equal(decide(`python3 -c "import subprocess; subprocess.run(['ls'])"`).block, false);
   assert.equal(decide(`node -e "console.log(1 + 1)"`).block, false);
 });
+
+test("a heredoc fed to an interpreter is its program; a shell further along runs its string", () => {
+  const heredoc = (/** @type {string} */ cmd, /** @type {string} */ body) =>
+    `${cmd} <<'PY'\n${body}\nPY`;
+  assert.equal(decide(heredoc("python3 -", 'import shutil\nshutil.rmtree("/")')).block, true);
+  assert.equal(decide(heredoc("python3", 'print(open(".env").read())')).block, true);
+  assert.equal(
+    decide(heredoc("python3 -", 'import json\nprint(json.dumps({"a": 1}))')).block,
+    false,
+  );
+  // Written to a file, the same text is data.
+  assert.equal(decide(heredoc("cat > x.py", 'shutil.rmtree("/")')).block, false);
+  assert.equal(decide(`kubectl exec pod -- bash -c "cat /app/.env"`).block, true);
+  assert.equal(decide(`docker compose exec web sh -c "npm test"`).block, false);
+});

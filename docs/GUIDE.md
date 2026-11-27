@@ -2142,9 +2142,10 @@ Before judging, the guard normalizes each command the way the shell will read it
 escapes are removed (`"rm"`, `r\m` and `$'\x72m'` are all `rm`), a variable set earlier in the same
 command is substituted (`f=.env; cat $f`, `R=rm; $R -rf /`), `$(echo …)` and `$(pwd)` are
 replaced by their output, aliases and function bodies are read as commands, `find -exec` and
-`xargs` get the files they act on, and inline programs (`python -c`, `node -e`, `perl -e`,
-`ruby -e`, `php -r`) are scanned for secret paths, recursive deletes and the command strings they
-run. Arguments that are only data (echo text, a commit message, a grep pattern, a heredoc fed to
+`xargs` get the files they act on, a shell started further along a command (`docker exec app
+sh -c "…"`, `kubectl exec … -- bash -c "…"`) has its string judged, and inline programs
+(`python -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`, and a heredoc fed to `python3 -` or
+`node`) are scanned for secret paths, recursive deletes and the command strings they run. Arguments that are only data (echo text, a commit message, a grep pattern, a heredoc fed to
 `cat`) are left out of the destructive patterns, so `git commit -m "block rm -rf /"` passes.
 Where an unknown would decide the verdict, it fails closed: a command name computed at run time
 that would be destructive as `rm`, `git` or `dd`, a recursive delete of a path that is not

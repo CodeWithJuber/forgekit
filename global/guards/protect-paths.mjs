@@ -50,8 +50,9 @@ import { resolve } from "node:path";
  * known (anything but a literal echo/printf, `pwd` or `mktemp`).
  * @typedef {{text: string, glob: boolean, quoted: boolean, brace?: boolean, subst?: string[], param?: boolean, inner?: string[], dyn?: boolean, temp?: boolean}} Word
  * @typedef {{op: string, target: Word}} Redirect
- * `piped`: the segment reads the previous segment's output through `|`.
- * @typedef {{words: Word[], redirs: Redirect[], piped?: boolean}} Segment
+ * `piped`: the segment reads the previous segment's output through `|`. `heredoc`: the bodies of
+ * the heredocs fed to it (kept as data; an interpreter's is scanned as a program).
+ * @typedef {{words: Word[], redirs: Redirect[], piped?: boolean, heredoc?: string[]}} Segment
  */
 
 // ── What is a secret path. ONE predicate for a tool's path (Read/Edit/Grep/…) and for every
@@ -342,7 +343,7 @@ export function shellSegments(cmd) {
   let lossy = false;
   let unclosedSingle = false;
   let arith = -1; // ≥ 0 inside arithmetic: the count of `(` open within it
-  /** @type {{delim: string, strip: boolean, exec: boolean}[]} */
+  /** @type {{delim: string, strip: boolean, exec: boolean, seg?: Segment}[]} */
   const heredocs = [];
   /** @param {string} s @param {boolean} [glob] @param {boolean} [quoted] */
   const add = (s, glob = false, quoted = false) => {
@@ -373,8 +374,12 @@ export function shellSegments(cmd) {
   /** @param {boolean} [pipeOut] the segment ends in `|`: the next one reads its output */
   const endSeg = (pipeOut = false) => {
     endWord();
-    if (ctx.words.length || ctx.redirs.length)
-      done.push({ words: ctx.words, redirs: ctx.redirs, piped: ctx.pipeIn });
+    if (ctx.words.length || ctx.redirs.length) {
+      /** @type {Segment} */
+      const seg = { words: ctx.words, redirs: ctx.redirs, piped: ctx.pipeIn };
+      done.push(seg);
+      for (const h of heredocs) h.seg ??= seg; // the command its pending heredocs feed
+    }
     ctx.pipeIn = pipeOut;
     ctx.words = [];
     ctx.redirs = [];
@@ -414,13 +419,16 @@ export function shellSegments(cmd) {
   const skipHeredocs = (i) => {
     let pos = i + 1;
     for (const h of heredocs) {
+      const body = [];
       while (pos < cmd.length) {
         let e = cmd.indexOf("\n", pos);
         if (e < 0) e = cmd.length;
         const line = cmd.slice(pos, e);
         pos = e + 1;
         if ((h.strip ? line.replace(/^\t+/, "") : line) === h.delim) break;
+        body.push(line);
       }
+      if (h.seg) h.seg.heredoc = [...(h.seg.heredoc ?? []), body.join("\n")];
     }
     heredocs.length = 0;
     return pos - 1;
@@ -1210,12 +1218,17 @@ export function normalizeCommand(cmd, fsCtx = {}, depth = 0) {
       );
     }
     // A nested `sh -c STRING` / `eval …` is judged as its own normalized line.
+    // `docker exec app sh -c "…"`, `kubectl exec pod -- bash -c "…"`: a shell started further
+    // along the words runs its string just the same.
+    const innerShell = args.findIndex((x, j) => j > 0 && SHELLS.has(cmdName(x.text)));
     const nested =
       name === "eval"
         ? args.map((x) => x.text).join(" ")
         : SHELLS.has(name)
           ? shellCommandString(args.map((x) => ({ ...x.w, text: x.text })))
-          : null;
+          : innerShell > 0
+            ? shellCommandString(args.slice(innerShell + 1).map((x) => ({ ...x.w, text: x.text })))
+            : null;
     if (nested && depth < MAX_NEST) {
       const inner = normalizeCommand(nested, fsCtx, depth + 1);
       reason ??= inner.reason;
@@ -1279,6 +1292,10 @@ export function normalizeCommand(cmd, fsCtx = {}, depth = 0) {
         if (!flags.includes(args[j].text)) continue;
         reason ??= inlineProgramReason(args[j + 1].text, fsCtx, depth);
       }
+      // `python3 - <<'PY' … PY`: with no script file, the heredoc IS the program.
+      const script = args.find((x) => !x.text.startsWith("-"));
+      if (!script)
+        for (const body of seg.heredoc ?? []) reason ??= inlineProgramReason(body, fsCtx, depth);
     }
     if (name === "find")
       reason ??= findExecReason(
