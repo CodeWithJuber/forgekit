@@ -34,12 +34,21 @@ export function printCommandHelp(name) {
     out.push("");
     out.push(paint("Flags:", "dim"));
     const w = Math.max(...help.flags.map((f) => f.flag.length));
-    for (const f of help.flags) out.push(`  ${f.flag.padEnd(w)}  ${f.desc}`);
+    for (const f of help.flags) {
+      const scope = f.for?.length ? `${f.for.join(", ")}: ` : "";
+      const needs = f.requires ? ` (with ${f.requires})` : "";
+      out.push(`  ${f.flag.padEnd(w)}  ${scope}${f.desc}${needs}`);
+    }
   }
   if (help.env.length) {
     out.push("");
     out.push(paint("Environment:", "dim"));
     for (const e of help.env) out.push(`  ${e}`);
+  }
+  if (help.exit.length) {
+    out.push("");
+    out.push(paint("Exit status:", "dim"));
+    for (const e of help.exit) out.push(`  ${e}`);
   }
   if (help.examples.length) {
     out.push("");

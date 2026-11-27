@@ -28,3 +28,9 @@ impact-oracle-mcp = "impact_oracle.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["impact_oracle*"]
+
+[tool.pytest.ini_options]
+# The package and the demo fixture are imported from this directory, so it goes on the path:
+# `pytest -q` (what `forge verify` runs) then collects the same tests as `python -m pytest -q`
+# (what CI runs). pytest >= 7 reads this setting.
+pythonpath = ["."]

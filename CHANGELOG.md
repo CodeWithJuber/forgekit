@@ -6,6 +6,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Ten commands leave the Labs group: `taste`, `uicheck`, `imagine`, `lean`, `anchor`, `diagnose`, `deja`, `reuse`, `rank` and `collide`. Each met the production bar in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md): its help lists every flag it reads and its exit statuses, its flags are checked strictly, and its `--json` output has a versioned contract ([`src/contracts.js`](src/contracts.js)) that CI checks in a fixture repository, together with the rule that the exit status is the same with and without `--json`. `forge --help` and the README table now show them in Substrate, Memory, Quality and Config.
+- `forge taste --json` and `forge anchor set|show|clear --json` print JSON; before, only the drift check had it.
+
+### Changed
+
+- A graduated command now refuses a flag its help does not list, with the nearest one suggested (`unknown flag --jsn (did you mean --json?)`), and exits 1 before doing anything. Before, `deja`, `lean` and `anchor` folded an unknown flag into the task text and the others ignored it. A flag given to the wrong form (`uicheck contrast … --mint`), a value out of range (`rank --top 0`, which used to fall back to 15 silently) and `imagine --sandbox` or `--allow-dirty` without `--run` are refused the same way. Arguments are parsed with Node's built-in `util.parseArgs`, driven by the flag list `--help` prints.
+- `forge uicheck --help` now documents `interact` and the `--remote`, `--record` and `--enforce` flags, and `forge rank --help` documents `--task`; all of them existed but were missing from the help.
+
+### Fixed
+
+- `forge reuse mint --json` exited 0 when the mint was refused; it now exits 1, as the text form does. A `--file` that does not exist is now refused with `not a file: <path>` instead of an `ENOENT` error.
+- `forge imagine --run --json` exited 0 when the run produced no verdict; it now exits 1, as the text form does.
+
 ## [1.20.0] - 2026-11-27
 
 ### Added

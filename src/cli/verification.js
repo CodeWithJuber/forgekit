@@ -304,6 +304,8 @@ HANDLERS.imagine = async (argv) => {
   } catch {}
   if (json) {
     console.log(JSON.stringify({ ...r, dryRun: d }, null, 2));
+    // Same exit status as the text form: a run that produced no verdict is a failure.
+    if (!d.ok) process.exitCode = 1;
     return;
   }
   if (!d.ok) {

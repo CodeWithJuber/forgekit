@@ -935,6 +935,23 @@
         "docs/AGENT-EVIDENCE.md"
       ],
       "notes": "The digest is SHA-256 over each tool's name, title, description, input and output schema and annotations, independent of listing order and of key order inside a schema; icons and _meta are excluded because they do not reach a model. With mcp.surface set in the private source config, a probe that computes any other digest throws surface-changed, and forge sources route <id> read --probe then reports the endpoint unavailable. Scope: it applies where ForgeKit itself probes, that is to configured source endpoints and only when a probe is requested. MCP servers that a host connects to directly are never seen by ForgeKit and are not covered. The pin detects a change; it does not judge whether the pinned tool text was safe to begin with."
+    },
+    {
+      "id": "labs-graduation-batch-1",
+      "claim": "The ten commands that left Labs on 2026-11-27 refuse flags their help does not list, document every exit status, and print --json output that CI checks against a versioned contract.",
+      "component": "CLI argument guard and output contracts (src/cli/args.js, src/contracts.js)",
+      "version": "production bar v1 (2026-11-27)",
+      "source_commit": "d5d91f4ef6537f63f0b88002e5902904ad90d8ef",
+      "assessed_release": "unreleased",
+      "status": "implemented",
+      "evidence": [
+        "src/cli/args.js",
+        "src/contracts.js",
+        "test/contracts.test.js",
+        "docs/CLI-CONTRACTS.md",
+        "src/commands.js"
+      ],
+      "notes": "Commands: taste, uicheck, imagine, lean, anchor, diagnose, deja, reuse, rank, collide. test/contracts.test.js runs 20 contract forms in a fixture repository with and without --json, checks the exit status matches, and checks 14 usage errors exit 1 with empty stdout; another test reads each strict handler's source and fails on a flag literal its help does not declare. What it does not show: the contracts cover structure only, not whether a prediction or a ranking is right; uicheck visual and interact need a browser runtime and their JSON has no contract yet; the CI fixture is one small repository."
     }
   ]
 }

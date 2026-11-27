@@ -563,6 +563,17 @@ HANDLERS.reuse = async (argv) => {
       return;
     }
     const { repoLedger } = await import("../ledger_store.js");
+    // A missing or unreadable file is a refusal with a reason, not a stack trace.
+    const { existsSync, statSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const abs = resolve(root, file);
+    if (!existsSync(abs) || !statSync(abs).isFile()) {
+      const reason = `not a file: ${file}`;
+      process.exitCode = 1;
+      if (json) return console.log(JSON.stringify({ ok: false, reason }, null, 2));
+      console.error(`  ${reason}`);
+      return;
+    }
     // With an atlas, each dependency's declaration is fingerprinted, so a later signature
     // change invalidates the artifact (review F05).
     const desc = ru.describeFile(root, file, { atlas: loadAtlas(root) });
@@ -576,10 +587,11 @@ HANDLERS.reuse = async (argv) => {
           }
         : { t: nowDay },
     );
+    // The exit status is the same with and without --json: a refused mint is a failure.
+    if (!r.ok) process.exitCode = 1;
     if (json) return console.log(JSON.stringify(r, null, 2));
     if (!r.ok) {
       console.error(`  ${r.reason}`);
-      process.exitCode = 1;
       return;
     }
     console.log(
