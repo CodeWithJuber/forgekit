@@ -9,8 +9,8 @@
 // from `rootTokensCss()` (brand.js) so the report's palette is the brand's single
 // source, never a forked copy. `renderReport` is PURE (returns the HTML string, writes
 // nothing); `writeReport` is the only side-effecting entry point.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { BRAND, rootTokensCss } from "./brand.js";
 import { dashData } from "./dash.js";
 import { read as readMetrics } from "./metrics.js";
@@ -27,6 +27,11 @@ export function escapeHtml(s) {
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
   );
 }
+
+/** The report's Content-Security-Policy: styles only, and inline images (the sparkline). */
+export const REPORT_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+/** Marks a file as a ForgeKit report, so `--out` never overwrites anything else. */
+export const REPORT_GENERATOR = "forgekit report";
 
 /** Absolute path of the emitted report for a repo root. */
 export const reportPath = (root) => join(root, ".forge", "report.html");
@@ -240,6 +245,10 @@ export function renderReport(root, { nowDay = epochDay() } = {}) {
   return (
     "<!doctype html>\n" +
     '<html lang="en"><head><meta charset="utf-8" />' +
+    // No script, no fetch, nothing loaded from anywhere: the report carries ledger text that
+    // others wrote, and is opened from disk, so it must stay inert even if escaping failed.
+    `<meta http-equiv="Content-Security-Policy" content="${REPORT_POLICY}" />` +
+    `<meta name="generator" content="${REPORT_GENERATOR}" />` +
     '<meta name="viewport" content="width=device-width, initial-scale=1" />' +
     `<title>${escapeHtml(BRAND.brand)} report — ${escapeHtml(data.repo)}</title>` +
     `<style>${css}</style></head><body><div class="wrap">` +
@@ -274,4 +283,45 @@ export function writeReport(root, opts = {}) {
   const path = reportPath(root);
   writeFileSync(path, html);
   return path;
+}
+
+/** True when the file at `path` was written by `forge report` (any version). */
+function isReport(path) {
+  let text = "";
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return false;
+  }
+  // Reports from before the generator mark existed carry only this footer.
+  return (
+    text.slice(0, 4096).includes(REPORT_GENERATOR) ||
+    text.slice(-2048).includes("report</span> — regenerate anytime")
+  );
+}
+
+/**
+ * Write the report to a path the user named. Never overwrites a file that is not a ForgeKit
+ * report unless `force` is set, and never creates directories: a typo in --out should fail,
+ * not scatter a report somewhere unexpected.
+ * @param {string} root the repository the report describes
+ * @param {string} out the target path, relative to `cwd`
+ * @param {{force?: boolean, cwd?: string, nowDay?: number}} [opts]
+ * @returns {{ok: true, path: string, bytes: number} | {ok: false, reason: string}}
+ */
+export function writeReportFile(root, out, { force = false, cwd = process.cwd(), ...opts } = {}) {
+  const path = resolve(cwd, out);
+  if (existsSync(path)) {
+    if (statSync(path).isDirectory()) return { ok: false, reason: `${out} is a directory` };
+    if (!force && !isReport(path))
+      return {
+        ok: false,
+        reason: `${out} exists and is not a ForgeKit report — pass --force to overwrite it`,
+      };
+  } else if (!existsSync(dirname(path))) {
+    return { ok: false, reason: `directory does not exist: ${dirname(out) || "."}` };
+  }
+  const html = renderReport(root, opts);
+  writeFileSync(path, html);
+  return { ok: true, path, bytes: Buffer.byteLength(html) };
 }

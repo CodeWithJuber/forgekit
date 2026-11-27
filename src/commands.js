@@ -754,16 +754,52 @@ export const COMMANDS = {
   dash: {
     summary:
       "open a local project dashboard to inspect runs, check agent setup and review project memory",
-    usage: "forge dash [--port N]",
+    usage: "forge dash [--port <n>] [--json]",
+    strict: true,
     flags: [
       {
-        flag: "--port <N>",
-        desc: "listen on this local port (default 4242). Use 0 to choose a free port.",
+        flag: "--port <n>",
+        int: { min: 0, max: 65535 },
+        desc: "listen on this port of 127.0.0.1 (default 4242); 0 picks any free port",
+      },
+      {
+        flag: "--json",
+        desc: "print one line, {url, port, root}, once the server is listening, so a script can find it; the write token is never printed",
       },
     ],
-    examples: ["forge dash", "forge dash --port 4243"],
+    exit: [
+      "0  stopped with Ctrl+C or SIGTERM after serving; the server closes before the process exits",
+      "1  the port is in use or not allowed, or a usage error",
+    ],
+    examples: ["forge dash", "forge dash --port 0 --json"],
   },
-  report: "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server",
+  report: {
+    summary:
+      "emit a static, self-contained HTML snapshot of .forge/ — opens offline, no server, no script",
+    usage: "forge report [--out <path> [--force]] [--json]",
+    strict: true,
+    flags: [
+      {
+        flag: "--out <path>",
+        desc: "write here instead of .forge/report.html. The directory must exist, and a file that is not a ForgeKit report is not overwritten",
+      },
+      {
+        flag: "--force",
+        requires: "--out",
+        desc: "overwrite the --out file even though it is not a ForgeKit report",
+      },
+      { flag: "--json", desc: "machine-readable result: {path, bytes}, or {error} when refused" },
+    ],
+    exit: [
+      "0  the report was written",
+      "1  --out names a directory, a missing directory, or a file that is not a ForgeKit report (without --force); or a usage error",
+    ],
+    examples: [
+      "forge report",
+      "forge report --out ~/Desktop/forge-report.html",
+      "forge report --json",
+    ],
+  },
   brand: "print the active brand token map",
   docs: {
     summary:
@@ -832,7 +868,18 @@ export const COMMANDS = {
 // exit statuses, a versioned --json contract checked in CI (src/contracts.js), and tests
 // of its failure cases.
 export const GROUPS = {
-  Core: ["init", "sync", "doctor", "tools", "catalog", "docs", "update", "config"],
+  Core: [
+    "init",
+    "sync",
+    "doctor",
+    "tools",
+    "catalog",
+    "docs",
+    "update",
+    "config",
+    "dash",
+    "report",
+  ],
   Substrate: [
     "substrate",
     "preflight",
@@ -884,7 +931,7 @@ export const GROUPS = {
     "models",
     "taste",
   ],
-  "Labs (experimental)": ["dash", "report", "cloud", "relay"],
+  "Labs (experimental)": ["cloud", "relay"],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */

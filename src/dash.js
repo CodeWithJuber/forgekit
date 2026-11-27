@@ -434,9 +434,30 @@ const sendJson = (res, code, body) => {
   res.writeHead(code, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
   });
   res.end(JSON.stringify(body));
 };
+
+/**
+ * The page's Content-Security-Policy. The page renders ledger text that agents and teammates
+ * wrote, and holds the write token, so an injected script is the worst case. Only the page's
+ * own inline script runs (it carries a per-start nonce), the page may talk only to this
+ * server, and nothing can be loaded from or sent to anywhere else.
+ * @param {string} nonce
+ */
+export function pagePolicy(nonce) {
+  return [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
 
 /** Small JSON body reader for dashboard actions — capped so a runaway client can't buffer
  *  unbounded bytes into a localhost convenience server. */
@@ -504,6 +525,7 @@ const WRITE_ROUTES = new Set(["/api/ratify", "/api/retract", RUN_PATH]);
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 export const TOKEN_HEADER = "x-forge-token";
 const TOKEN_PLACEHOLDER = "__FORGE_DASH_TOKEN__";
+const NONCE_PLACEHOLDER = "__FORGE_DASH_NONCE__";
 
 /** Split a Host header value into {host, port}; null when it is missing or malformed. */
 function parseHostHeader(value) {
@@ -575,7 +597,10 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
   // The per-session capability token (F13): minted at startup, embedded in the page.
   const token = randomBytes(24).toString("hex");
   // read once at startup, self-contained; the token rides in a <meta> the page reads
-  const html = readFileSync(HTML_PATH, "utf8").replaceAll(TOKEN_PLACEHOLDER, token);
+  const nonce = randomBytes(16).toString("base64");
+  const html = readFileSync(HTML_PATH, "utf8")
+    .replaceAll(TOKEN_PLACEHOLDER, token)
+    .replaceAll(NONCE_PLACEHOLDER, nonce);
   const boundHost = String(host)
     .replace(/^\[|\]$/g, "")
     .toLowerCase();
@@ -633,9 +658,11 @@ export function serve(root, { port = 4242, host = "127.0.0.1" } = {}) {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
-        // The page holds the write token: never let another site frame it (clickjacking).
+        // The page holds the write token: never let another site frame it (clickjacking),
+        // and never run a script it did not ship with (see pagePolicy).
         "x-frame-options": "DENY",
-        "content-security-policy": "frame-ancestors 'none'",
+        "content-security-policy": pagePolicy(nonce),
+        "x-content-type-options": "nosniff",
         "referrer-policy": "no-referrer",
       });
       return res.end(html);

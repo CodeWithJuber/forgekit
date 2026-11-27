@@ -223,6 +223,26 @@ export const CONTRACTS = {
     }),
   },
 
+  dash: {
+    version: 1,
+    note: "one line on stdout once listening; the server keeps running",
+    spec: obj({
+      url: { type: "string", pattern: /^http:\/\/127\.0\.0\.1:\d+$/ },
+      port: { type: "number", integer: true, min: 1, max: 65535 },
+      root: str,
+    }),
+  },
+  "dash refused": { version: 1, spec: errorBody, exit: [1] },
+
+  report: {
+    version: 1,
+    spec: obj({
+      path: { type: "string", nonEmpty: true },
+      bytes: { type: "number", integer: true, min: 1 },
+    }),
+  },
+  "report refused": { version: 1, spec: errorBody, exit: [1] },
+
   collide: {
     version: 1,
     spec: obj({
