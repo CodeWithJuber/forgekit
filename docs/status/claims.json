@@ -942,7 +942,7 @@
       "component": "CLI argument guard and output contracts (src/cli/args.js, src/contracts.js)",
       "version": "production bar v1 (2026-11-27)",
       "source_commit": "d5d91f4ef6537f63f0b88002e5902904ad90d8ef",
-      "assessed_release": "unreleased",
+      "assessed_release": "1.21.0",
       "status": "implemented",
       "evidence": [
         "src/cli/args.js",
