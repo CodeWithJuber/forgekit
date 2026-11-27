@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-27
+
 ### Added
 
 - docs/STABILITY.md states what is stable today (Semantic Versioning, the 14 of 64 commands with a versioned contract, text output for people only), a proposed deprecation policy, the support terms, and proposed evidence criteria for dropping the beta label, each with where it stands. The README and OVERVIEW limits link to it.
@@ -4003,7 +4005,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.23.0...HEAD
+[1.23.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
