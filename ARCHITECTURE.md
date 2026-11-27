@@ -601,7 +601,7 @@ forgekit/
     learn_consolidate.js  # scripts/learn-consolidate.sh: deterministic consolidation of ~/.claude/skills/learned — merge exact duplicates, propose near-duplicates, drop only lessons whose exact ledger claim is refuted (dormant/retracted/attic); no model call
     reuse.js              # proof-carrying artifact cache: fingerprint (MinHash+LSH), exact→near→adapt→miss ladder, atlas revalidation
     replay/               # replay engine (library, not wired into a command): request + trace generalization, provenance closure, prefix tree, evidence gate (docs/MATH-CORE.md)
-    mathcore/             # decision mathematics (library, not wired): exact and anytime-valid evidence bounds, change detector, canary test, merge batching, flaky-test inference, evidence packing
+    mathcore/             # decision mathematics (library, not wired): exact and anytime-valid evidence bounds, change detector, canary test, merge batching, flaky-test inference, evidence packing, rival-statement removal, vulnerability order under unknown reachability, clickable area
     router/cascade.js     # exact cascade order over attempt sets; returns what router/policy.js `choose` returns
     embed.js              # optional embeddings tier (ADR-0005): FORGE_EMBED=cmd:<cmd>|http:<url>, swaps MinHash/Jaccard for cosine in `reuse query`/`ledger query`, disk-cached at .forge/embed-cache.jsonl, silent fallback to MinHash
     context.js            # budgeted context assembly + completeness gate: R(edit) coverage, compression ladder, computed missing-set
@@ -680,8 +680,8 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>235 files"]
-  test["test<br/>215 files"]
+  src["src<br/>238 files"]
+  test["test<br/>216 files"]
   landing["landing<br/>61 files"]
   research["research<br/>37 files"]
   scripts["scripts<br/>17 files"]
@@ -689,7 +689,7 @@ flowchart LR
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 482 --> src
+  test -- 485 --> src
   scripts -- 15 --> src
   bench -- 12 --> src
   test -- 8 --> global

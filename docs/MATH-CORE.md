@@ -20,6 +20,9 @@ how many changes to batch in a merge queue, and whether a failing test is flaky.
 | `src/mathcore/grouptest.js` | Merge-queue batch size | Enumeration of every failure pattern up to 11 changes |
 | `src/mathcore/flaky.js` | Flaky test or real regression, and how many reruns settle it | Numeric integration of the Beta moments |
 | `src/mathcore/contextpack.js` | Which evidence fits a window when token cost is not additive | Brute force over all record subsets |
+| `src/mathcore/rivals.js` | Which statements compete with the evidence and must leave a context window | A per-key reference on 400 random sets, in two input orders |
+| `src/mathcore/vulnrank.js` | In which order to treat vulnerability findings when reachability is unknown | Hand-computed cases at each of the three reach values |
+| `src/mathcore/occlusion.js` | How much of a control can be clicked, and whether the click point is exposed | A pixel count on 300 random layouts |
 
 Run them with `node --test --import ./test/_setup.js test/mathcore_*.test.js test/router_cascade.test.js test/replay.test.js`.
 The statistical tests print the rates they observe as diagnostics; the numbers below are those
@@ -187,6 +190,44 @@ P(regression | k failures) = π / (π + (1 − π)·E[f^k])        E[f^k] = Π_{
 A test that failed 2 of 100 same-input reruns, with a 5% prior, reaches 64%, 97.9% and 99.9% after
 one, two and three failures. The model covers deterministic regressions only.
 
+## Three rules taken from 2026 evidence
+
+Each rule below replaces a common formula that a 2026 study showed to be unsafe or aimed at the
+wrong quantity.
+
+**Rival statements before length.** A retrieval study on five open models
+([arXiv:2611.04169](https://arxiv.org/abs/2611.04169)) found neutral filler leaves accuracy at
+0.97 to 1.00 up to 32K tokens, while statements in the same form as the evidence drop it to 0.16
+to 0.33, and one statement giving the queried key a rival value multiplies the loss 9 to 110
+times. So a context window is cleaned of rivals before it is trimmed for size. `dropRivals` keeps,
+per key, the statement with the latest order and reports every earlier one as superseded. Two
+different values with the same order cannot be ranked: neither is packed and the pair is returned
+as a conflict for the caller to resolve. The study used models of 0.5B to 3B parameters; whether
+the ratio holds for larger models is not established here.
+
+**Reachability has three values.** Scoring an unreachable finding zero assumes the graph is
+complete. In 78,612 SBOMs ([arXiv:2607.22140](https://arxiv.org/abs/2607.22140)) 52.9% declare no
+dependency edges and for 61.7% a missing path says nothing about reachability.
+
+```
+priority = EPSS × P(reach)
+P(reach) = 1              reach is "yes"
+         = residual       reach is "no" and the graph is complete
+         = unknownPrior   reach is "no" on an incomplete graph, or "unknown"
+```
+
+`unknownPrior` defaults to 1, which makes an unknown rank exactly as plain EPSS would, and
+`residual` defaults to 0. Only a finding that is "no" on a complete graph is marked suppressible.
+Both parameters should come from measurement; no measured value is supplied here.
+
+**Clickable area, not visibility.** A visibility assertion passes for a control under an overlay.
+`visibleFraction` is the exact share of a control's box not covered by boxes painted above it,
+measured on the grid cut by every box edge so overlapping covers count once. `clickPointExposed`
+says whether the point a click lands on is free. A 100 by 40 button under a 30 by 20 badge at its
+centre is 85% visible and not clickable at the default point. Which boxes are above the control is
+read from the browser by the caller; where a browser is driving the page, its own trial click is
+the simpler check and this function is for a stored layout snapshot.
+
 ## Adoption order
 
 Each piece goes in shadow first and ends on evidence, not on a date.
@@ -198,5 +239,9 @@ Each piece goes in shadow first and ends on evidence, not on a date.
    advance that bounds the error rate below 1% at 95%.
 4. Replay `pure` and `read` steps live with an independent postcondition check. `write` steps wait
    for tool adapters that declare the effect class and an idempotency key.
+
+5. Run `dropRivals` over the ledger claims a context packet would carry and log how many rivals
+   it removes, before `src/context.js` uses it. Feed `rankVulnerabilities` from `forge radar` once
+   an EPSS value and a reach verdict are attached to each advisory.
 
 A changed model snapshot, tool version or tokenizer is a new hypothesis: its evidence starts again.

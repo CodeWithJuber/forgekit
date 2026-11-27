@@ -8,7 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The built-in MCP server now speaks revision 2026-07-28 as well as the handshake revisions. That revision removed the `initialize` handshake and sessions, and its compatibility table lists a modern client against a handshake-only server as a failure, which is what `forge cortex-mcp` was: it answered `2024-11-05` and nothing else. It now answers `server/discover`, reads the revision each request names in `_meta`, marks modern results `resultType: "complete"` with the required cache hints (`ttlMs: 0`, `cacheScope: "private"`, because the listed tools follow the checkout's harness activation), and refuses an unknown revision with error -32022 and the supported list. Handshake clients are unaffected except that `2025-11-25` and `2025-06-18` are now agreed when asked for, where every request used to be answered `2024-11-05`. Responses to a handshake client are otherwise byte for byte what they were.
+- Three library rules taken from 2026 studies, tested and not yet wired into a command ([docs/MATH-CORE.md](docs/MATH-CORE.md)). `dropRivals` removes superseded statements from a context set and reports unorderable conflicts without packing either side, because a rival value was measured to cost far more than length. `rankVulnerabilities` orders findings by EPSS times the probability of reach with reachability as a three-valued fact, so a finding is never scored zero merely because the dependency graph declares no edges. `visibleFraction` and `clickPointExposed` give the exact clickable share of a control from a layout snapshot.
 - Decision mathematics as tested library modules, not yet wired into any command ([docs/MATH-CORE.md](docs/MATH-CORE.md)): an evidence bound that stays valid when re-read after every observation, a change detector and a paired canary test (`src/mathcore/sequential.js`); exact cascade ordering over attempt sets that returns what the router's `choose` returns (`src/router/cascade.js`); a replay engine that serves a repeated request from verified traces only where every step argument has a source and the step has earned its evidence (`src/replay/`); merge-queue batch sizing, flaky-test inference and evidence packing under non-additive token cost.
+
+### Fixed
+
+- `ping` from a handshake-era MCP client is answered with an empty result. It used to come back as "unknown method", which a client that checks liveness reads as a dead server.
 
 ## [1.19.5] - 2026-11-26
 

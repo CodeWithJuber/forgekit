@@ -255,40 +255,124 @@ async function callTool(name, args = {}, host = undefined) {
   return null;
 }
 
+// MCP revisions this server speaks. From 2026-07-28 the protocol is stateless: there is no
+// `initialize` handshake and no session, and each request names its revision, client and
+// capabilities in `_meta`. Earlier revisions open with the handshake. The specification's
+// compatibility matrix gives "modern client, legacy server" as a failure, so a server that
+// answered only the handshake would stop working for hosts that drop it. Both are served.
+export const MODERN_VERSIONS = ["2026-07-28"];
+// 2025-03-26 is absent on purpose: that revision obliges a server to accept JSON-RPC batches,
+// which this line-per-message server does not. A client asking for it gets the fallback.
+export const LEGACY_VERSIONS = ["2025-11-25", "2025-06-18", "2024-11-05"];
+const LEGACY_FALLBACK = "2024-11-05";
+export const SUPPORTED_VERSIONS = [...MODERN_VERSIONS, ...LEGACY_VERSIONS];
+
+const META_VERSION = "io.modelcontextprotocol/protocolVersion";
+const META_CLIENT = "io.modelcontextprotocol/clientInfo";
+const META_SERVER = "io.modelcontextprotocol/serverInfo";
+// -32020..-32099 is the range the specification reserves for itself.
+const UNSUPPORTED_PROTOCOL_VERSION = -32022;
+
+// Cache hints every modern list and discovery result must carry. The listed tools follow
+// this checkout's harness activation, which can change between two calls, and this server
+// pushes no change notice: 0 ("stale at once") is the only freshness it can promise.
+// "private" because the answer depends on the local user's checkout.
+const NO_CACHE = { ttlMs: 0, cacheScope: "private" };
+
+/** Host identity is a compatibility hint only. It grants no permissions. */
+function hostOf(clientName) {
+  const client = String(clientName ?? "").toLowerCase();
+  return /^(kimi|codex|claude|gemini|cursor|copilot)(?:$|[- _])/i.exec(client)?.[1];
+}
+
+/** When to reach for which tool. Hosts that defer tool schemas show the model only the tool
+ *  names and this text. Discovery never fails over it: unreadable harness state means no
+ *  instructions here, and tools/list reports the problem. */
+async function serverInstructions() {
+  try {
+    return mcpInstructions((await listedTools()).map((t) => t.name));
+  } catch {
+    return "";
+  }
+}
+
 /** Handle one JSON-RPC message; returns a response object, or null for notifications. */
 export async function handle(msg, session = { host: undefined }) {
   const { id, method, params } = msg;
   if (id === undefined || String(method).startsWith("notifications/")) return null;
-  if (method === "initialize") {
-    // Host identity is a compatibility hint only. It grants no permissions.
-    const client = String(params?.clientInfo?.name ?? "").toLowerCase();
-    const match = /^(kimi|codex|claude|gemini|cursor|copilot)(?:$|[- _])/i.exec(client);
-    session.host = match?.[1];
-    // When to reach for which tool. Hosts that defer tool schemas show the model only the
-    // tool names and this text. The handshake never fails over it: unreadable harness state
-    // means no instructions here, and tools/list reports the problem.
-    let instructions = "";
-    try {
-      instructions = mcpInstructions((await listedTools()).map((t) => t.name));
-    } catch {}
+  const meta =
+    params && typeof params === "object" && !Array.isArray(params) && params._meta
+      ? params._meta
+      : undefined;
+  const declared = meta && typeof meta === "object" ? meta[META_VERSION] : undefined;
+  // A request is modern when it names its revision, or is the one method only a modern
+  // client sends. Everything else keeps the handshake-era behaviour byte for byte.
+  const modern = declared !== undefined || method === "server/discover";
+  if (declared !== undefined && !MODERN_VERSIONS.includes(declared)) {
+    return {
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: UNSUPPORTED_PROTOCOL_VERSION,
+        message: "Unsupported protocol version",
+        data: { supported: SUPPORTED_VERSIONS, requested: String(declared).slice(0, 64) },
+      },
+    };
+  }
+  // No session exists in the modern protocol, so the host hint is read off each request.
+  const host = modern ? hostOf(meta?.[META_CLIENT]?.name) : session.host;
+  const done = modern ? { resultType: "complete" } : {};
+
+  if (method === "server/discover") {
+    const instructions = await serverInstructions();
     return {
       jsonrpc: "2.0",
       id,
       result: {
-        protocolVersion: "2024-11-05",
+        ...done,
+        supportedVersions: SUPPORTED_VERSIONS,
+        capabilities: { tools: {} },
+        _meta: { [META_SERVER]: { name: "forge-cortex", version: PKG_VERSION } },
+        ...(instructions ? { instructions } : {}),
+        ...NO_CACHE,
+      },
+    };
+  }
+  if (method === "initialize") {
+    session.host = hostOf(params?.clientInfo?.name);
+    const instructions = await serverInstructions();
+    // The handshake rule: answer with the revision asked for when it is one this server
+    // speaks, otherwise with one it does. The fallback is the oldest, which every client
+    // that still performs a handshake accepts.
+    const asked = params?.protocolVersion;
+    return {
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: LEGACY_VERSIONS.includes(asked) ? asked : LEGACY_FALLBACK,
         capabilities: { tools: {} },
         serverInfo: { name: "forge-cortex", version: PKG_VERSION },
         ...(instructions ? { instructions } : {}),
       },
     };
   }
+  // The handshake-era liveness check. 2026-07-28 removed it, so a modern request for it
+  // falls through to "unknown method" like any other.
+  if (method === "ping" && !modern) return { jsonrpc: "2.0", id, result: {} };
   if (method === "tools/list") {
-    return { jsonrpc: "2.0", id, result: { tools: await listedTools() } };
+    // TOOLS is a fixed table, so the order is the same on every call. The specification
+    // asks for that so a host's prompt cache survives a re-list.
+    const tools = await listedTools();
+    return {
+      jsonrpc: "2.0",
+      id,
+      result: modern ? { ...done, tools, ...NO_CACHE } : { tools },
+    };
   }
   if (method === "tools/call") {
     let text;
     try {
-      text = await callTool(params?.name, params?.arguments, session.host);
+      text = await callTool(params?.name, params?.arguments, host);
     } catch (err) {
       // A throwing handler (unwritable .forge, corrupt store, …) must still ANSWER — a
       // request with no reply leaves the MCP client waiting until its own timeout.
@@ -311,7 +395,7 @@ export async function handle(msg, session = { host: undefined }) {
     return {
       jsonrpc: "2.0",
       id,
-      result: { content: [{ type: "text", text }] },
+      result: { ...done, content: [{ type: "text", text }] },
     };
   }
   return {
