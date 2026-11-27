@@ -436,3 +436,25 @@ test("only a coding final answer can carry bounded memory proposals for the proo
   });
   await assert.rejects(bad(call), { code: "invalid_memory_proposals" });
 });
+
+test("a failed route carries an operator hint built from its configuration, never the reply", async () => {
+  const { routeFailureHint } = await import("../src/harness_router.js");
+  const marker = "provider-echoed-marker-7731";
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ error: `model not found; echo ${marker}` }), { status: 404 });
+  const model = createHarnessModel({ routes: [local] }, { fetchImpl });
+  const err = await model(call).catch((e) => e);
+  assert.equal(err.message, "http_404");
+  assert.match(
+    err.hint,
+    /route "local" \(model qwen2\.5-coder:7b at http:\/\/127\.0\.0\.1:11434\/v1\)/,
+  );
+  assert.match(err.hint, /ollama pull qwen2\.5-coder:7b/);
+  assert.match(err.hint, /forge harness supervise off/);
+  assert.ok(!err.hint.includes(marker), "nothing from the provider's body");
+  // The paid fixture names its key variable; the hint repeats the name, never a value.
+  const r = { ...paid, baseUrl: "https://gw.example.test/v1?x=1" };
+  assert.match(routeFailureHint(r, "route_credential_missing"), new RegExp(paid.apiKeyEnv));
+  assert.match(routeFailureHint(r, "http_503"), /server error/);
+  assert.ok(!routeFailureHint(r, "http_401").includes("x=1"), "no query string");
+});

@@ -307,8 +307,46 @@ function usageFor(report, route, reserved) {
   };
 }
 
-function failure(code, used, attempts) {
-  return Object.assign(new Error(code), { code, usage: { ...used }, routeAttempts: attempts });
+function failure(code, used, attempts, hint = undefined) {
+  return Object.assign(new Error(code), {
+    code,
+    usage: { ...used },
+    routeAttempts: attempts,
+    ...(hint ? { hint } : {}),
+  });
+}
+
+/**
+ * Operator-facing advice for a route that failed, built from the route's own configuration
+ * and the status code only. The provider's response body is never read or kept (it can echo
+ * request content), so the advice cannot carry anything the provider sent.
+ * @param {{id:string, model:string, baseUrl:string, apiKeyEnv?:string}} route
+ * @param {string} status
+ */
+export function routeFailureHint(route, status) {
+  let where = route.baseUrl;
+  try {
+    const u = new URL(route.baseUrl);
+    where = `${u.origin}${u.pathname.replace(/\/$/, "")}`;
+  } catch {}
+  const at = `route "${route.id}" (model ${route.model} at ${where})`;
+  const why = {
+    http_404: `${at} answered 404: the endpoint does not serve this model, or the base URL path is wrong (an OpenAI-compatible base URL usually ends in /v1). With Ollama, pull the model first: ollama pull ${route.model}`,
+    http_401: `${at} refused the credentials: check the API key variable the route names and that the route is trusted`,
+    http_403: `${at} refused the request: check the API key, its permissions and that the route is trusted`,
+    http_429: `${at} is rate limiting: wait, raise the limit, or add a second route`,
+    timeout_or_cancelled: `${at} did not answer in time`,
+    route_credential_missing: `${at} needs its API key in ${route.apiKeyEnv ?? "its key variable"}, which is not set where the harness runs`,
+    route_not_trusted: `${at} is a remote route that has not been trusted on this machine`,
+    invalid_reply_or_transport: `${at} could not be reached, or did not answer like a Chat Completions endpoint: is the server running at ${where}?`,
+  }[status];
+  const generic = /^http_5\d\d$/.test(status)
+    ? `${at} had a server error (${status}): retry later or add a second route`
+    : `${at} failed with ${status}`;
+  return (
+    `${why ?? generic}. An operator can review routes with \`forge harness routes\`, fix harness/routing.yaml and run ` +
+    "`forge harness trust`; to work without the harness meanwhile, run `forge harness supervise off`."
+  );
 }
 
 /** Construct the only model-calling adapter. Remote credentials are resolved only after a
@@ -388,6 +426,8 @@ export function createHarnessModel(
       eligible = eligible.filter((r) => r.id === pin);
     }
     let reason = "no_eligible_route";
+    /** @type {any} the last route that was tried or skipped, for the operator's hint */
+    let lastFailed = null;
     let estimated = false;
     for (const route of eligible) {
       if (signal?.aborted) throw failure("model_cancelled", used, attempts);
@@ -401,6 +441,7 @@ export function createHarnessModel(
             ? "route_credential_missing"
             : "model_budget_exhausted";
         attempts.push({ route: route.id, status: reason, tokens: 0, costUsd: 0, latencyMs: 0 });
+        lastFailed = route;
         continue;
       }
       let reservation;
@@ -506,8 +547,14 @@ export function createHarnessModel(
           ...(pin ? { pin, pinReason } : {}),
         };
       reason = status;
+      lastFailed = route;
     }
-    throw failure(reason, used, attempts);
+    throw failure(
+      reason,
+      used,
+      attempts,
+      lastFailed ? routeFailureHint(lastFailed, reason) : undefined,
+    );
   };
   model.statistics = () => Object.fromEntries([...stats].map(([id, v]) => [id, { ...v }]));
   model.recordVerification = (ok, ids) => {

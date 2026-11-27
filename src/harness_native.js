@@ -8,7 +8,7 @@ import { recordHarnessNativeEvent } from "./harness_trace.js";
 
 const TOOLS = ["forge_harness_run", "forge_harness_status"];
 const DENY =
-  "This workspace uses supervised ForgeKit. Call forge_harness_run on the forge-cortex MCP server to work, or forge_harness_status to inspect a run.";
+  "This workspace uses supervised ForgeKit. Call forge_harness_run on the forge-cortex MCP server to work, or forge_harness_status to inspect a run. If the harness itself fails, tell the person: they can fix the route in harness/routing.yaml and run `forge harness trust`, or run `forge harness supervise off` in a terminal.";
 
 function isHarnessTool(host, event, name, server) {
   if (server !== undefined && server !== "forge-cortex") return false;
@@ -42,6 +42,11 @@ function isClaudeHarnessDiscovery(payload) {
     names.length <= TOOLS.length &&
     names.every((name) => isHarnessTool("claude", "PreToolUse", name, undefined))
   );
+}
+
+/** Claude Code's built-in question dialog, by its exact name and with no MCP server. */
+function isClaudeQuestion(payload) {
+  return payload?.tool_name === "AskUserQuestion" && payload.mcp_server_name === undefined;
 }
 
 const SUPERVISED =
@@ -118,6 +123,9 @@ export function nativeHarnessDenial({ host, event, payload = {}, env = process.e
   const valid = binding.instruction !== INVALID;
   if (valid && isHarnessTool(host, event, tool, payload?.mcp_server_name)) return null;
   if (valid && host === "claude" && isClaudeHarnessDiscovery(payload)) return null;
+  // Asking the person is never work on the workspace: it reads and writes nothing. Without
+  // it, a supervised agent whose model route fails cannot even say so and ask for help.
+  if (valid && host === "claude" && isClaudeQuestion(payload)) return null;
   if (
     valid &&
     host === "cursor" &&

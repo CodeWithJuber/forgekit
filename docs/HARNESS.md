@@ -116,6 +116,22 @@ Read `status`, `reason`, `evidence` and `usage` together. For a dedicated regist
 
 Use `--verifier path/to/spec.json` for a single CLI run. For repeated edits through MCP or a background worker, `forge harness verifier set container.json` binds a reviewed container verifier privately to this worktree. Inspect it with `forge harness verifier show` and remove it with `forge harness verifier clear`. The [verifier tests](../test/harness_verify.test.js) include a real Docker check gated by `HARNESS_REAL_CONTAINER=1` and a preloaded pinned image.
 
+### When a supervised host is stuck
+
+In a supervised checkout the host's own tools, including reads and the shell, are denied, so an agent cannot repair a broken model route itself. When `forge_harness_run` fails with `provider_failed`, its `reason` names the route, its model and address, the likely cause and the fix, built from the route's configuration only (the provider's reply is never read). An HTTP 404 from the default Ollama route usually means the model has not been pulled: `ollama pull qwen2.5-coder:7b`. Claude Code can still ask you a question while supervised; it cannot do anything else.
+
+From a terminal in the checkout, either repair the route or hand the tools back to the host:
+
+```sh
+forge harness routes            # what the harness would call
+# edit harness/routing.yaml, then
+forge harness trust
+# or, to work without the harness for now
+forge harness supervise off     # back on later: forge harness supervise on
+```
+
+`supervise off` writes `nativeMode: parallel` into `harness/policy.yaml` and trusts exactly that change in one step. It refuses when the controls already differ from what was trusted, so it never trusts some other, unreviewed edit. The CLI harness (`forge harness run`) keeps working with supervision off.
+
 ## Gates, approvals and recovery
 
 The default tool registry provides `list_files`, `read_file` and `write_file`. Writes use a matching previous SHA-256, or an explicit expected absence for a new file. The tools enforce scope, protected locations, symlinks, size and schema checks. An extension can add a reviewed read-only reference tool. The package does not expose a general-purpose terminal or deploy action to the model.

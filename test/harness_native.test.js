@@ -244,3 +244,55 @@ test("Claude can discover only the two exact deferred harness schemas", (t) => {
     /supervised ForgeKit/,
   );
 });
+
+test("supervised Claude may still ask the person, and only through its own question tool", async (t) => {
+  const { root } = fixture(t);
+  const ask = { cwd: root, tool_name: "AskUserQuestion", tool_input: { questions: [] } };
+  assert.equal(
+    denied("claude", await pre("claude", "PreToolUse", ask)),
+    false,
+    "the question dialog",
+  );
+  for (const impostor of [
+    { ...ask, mcp_server_name: "attacker" },
+    { ...ask, tool_name: "mcp__attacker__AskUserQuestion" },
+    { ...ask, tool_name: "AskUserQuestions" },
+  ])
+    assert.equal(
+      denied("claude", await pre("claude", "PreToolUse", impostor)),
+      true,
+      impostor.tool_name,
+    );
+  // Other hosts gain nothing: their names for a question tool are not recognised.
+  assert.equal(
+    denied("codex", await pre("codex", "PreToolUse", { cwd: root, tool_name: "AskUserQuestion" })),
+    true,
+  );
+  // The denial names the way out for the person.
+  const reason = nativeHarnessDenial({
+    host: "claude",
+    event: "PreToolUse",
+    payload: { cwd: root, tool_name: "Read" },
+  });
+  assert.match(String(reason), /forge harness supervise off/);
+});
+
+test("supervise off returns host tools in one step; on takes them again; untrusted edits are refused", async (t) => {
+  const { setHarnessNativeMode, loadHarnessConfig } = await import("../src/harness_config.js");
+  const { root } = fixture(t);
+  const read = { cwd: root, tool_name: "Read", tool_input: { file_path: "x" } };
+  assert.equal(denied("claude", await pre("claude", "PreToolUse", read)), true, "supervised");
+  const off = setHarnessNativeMode(root, "parallel");
+  assert.equal(off.changed, true);
+  assert.equal(off.previous, "supervised");
+  assert.equal(loadHarnessConfig(root).policy.nativeMode, "parallel", "the new mode is trusted");
+  assert.equal(denied("claude", await pre("claude", "PreToolUse", read)), false, "tools are back");
+  assert.equal(setHarnessNativeMode(root, "parallel").changed, false, "idempotent");
+  assert.equal(setHarnessNativeMode(root, "supervised").changed, true);
+  assert.equal(denied("claude", await pre("claude", "PreToolUse", read)), true, "supervised again");
+  // An edit nobody trusted is not swept in by the switch.
+  const routing = join(root, "harness", "routing.yaml");
+  writeFileSync(routing, readFileSync(routing, "utf8").replace('"local"', '"sneaky"'));
+  assert.throws(() => setHarnessNativeMode(root, "parallel"), /forge harness trust/);
+  assert.throws(() => setHarnessNativeMode(root, "off"), /Expected/);
+});

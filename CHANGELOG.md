@@ -6,11 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-11-27
+
 ### Added
 
 - Ten commands leave the Labs group: `taste`, `uicheck`, `imagine`, `lean`, `anchor`, `diagnose`, `deja`, `reuse`, `rank` and `collide`. Each met the production bar in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md): its help lists every flag it reads and its exit statuses, its flags are checked strictly, and its `--json` output has a versioned contract ([`src/contracts.js`](src/contracts.js)) that CI checks in a fixture repository, together with the rule that the exit status is the same with and without `--json`. `forge --help` and the README table now show them in Substrate, Memory, Quality and Config.
 - `forge taste --json` and `forge anchor set|show|clear --json` print JSON; before, only the drift check had it.
 - `forge dash` and `forge report` leave Labs too, for the Core group. `dash --json` prints one line, `{url, port, root}`, once the server is listening, so a script can start it on `--port 0` and find it; the write token is never printed. `report --json` prints `{path, bytes}`. Both have contracts in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md).
+- `forge harness supervise on|off` switches native supervision in one step: it writes `nativeMode` into `harness/policy.yaml` and trusts exactly that change, and refuses when the controls already differ from what was trusted. Before, turning supervision off meant editing the policy by hand and re-running `forge harness trust` ([docs/HARNESS.md](docs/HARNESS.md#when-a-supervised-host-is-stuck)).
 
 ### Changed
 
@@ -23,6 +26,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A supervised checkout whose model route failed left the agent with no way out: every host tool, including reads and Claude Code's question dialog, was denied, and the harness reported only `provider_failed` with `http_404`. Three changes. The run's `reason` now names the route, its model and address, the likely cause and the fix (for a 404 from Ollama, `ollama pull <model>`), built from the route's configuration only, since the provider's reply is never read. Claude Code's `AskUserQuestion` is allowed while supervised, because asking the person reads and writes nothing. And the denial message itself tells the agent what to tell the person: fix the route and run `forge harness trust`, or run `forge harness supervise off`.
 - `forge reuse mint --json` exited 0 when the mint was refused; it now exits 1, as the text form does. A `--file` that does not exist is now refused with `not a file: <path>` instead of an `ENOENT` error.
 - `forge imagine --run --json` exited 0 when the run produced no verdict; it now exits 1, as the text form does.
 
@@ -3958,7 +3962,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
 [1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
 [1.19.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...v1.19.4
