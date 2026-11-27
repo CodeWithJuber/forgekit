@@ -1850,6 +1850,9 @@ HANDLERS.decide = async (argv) => {
   return;
 };
 HANDLERS.know = async (argv) => {
+  // Enforced rules: a policy a program can test is compiled into a commit check.
+  if (["--enforce", "--rules", "--check", "--remove"].some((f) => argv.includes(f)))
+    return knowRules(argv);
   // A7 knowledge-router: total routing (T6) of a fact to its storage home — an unsure
   // fact still lands (ledger fallback), it is never dropped.
   const { HOMES, routeFact, storeFact } = await import("./knowledge_router.js");
@@ -1888,6 +1891,79 @@ HANDLERS.know = async (argv) => {
   if (r.advice) console.log(`  advice:   ${r.advice}`);
   return;
 };
+/** `forge know --enforce|--rules|--check|--remove`. @param {string[]} argv */
+async function knowRules(argv) {
+  const { addRule, checkRules, describeRule, loadRules, removeRule } = await import(
+    "./rule_compile.js"
+  );
+  const root = process.cwd();
+  const json = argv.includes("--json");
+  const usage =
+    'usage: forge know --enforce "<rule>" [--warn] [--json] | forge know --rules [--json]\n' +
+    "       forge know --check [--json] | forge know --remove <id> [--json]";
+  if (argv.includes("--remove")) {
+    const id = argv[argv.indexOf("--remove") + 1];
+    if (!id || id.startsWith("--")) {
+      console.error(usage);
+      process.exitCode = 1;
+      return;
+    }
+    const r = removeRule(root, id);
+    if (json) console.log(JSON.stringify(r, null, 2));
+    else if (r.ok) console.log(`  removed rule ${id}`);
+    else console.error(`  ${r.reason}`);
+    if (!r.ok) process.exitCode = 1;
+    return;
+  }
+  if (argv.includes("--enforce")) {
+    const text = argv
+      .slice(1)
+      .filter((a) => !["--enforce", "--warn", "--json"].includes(a))
+      .join(" ");
+    if (!text) {
+      console.error(usage);
+      process.exitCode = 1;
+      return;
+    }
+    const r = addRule(root, text, { severity: argv.includes("--warn") ? "warn" : "block" });
+    if (json) console.log(JSON.stringify(r, null, 2));
+    else if (r.ok)
+      console.log(
+        `  enforced at commit: ${describeRule(r.rule)} — ${r.rule.severity === "block" ? "a violating commit is refused" : "a violating commit is warned"} (id ${r.rule.id}, stored in .forge/rules.json)`,
+      );
+    else {
+      console.error(`  not enforced: ${"reason" in r ? r.reason : ""}`);
+      console.error(`  to keep it as memory instead: ${BRAND.cli} know "${text}"`);
+    }
+    if (!r.ok) process.exitCode = 1;
+    return;
+  }
+  const rules = loadRules(root);
+  if (argv.includes("--check")) {
+    const { diffChanges } = await import("./coupling.js");
+    /** @type {Map<string, string[]>} */
+    const added = new Map();
+    for (const [file, c] of diffChanges(root))
+      added.set(
+        file,
+        c.added.map((/** @type {{text: string}} */ a) => a.text),
+      );
+    const hits = checkRules(rules, added);
+    if (json) console.log(JSON.stringify({ rules: rules.length, violations: hits }, null, 2));
+    else if (!hits.length) console.log(`  ✓ the working changes keep all ${rules.length} rule(s)`);
+    else
+      for (const h of hits)
+        console.log(
+          `  ${h.rule.severity === "block" ? "✗" : "!"} ${h.file}: ${describeRule(h.rule)}${h.text ? ` — ${h.text}` : ""}`,
+        );
+    if (hits.some((h) => h.rule.severity === "block")) process.exitCode = 1;
+    return;
+  }
+  if (json) return console.log(JSON.stringify(rules, null, 2));
+  if (!rules.length)
+    return console.log(`  no enforced rules — ${BRAND.cli} know --enforce "never import moment"`);
+  for (const r of rules) console.log(`  ${r.id}  ${describeRule(r)}  [${r.severity}]`);
+}
 HANDLERS.diagnose = async (argv) => {
   const { diagnose, THRASH_K } = await import("./diagnose.js");
   const json = argv.includes("--json");

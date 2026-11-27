@@ -786,6 +786,40 @@ dispatch, like every forge store. With `ENABLE_CORTEX_DISTILL=1`, distilled Cort
 that read like decisions or durable facts are auto-routed to those homes too (fail-open,
 best-effort).
 
+#### `forge know --enforce "<rule>"` — a policy that checks itself
+
+Memory helps only when it is retrieved and the model follows it. A policy a program can test
+should not depend on that: `--enforce` compiles the sentence into a check that `forge precommit`
+runs on the staged lines of every commit, whoever or whatever wrote them.
+
+```console
+$ forge know --enforce "never import moment"
+  enforced at commit: no import of `moment` — a violating commit is refused (id no-import-moment, stored in .forge/rules.json)
+$ forge know --enforce "use pnpm, not npm"
+  enforced at commit: no `package-lock.json` (this project uses pnpm) — a violating commit is refused (id no-file-package-lock-json, stored in .forge/rules.json)
+$ forge know --enforce "keep functions small"
+  not enforced: "keep functions small" is not one of the shapes a commit check can test (…) — keep it as memory
+```
+
+Four shapes compile: a banned import (`never import X`, `X is banned`, `use A instead of B`,
+also `from X import` in Python), a known construct (`no console.log in src`, `never use var`,
+`avoid default exports`, `no @ts-ignore`, `no debugger statements`, `no it.only`, `no TODO`,
+`no print()` in Python), a quoted literal (`never commit "localhost:3000"`), and another
+package manager's lockfile (`use pnpm, not npm`). "in src", "under app/" limits a rule to a
+directory. A sentence that only says "use X" or "avoid X" is compiled as an import ban only when X
+is a package this repository lists or installs, or is spelled like one (`date-fns`, `@scope/x`), so
+"prefer composition over inheritance" is refused instead of banning a module named
+`inheritance`. Everything else is refused with the reason and stays memory: a wrong check would
+refuse good commits in the name of a rule nobody stated.
+
+A violating commit is refused in the default warn mode too, the way a secret is; `--warn` stores a
+rule that only warns. `forge know --check` runs the rules over the working changes now,
+`--rules` lists them and `--remove <id>` drops one. `.forge/rules.json` is meant to be committed,
+so the team shares the rules. On two policy corpora (`test/fixtures/rule-corpus`, 22 and 20
+sentences, written by one author) every sentence compiles to its intended check and none that must
+stay prose compiles; on the held-out set the first measurement was 18 of 20 with no wrong check
+([measured result](EVIDENCE.md#measured-evidence)).
+
 ### `forge docs render` — the docs that can write themselves, do
 
 `forge docs check` can only _detect_ drift; every fix was still a human hand-editing
@@ -2637,7 +2671,9 @@ code reads but this table misses fails CI on the forge repo):
 
 - **Guards reduce, don't eliminate** the "ignored my rules" problem — semantic rules
   still live in prose.
-- **`recall` / `cortex` are file + prompt memory**, not weight-level learning.
+- **`recall` / `cortex` are file + prompt memory**, not weight-level learning. Policies that a
+  program can test can be compiled into commit checks instead (`forge know --enforce`); the
+  rest depends on being retrieved and followed.
 - **The atlas graph is regex-approximate** — not a sound call graph, and not conservative:
   it can miss affected files (dynamic dispatch and generated code among them), so an empty
   impact set means "unknown", not "safe".
