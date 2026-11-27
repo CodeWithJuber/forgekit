@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { shellSegments } from "../global/guards/protect-paths.mjs";
+import { stripXmlComments } from "./xml.js";
 
 /** @typedef {"npm"|"pypi"|"cargo"|"go"|"maven"|"nuget"|"rubygems"|"packagist"|"pub"} Eco */
 /** @typedef {{eco: Eco, name: string, version: string|null, via: string}} PkgSpec */
@@ -725,36 +726,6 @@ function pubspecDeps(text) {
 
 /** @param {string} xml @param {string} tag */
 const xmlTag = (xml, tag) => new RegExp(`<${tag}>\\s*([^<]*?)\\s*</${tag}>`).exec(xml)?.[1] ?? "";
-
-/**
- * An XML document without its comments, read left to right as an XML parser reads it: `<!--`
- * inside a CDATA section is text, not a comment. A regex replace treats that `<!--` as a comment
- * and can strip a real <dependency> that follows it. Running the replace until nothing changes
- * would make this worse, since it also joins text from either side of a comment into a new
- * `<!--`. An unterminated comment is kept, so nothing after it is hidden from the gate.
- * @param {string} xml
- */
-function stripXmlComments(xml) {
-  let out = "";
-  let at = 0;
-  for (;;) {
-    const comment = xml.indexOf("<!--", at);
-    if (comment < 0) break;
-    const cdata = xml.indexOf("<![CDATA[", at);
-    if (cdata >= 0 && cdata < comment) {
-      const close = xml.indexOf("]]>", cdata + 9);
-      const end = close < 0 ? xml.length : close + 3;
-      out += xml.slice(at, end);
-      at = end;
-      continue;
-    }
-    const close = xml.indexOf("-->", comment + 4);
-    if (close < 0) break;
-    out += xml.slice(at, comment);
-    at = close + 3;
-  }
-  return out + xml.slice(at);
-}
 
 /** @param {string} text @returns {Spec[]|null} */
 function pomDeps(text) {

@@ -1332,6 +1332,15 @@ test("jvmBuildModules reads reactor modules and Gradle includes, not profiles or
     "tools/cli",
     "web",
   ]);
+  // Comments are read the way an XML parser reads them: `<!--` inside CDATA is text, so the
+  // module after it still counts, and a commented-out module never does.
+  const xml = mkdtempSync(join(tmpdir(), "forge-jvm-xml-"));
+  writeFileSync(
+    join(xml, "pom.xml"),
+    "<project><description><![CDATA[ <!-- not a comment ]]></description>" +
+      "<modules><module>real</module><!-- <module>hidden</module> --></modules></project>",
+  );
+  assert.deepEqual([...jvmBuildModules(xml)], ["real"]);
 });
 
 test("observedJvmResult: Maven module totals and reactor, Gradle per-project tasks", async () => {

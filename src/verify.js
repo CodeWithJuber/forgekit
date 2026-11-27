@@ -34,6 +34,7 @@ import {
 } from "./stack.js";
 import { assessTestIntegrity } from "./test_integrity.js";
 import { userStateDir } from "./util.js";
+import { stripXmlComments } from "./xml.js";
 
 // Shared call-site extractor — one source of truth with atlas.js (they used to duplicate this).
 export { extractCalledSymbols } from "./extract.js";
@@ -840,7 +841,9 @@ export function jvmBuildModules(root) {
   const walk = (dir, depth) => {
     const pom = read(dir === "." ? "pom.xml" : `${dir}/pom.xml`);
     if (!pom || depth > 8) return;
-    const body = pom.replace(/<!--[\s\S]*?-->/g, "").replace(/<profiles>[\s\S]*?<\/profiles>/g, "");
+    // Comments are removed the way an XML parser reads them (src/xml.js): a single regex
+    // pass misreads `<!--` inside CDATA and can hide a real <module> that follows it.
+    const body = stripXmlComments(pom).replace(/<profiles>[\s\S]*?<\/profiles>/g, "");
     for (const block of body.matchAll(/<modules>([\s\S]*?)<\/modules>/g))
       for (const m of block[1].matchAll(/<module>\s*([^<]+?)\s*<\/module>/g)) {
         let rel = posix.normalize(posix.join(dir, m[1].replaceAll("\\", "/")));
