@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-27
+
 ### Added
 
 - **Working method for every agent.** `forge sync` emits a second rule pack, *Working method*, after the orchestration rules: check the goal and the means, act on evidence, watch three thinking traps, rule out options that break a hard limit before ranking the rest, isolate one change at a time, confirm each action changed the state, prove done with a check that failed before, test the smallest cases, write the agreement first, take no harmful shortcut, fix without breaking, consult on high-stakes choices, do mechanical steps in plain code and keep model reasoning for ambiguity, hand work on with pointers rather than retold summaries, supersede a stale fact instead of keeping both, name missing context, and finish once tested. Seventeen rules with stable `method.*` ids, switched with `forge orchestration on|off <id>` or `off method` for the whole section; the minimal profile leaves it out. No new command.
@@ -4003,7 +4005,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.23.0...HEAD
+[1.23.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
