@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-11-27
+
 ### Added
 
 - **`forge know --enforce "<rule>"`** compiles a policy into a check `forge precommit` runs on every commit, so the rule holds whether or not a model retrieved it: a banned import (`never import moment`, JS and Python), a known construct (`no console.log in src`, `avoid default exports`, `no @ts-ignore`), a quoted literal, or another package manager's lockfile (`use pnpm, not npm`). A sentence that fits none of these, or that says "use X" about something that is not a known package, is refused with the reason and stays memory. A violating commit is refused (`--warn` only warns). `--rules`, `--check` and `--remove <id>` manage `.forge/rules.json`, which the team commits.
@@ -4003,7 +4005,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.23.0...HEAD
+[1.23.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
