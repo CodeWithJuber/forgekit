@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.21.1] - 2026-11-27
+
+### Fixed
+
+- regenerate the changelog page after the master merge
+- give a stuck supervised host a way out
+
 ## [1.21.0] - 2026-11-27
 
 ### Added
@@ -3957,7 +3964,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.1...HEAD
+[1.21.1]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...v1.21.1
 [1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
 [1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
