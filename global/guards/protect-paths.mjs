@@ -19,10 +19,19 @@
 // The string of `sh -c …` / `eval …` is checked as a command line of its own, brace alternation
 // (`.{env,x}`) is expanded, and the literal output of `$(echo …)` counts as part of its word.
 //
-// SCOPE: pattern matching, not a sandbox. A word splitter cannot evaluate shell, so indirection
-// (`f=.env; cat $f`, `find … -exec cat {}`, `xargs -a .env`, any other command substitution)
-// and interpreter-driven access (`python -c 'open(".env")…'`, `node -e …`) are DELIBERATELY out
-// of scope. This layer sits behind the permission system and secret-redact.sh: best-effort
+// Every command is also NORMALIZED the way the shell would read it (see normalizeCommand):
+// quotes and escapes removed, variables set earlier in the same command substituted
+// (`f=.env; cat $f`), `$(echo …)`/`$(pwd)` replaced by their output, aliases and function
+// bodies read as commands, `find -exec` and `xargs` given the files they act on, and inline
+// programs (`python -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`) scanned for secret paths,
+// recursive deletes and the command strings they run. Data positions (echo text, commit
+// messages, grep patterns, heredocs fed to cat) are left out of the destructive patterns.
+//
+// SCOPE: static analysis, not a sandbox. It cannot evaluate a program: a variable set outside
+// the command, a value computed by a script, or a file read by a program it does not inspect
+// stay unknown. Where an unknown would decide a destructive or remote-code verdict (a computed
+// command name, a recursive delete of a computed path, eval of downloaded or decoded text) it
+// fails closed. This layer sits behind the permission system and secret-redact.sh: best-effort
 // hardening, never a boundary.
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -36,9 +45,13 @@ import { resolve } from "node:path";
  * @typedef {FsCtx & {bash?: boolean, dir?: boolean, cwdUnknown?: boolean}} PathCtx
  * `brace`: an unquoted `{` (bash brace expansion). `subst`: the literal output of a
  * `$(echo …)`/`$(printf …)` inside the word.
- * @typedef {{text: string, glob: boolean, quoted: boolean, brace?: boolean, subst?: string[]}} Word
+ * `param`: an unquoted or double-quoted `$NAME`/`${…}` expansion. `inner`: the command names of
+ * every `$(…)`/backtick/`<(…)` inside the word. `dyn`: a substitution whose output is not
+ * known (anything but a literal echo/printf, `pwd` or `mktemp`).
+ * @typedef {{text: string, glob: boolean, quoted: boolean, brace?: boolean, subst?: string[], param?: boolean, inner?: string[], dyn?: boolean, temp?: boolean}} Word
  * @typedef {{op: string, target: Word}} Redirect
- * @typedef {{words: Word[], redirs: Redirect[]}} Segment
+ * `piped`: the segment reads the previous segment's output through `|`.
+ * @typedef {{words: Word[], redirs: Redirect[], piped?: boolean}} Segment
  */
 
 // ── What is a secret path. ONE predicate for a tool's path (Read/Edit/Grep/…) and for every
@@ -315,17 +328,19 @@ const cmdName = (t) =>
  * skipped as data unless it is fed to a shell. Inside `$(( … ))` / `(( … ))` arithmetic, `<`
  * and `>` are operators (`1<<2` is a shift, not a heredoc) and a newline is not a command end.
  * @param {string} cmd
- * @returns {Segment[]}
+ * @returns {Segment[] & {lossy?: boolean}}
  */
 export function shellSegments(cmd) {
   /** @type {Segment[]} */
   const done = [];
-  /** @returns {{words: Word[], redirs: Redirect[], cur: Word | null, redir: string | null}} */
-  const fresh = () => ({ words: [], redirs: [], cur: null, redir: null });
+  /** @returns {{words: Word[], redirs: Redirect[], cur: Word | null, redir: string | null, pipeIn: boolean}} */
+  const fresh = () => ({ words: [], redirs: [], cur: null, redir: null, pipeIn: false });
   let ctx = fresh();
   /** @type {{ctx: ReturnType<typeof fresh>, kind: string, dq: boolean, arith: number, start: number}[]} */
   const stack = [];
   let dq = false; // inside "…"
+  let lossy = false;
+  let unclosedSingle = false;
   let arith = -1; // ≥ 0 inside arithmetic: the count of `(` open within it
   /** @type {{delim: string, strip: boolean, exec: boolean}[]} */
   const heredocs = [];
@@ -355,9 +370,12 @@ export function shellSegments(cmd) {
       });
     } else ctx.redirs.push({ op, target: w });
   };
-  const endSeg = () => {
+  /** @param {boolean} [pipeOut] the segment ends in `|`: the next one reads its output */
+  const endSeg = (pipeOut = false) => {
     endWord();
-    if (ctx.words.length || ctx.redirs.length) done.push({ words: ctx.words, redirs: ctx.redirs });
+    if (ctx.words.length || ctx.redirs.length)
+      done.push({ words: ctx.words, redirs: ctx.redirs, piped: ctx.pipeIn });
+    ctx.pipeIn = pipeOut;
     ctx.words = [];
     ctx.redirs = [];
     ctx.redir = null;
@@ -378,13 +396,19 @@ export function shellSegments(cmd) {
     arith = f.arith;
     if (f.kind === "(" || f.kind === "((") return;
     add("$()"); // an expansion inside a word: no longer a literal path
+    const w = /** @type {Word} */ (ctx.cur);
+    const names = inner.map((seg) => commandOf(seg.words)?.name ?? "").filter(Boolean);
+    w.inner = [...(w.inner ?? []), ...names];
     // `cat "$(echo .env)"`: the literal words an echo/printf prints are what the word holds.
     const c = inner.length === 1 && !inner[0].redirs.length ? commandOf(inner[0].words) : null;
-    if (c && (c.name === "echo" || c.name === "printf") && ctx.cur) {
+    if (c && (c.name === "echo" || c.name === "printf")) {
       const out = c.args.filter((a) => !/^-[neE]+$/.test(a.text)).map((a) => a.text);
-      ctx.cur.subst = [...(ctx.cur.subst ?? []), ...out];
-      if (c.args.some((a) => a.glob)) ctx.cur.glob = true;
-    }
+      w.subst = [...(w.subst ?? []), ...out];
+      if (c.args.some((a) => a.glob)) w.glob = true;
+      if (c.args.some((a) => a.param || a.dyn)) w.dyn = true;
+    } else if (c && c.name === "pwd") w.subst = [...(w.subst ?? []), "."];
+    else if (c && c.name === "mktemp") w.temp = true;
+    else w.dyn = true;
   };
   /** @param {number} i index of the newline ending the line that owns the heredocs */
   const skipHeredocs = (i) => {
@@ -420,7 +444,11 @@ export function shellSegments(cmd) {
         open("$(");
         i++;
       } else if (c === "`") open("`");
-      else add(c, false, true);
+      else {
+        add(c, false, true);
+        if (c === "$" && next !== undefined && PARAM_START.test(next))
+          /** @type {Word} */ (ctx.cur).param = true;
+      }
       continue;
     }
     if (arith >= 0 && "()<>#\n".includes(c)) {
@@ -440,6 +468,7 @@ export function shellSegments(cmd) {
       i++;
     } else if (c === "'") {
       const j = cmd.indexOf("'", i + 1);
+      if (j < 0) unclosedSingle = true;
       const end = j < 0 ? cmd.length : j;
       add(cmd.slice(i + 1, end), false, true);
       i = end;
@@ -476,8 +505,13 @@ export function shellSegments(cmd) {
     else if (c === "#" && !ctx.cur) {
       const e = cmd.indexOf("\n", i);
       i = (e < 0 ? cmd.length : e) - 1; // a comment runs to the end of the line
-    } else if (c === ";" || c === "|") endSeg();
-    else if (c === "&") {
+    } else if (c === ";") endSeg();
+    else if (c === "|") {
+      // `a | b` and `a |& b` pipe; `a || b` does not.
+      const pipe = next !== "|" && cmd[i - 1] !== "|";
+      if (next === "&") i++;
+      endSeg(pipe);
+    } else if (c === "&") {
       if (next === ">") {
         endWord();
         i += cmd[i + 2] === ">" ? 2 : 1;
@@ -515,12 +549,20 @@ export function shellSegments(cmd) {
     } else {
       add(c, c === "*" || c === "?" || c === "[");
       if (c === "{") /** @type {Word} */ (ctx.cur).brace = true; // bash brace expansion
+      if (c === "$" && next !== undefined && PARAM_START.test(next))
+        /** @type {Word} */ (ctx.cur).param = true;
     }
   }
+  // An open quote or substitution at the end: the split may have lost structure, so callers
+  // also judge the raw text (fail closed).
+  if (dq || stack.length || unclosedSingle) lossy = true;
   while (stack.length) close();
   endSeg();
-  return done;
+  return Object.assign(done, { lossy });
 }
+
+/** The character after `$` that starts a parameter expansion (`$x`, `${x}`, `$1`, `$@`). */
+const PARAM_START = /[A-Za-z_{0-9@*#?$!]/;
 
 // ── Commands: which word runs, and which of its arguments are FILES it reads or writes.
 
@@ -706,6 +748,9 @@ const READERS = {
       ...["cat", "tac", "nl", "head", "tail", "less", "more", "most", "bat", "batcat"],
       ...["xxd", "od", "hexdump", "strings", "base64", "sort", "uniq", "cut", "paste"],
       ...["fold", "rev", "diff", "cmp", "dd"],
+      // A file sourced, opened in an editor, archived or sent is read just the same.
+      ...["source", ".", "vim", "vi", "nvim", "nano", "emacs", "micro", "ed", "code", "subl"],
+      ...["tar", "zip", "7z", "gzip", "bzip2", "xz", "zstd", "scp", "rsync", "curl", "wget"],
     ].map((n) => [n, PLAIN]),
   ),
   ...Object.fromEntries(["grep", "egrep", "fgrep"].map((n) => [n, GREP])),
@@ -756,7 +801,7 @@ const WRITERS = new Set(["tee", "cp", "mv", "install", "ln", "truncate"]);
 function pathCandidates(t) {
   const out = [t];
   const eq = /^[A-Za-z_][\w.-]*=([\s\S]*)$/.exec(t);
-  if (eq) out.push(eq[1]);
+  if (eq) out.push(eq[1], eq[1].replace(/^[@<]/, "")); // `-F file=@.env`, `--data=<.env`
   const colon = t.indexOf(":");
   if (colon >= 0 && !/^[A-Za-z]:[\\/]/.test(t)) {
     out.push(t.slice(colon + 1));
@@ -934,6 +979,367 @@ export function secretShellAccess(cmd, fsCtx = {}, depth = 0) {
   return null;
 }
 
+// ── Normalization: what the shell will actually run.
+// The secret check above reads words; the destructive rules below are patterns over a command
+// line. Both see more once the line is NORMALIZED the way the shell would see it: quotes and
+// escapes removed (`"rm"`, `r\m`, `$'\x72m'` are all `rm`), a variable assigned earlier in the
+// same command replaced by its value (`R=rm; $R -rf /`), a `$(echo …)`/`$(pwd)` replaced by
+// its output, and the arguments that are only data — what echo/printf print, a commit message,
+// a grep pattern, a heredoc fed to cat — left out, so `git commit -m "block rm -rf /"` is not
+// a delete. What cannot be known statically (a variable set outside the command, the output
+// of most substitutions) is marked dynamic, and a few places where that matters fail closed:
+// a computed command name that would be destructive under some name, a recursive delete of a
+// computed path, eval or `sh -c` of text fetched from the network or decoded at run time.
+// Still not a sandbox: this narrows what a creative spelling can hide; it cannot evaluate
+// arbitrary programs.
+
+/** Assignment prefixes and declaration builtins whose operands are `NAME=value`. */
+const DECLARE = new Set(["export", "declare", "typeset", "local", "readonly"]);
+/** Commands that download or decode: text they print is not reviewable before it runs. */
+const OPAQUE_SOURCES = new Set([
+  ...["curl", "wget", "fetch", "nc", "ncat", "socat", "http", "https", "aria2c"],
+  ...["base64", "base32", "basenc", "xxd", "openssl", "gpg", "uudecode", "gunzip", "zcat"],
+]);
+/** Interpreters → the flags whose next word is an inline program. */
+const INLINE_CODE = {
+  python: ["-c"],
+  python2: ["-c"],
+  python3: ["-c"],
+  pypy3: ["-c"],
+  node: ["-e", "--eval", "-p", "--print"],
+  nodejs: ["-e", "--eval", "-p", "--print"],
+  bun: ["-e", "--eval", "-p", "--print"],
+  perl: ["-e", "-E"],
+  ruby: ["-e"],
+  php: ["-r"],
+};
+/** Commands whose arguments are text they print, not something they run. */
+const PRINTERS = new Set(["echo", "printf", "true", ":"]);
+/** Disk and partition tools: one wrong device and the data is gone. */
+const DISK_TOOLS = /^(?:mkfs(?:\.\w+)?|mke2fs|wipefs|mkswap|fdisk|sfdisk|gdisk|sgdisk|parted)$/;
+
+/** The text a word will hold, given the variables known so far.
+ *  @param {Word} w @param {Map<string, string | null>} vars */
+function wordValue(w, vars) {
+  let text = w.text;
+  let dyn = Boolean(w.dyn);
+  if (w.subst?.length && /^\$\(\)$/.test(text)) text = w.subst.join(" ");
+  else if (w.subst?.length) text = text.replace("$()", w.subst.join(" "));
+  if (w.param) {
+    text = text.replace(/\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*)|([0-9@*#?$!]))/g, (m, a, b) => {
+      const name = a ?? b;
+      if (name === "PWD") return ".";
+      if (name === "HOME") return "$HOME"; // kept: the rules know `$HOME`
+      const v = name ? vars.get(name) : undefined;
+      if (typeof v === "string") return v;
+      dyn = true; // set outside this command, a positional parameter, or computed
+      return m;
+    });
+  }
+  return { text, dyn, temp: Boolean(w.temp) };
+}
+
+/** Quote a word for the normalized line so a later split reads it back as one word.
+ *  @param {string} text @param {Word} w */
+function render(text, w) {
+  if (text === "") return "''";
+  if ((w.glob || w.brace) && !w.quoted) return text;
+  if (/^[\w./:@%+=,~^-]+$/.test(text)) return text;
+  return `'${text.replaceAll("'", `'\\''`)}'`;
+}
+
+/** Plain-text literals of an inline program: '…', "…" and `…`, escapes undone.
+ *  @param {string} code */
+function codeStrings(code) {
+  /** @type {string[]} */
+  const out = [];
+  for (const m of code.matchAll(/(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g))
+    out.push(m[2].replace(/\\(.)/g, "$1"));
+  return out;
+}
+/** An inline program that hands a string to the system shell or a process spawner. */
+const RUNS_COMMAND =
+  /\b(?:system|popen|check_output|check_call|Popen|spawn|spawnSync|execSync|execFileSync|exec|execFile|execvp?e?|shell_exec|passthru|proc_open|qx)\s*\(|\bsubprocess\.\w+\s*\(|`[^`]*`|%x\{/;
+/** A recursive delete API aimed at the root, the home directory or the working tree. */
+const API_DELETE = new RegExp(
+  String.raw`\b(?:rmtree|rmSync|rm|rmdir|removedirs|remove_tree|rimraf|rm_rf|rm_r|deleteSync|emptyDirSync|removeSync)\s*\(\s*` +
+    String.raw`(?:(["'\x60])(?:/|~|~/|\.|\./|\$HOME|[A-Za-z]:[\\/]{0,2})\1|os\.path\.expanduser\(\s*["']~["']\s*\)|Path\.home\(\)|(?:os|require\(\s*["']os["']\s*\))\.homedir\(\)|process\.env\.HOME|os\.environ\[\s*["']HOME["']\s*\]|ENV\[\s*["']HOME["']\s*\]|Dir\.home)`,
+);
+
+/**
+ * The reason an inline interpreter program (`python -c`, `node -e`, `perl -e`, …) is blocked,
+ * or null: it names a protected secret path, deletes the root, home or working tree, or runs a
+ * command string that would itself be blocked.
+ * @param {string} code
+ * @param {PathCtx} fsCtx
+ * @param {number} depth
+ */
+function inlineProgramReason(code, fsCtx, depth) {
+  const strings = codeStrings(code);
+  for (const lit of strings)
+    if (secretKind(lit, { ...fsCtx, bash: false }) || globMatchesSecret(lit, fsCtx))
+      return "an inline program reading or writing a protected secret path is blocked. Read it yourself if intended.";
+  if (API_DELETE.test(code))
+    return "an inline program deleting the root, home directory or working tree is blocked. Ask the user first.";
+  if (RUNS_COMMAND.test(code)) {
+    // Each string, and the strings of each list literal joined (`['rm', '-rf', '/']`).
+    const lists = [...code.matchAll(/\[([^\]]*)\]/g)].map((m) => codeStrings(m[1]).join(" "));
+    for (const candidate of [...strings, ...lists]) {
+      if (!candidate.trim()) continue;
+      const inner = protectPathsDecision(
+        { toolName: "Bash", command: candidate, ...fsCtx },
+        depth + 1,
+      );
+      if (inner.block) return `an inline program runs a blocked command: ${inner.reason}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * The command line as the shell will run it, and the findings that only show after
+ * normalization.
+ * @param {string} cmd
+ * @param {PathCtx} [fsCtx]
+ * @param {number} [depth]
+ * @returns {{code: string, full: string, lossy: boolean, reason: string | null}}
+ *   `code`: data-only arguments left out (the destructive rules read this); `full`: every word
+ *   (the secret check reads this); `lossy`: the split may have lost structure.
+ */
+export function normalizeCommand(cmd, fsCtx = {}, depth = 0) {
+  const split = shellSegments(String(cmd));
+  // `f() { rm -rf "$1"; }`: the body after `{` is a command of its own, not arguments of `f`.
+  /** @type {Segment[] & {lossy?: boolean}} */
+  const segments = Object.assign(
+    split.flatMap((seg) => {
+      const j = seg.words.findIndex((w, n) => n > 0 && w.text === "{" && !w.quoted);
+      if (j < 0) return [seg];
+      return [
+        { words: seg.words.slice(0, j), redirs: [], piped: seg.piped },
+        { words: seg.words.slice(j), redirs: seg.redirs, piped: false },
+      ];
+    }),
+    { lossy: split.lossy },
+  );
+  /** @type {Map<string, string | null>} */
+  const vars = new Map();
+  /** @type {Map<string, string>} */
+  const aliases = new Map();
+  const code = [];
+  const full = [];
+  let reason = null;
+  let lossy = Boolean(segments.lossy);
+  /** @param {string} t */
+  const assignment = (t) => /^([A-Za-z_]\w*)\+?=([\s\S]*)$/.exec(t);
+  for (const seg of segments) {
+    if (reason) break;
+    const join = seg.piped ? " | " : " ; ";
+    /** @type {{text: string, dyn: boolean, temp: boolean, w: Word}[]} */
+    let words = seg.words.map((w) => ({ ...wordValue(w, vars), w }));
+    // Leading `NAME=value` words, and declarations, update the variables for what follows.
+    let k = 0;
+    while (k < words.length && assignment(words[k].w.text)) k++;
+    const declares = k < words.length && DECLARE.has(cmdName(words[k].text));
+    const bare = k === words.length || declares;
+    for (const x of declares ? words.slice(k + 1) : words.slice(0, k)) {
+      const a = assignment(x.w.text);
+      if (!a || !bare) continue;
+      const v = wordValue({ ...x.w, text: a[2] }, vars);
+      vars.set(a[1], v.dyn || x.w.glob ? null : v.text);
+    }
+    // `alias x='rm -rf /'; x`: the alias body stands in for its name.
+    if (k < words.length && cmdName(words[k].text) === "alias") {
+      for (const x of words.slice(k + 1)) {
+        const a = /^([^=\s]+)=([\s\S]*)$/.exec(x.text);
+        if (a) aliases.set(a[1], a[2]);
+      }
+    }
+    if (k < words.length && aliases.has(words[k].text)) {
+      const body = shellSegments(/** @type {string} */ (aliases.get(words[k].text)));
+      const expanded = (body[0]?.words ?? []).map((w) => ({ ...wordValue(w, vars), w }));
+      words = [...words.slice(0, k), ...expanded, ...words.slice(k + 1)];
+    }
+    // `echo / | xargs rm -rf`: xargs appends what it reads to the command, so literal text
+    // piped from echo/printf is the command's operands.
+    const prev = segments[segments.indexOf(seg) - 1];
+    const xargsAt = words.findIndex((x) => cmdName(x.text) === "xargs");
+    if (seg.piped && xargsAt >= 0 && prev) {
+      const p = commandOf(prev.words);
+      if (p && PRINTERS.has(p.name))
+        for (const a of p.args)
+          if (!/^-[neE]+$/.test(a.text)) words.push({ ...wordValue(a, vars), w: a });
+    }
+    const rendered = words.map((x) => render(x.text, x.w));
+    const redirs = seg.redirs.map(
+      ({ op, target }) => `${op}${render(wordValue(target, vars).text, target)}`,
+    );
+    full.push(join, [...rendered, ...redirs].join(" "));
+    const c = commandOf(words.map((x) => ({ ...x.w, text: x.text })));
+    const idx = c ? words.length - c.args.length - 1 : -1;
+    const name = c?.name ?? "";
+    const args = idx >= 0 ? words.slice(idx + 1) : [];
+    const nameWord = idx >= 0 ? words[idx] : null;
+    // The arguments that are code, for the destructive rules.
+    let codeWords = rendered;
+    if (PRINTERS.has(name) && !segments[segments.indexOf(seg) + 1]?.piped)
+      codeWords = rendered.slice(0, idx + 1);
+    else if (READERS[name]?.patternFirst && name !== "awk" && !name.endsWith("awk")) {
+      const ops = new Set(
+        operands(
+          args.map((x) => ({ ...x.w, text: x.text })),
+          READERS[name],
+        ).map((o) => o.word.text),
+      );
+      codeWords = rendered.filter(
+        (_, j) => j <= idx || ops.has(words[j].text) || words[j].text.startsWith("-"),
+      );
+    } else if (name === "git") {
+      codeWords = rendered.filter((_, j) => {
+        const prev = words[j - 1]?.text ?? "";
+        return (
+          !/^(?:-m|--message|-F|--file|--grep|--author|--format|--pretty)$/.test(prev) &&
+          !/^(?:--message|--grep|--format|--pretty)=/.test(words[j].text)
+        );
+      });
+    } else if (name === "gh") {
+      codeWords = rendered.filter(
+        (_, j) =>
+          !/^(?:-b|--body|-t|--title|-m|--message|-f|-F|--field|--raw-field)$/.test(
+            words[j - 1]?.text ?? "",
+          ),
+      );
+    }
+    // A nested `sh -c STRING` / `eval …` is judged as its own normalized line.
+    const nested =
+      name === "eval"
+        ? args.map((x) => x.text).join(" ")
+        : SHELLS.has(name)
+          ? shellCommandString(args.map((x) => ({ ...x.w, text: x.text })))
+          : null;
+    if (nested && depth < MAX_NEST) {
+      const inner = normalizeCommand(nested, fsCtx, depth + 1);
+      reason ??= inner.reason;
+      lossy ||= inner.lossy;
+      code.push(
+        join,
+        codeWords
+          .filter((t) => t !== render(nested, { text: nested, glob: false, quoted: true }))
+          .join(" "),
+        " ; ",
+        inner.code,
+      );
+      full.push(" ; ", inner.full);
+    } else code.push(join, codeWords.join(" "));
+
+    // ── Findings that need the normalized words.
+    const opaque = (/** @type {{w: Word}} */ x) =>
+      (x.w.inner ?? []).some((n) => OPAQUE_SOURCES.has(n));
+    if (name === "eval" || (SHELLS.has(name) && nested !== null)) {
+      if (args.some(opaque))
+        reason ??= `\`${name}\` of text that is downloaded or decoded at run time cannot be reviewed before it runs — blocked.`;
+      else if (args.some((x) => x.dyn && /^\$\{?[A-Za-z_]\w*\}?$/.test(x.w.text)))
+        reason ??= `\`${name}\` of a variable set outside this command cannot be checked — blocking to fail closed.`;
+    }
+    if (
+      (SHELLS.has(name) || name === "source" || name === ".") &&
+      nested === null &&
+      args.some(opaque)
+    )
+      reason ??= `\`${name}\` of a script that is downloaded or decoded at run time cannot be reviewed before it runs — blocked.`;
+    if (nameWord && (nameWord.dyn || opaque(nameWord))) {
+      // A computed command name: destructive under any name it could take?
+      const tail = args.map((x) => render(x.text, x.w)).join(" ");
+      for (const guess of ["rm", "git", "chmod", "find", "dd", "mkfs", "shred"]) {
+        const hit = COMMAND_RULES.find((r) => r.all.every((re) => re.test(`${guess} ${tail}`)));
+        if (hit) {
+          reason ??= `a command whose name is computed at run time would be destructive as \`${guess}\`: ${hit.reason}`;
+          break;
+        }
+      }
+    }
+    if (name === "rm" && args.some((x) => /^-[A-Za-z]*[rR]|^--recursive$/.test(x.text))) {
+      const targets = args.filter((x) => !x.text.startsWith("-"));
+      if (
+        targets.some(
+          (x) =>
+            x.dyn &&
+            !x.temp &&
+            /^["']?\$/.test(x.w.text.replace(/^\$\(\)$/, "$")) &&
+            !/[A-Za-z0-9_.-]\//.test(x.text),
+        )
+      )
+        reason ??=
+          "a recursive delete of a path computed at run time cannot be checked — blocking to fail closed. Ask the user first.";
+    }
+    if (DISK_TOOLS.test(name) || (name === "shred" && args.some((x) => x.text.startsWith("/dev/"))))
+      reason ??= `\`${name}\` formats or wipes a disk or partition. Ask the user first.`;
+    const flags = INLINE_CODE[name] ?? INLINE_CODE[name.replace(/[\d.]+$/, "")];
+    if (flags && depth < MAX_NEST) {
+      for (let j = 0; j < args.length - 1; j++) {
+        if (!flags.includes(args[j].text)) continue;
+        reason ??= inlineProgramReason(args[j + 1].text, fsCtx, depth);
+      }
+    }
+    if (name === "find")
+      reason ??= findExecReason(
+        args.map((x) => ({ ...x.w, text: x.text })),
+        fsCtx,
+      );
+  }
+  return { code: code.slice(1).join(""), full: full.slice(1).join(""), lossy, reason };
+}
+
+/** Programs that read, edit, archive or send the files `find -exec` hands them. */
+const FILE_TOUCHERS = new Set([
+  ...Object.keys({
+    cat: 1,
+    head: 1,
+    tail: 1,
+    less: 1,
+    more: 1,
+    bat: 1,
+    strings: 1,
+    base64: 1,
+    xxd: 1,
+    od: 1,
+  }),
+  ...[
+    "cp",
+    "mv",
+    "tar",
+    "zip",
+    "scp",
+    "rsync",
+    "curl",
+    "grep",
+    "awk",
+    "sed",
+    "vim",
+    "vi",
+    "nano",
+    "tee",
+  ],
+]);
+
+/**
+ * `find . -name .env -exec cat {} \;` reads `.env` without naming it to cat: the files find
+ * selects are the operands of what it runs.
+ * @param {Word[]} args @param {PathCtx} fsCtx
+ */
+function findExecReason(args, fsCtx) {
+  const execAt = args.findIndex((a) => /^-(?:exec|execdir|ok|okdir)$/.test(a.text));
+  if (execAt < 0) return null;
+  const runs = cmdName(args[execAt + 1]?.text ?? "");
+  if (!FILE_TOUCHERS.has(runs) && !READERS[runs]) return null;
+  for (let i = 0; i < execAt; i++) {
+    if (!/^-(?:i?name|i?path|i?wholename)$/.test(args[i].text) || !args[i + 1]) continue;
+    const pattern = args[i + 1].text;
+    if (secretKind(pattern, { ...fsCtx, bash: true }) || globMatchesSecret(pattern, fsCtx))
+      return READ_REASON;
+  }
+  return null;
+}
+
 // ── Destructive-command rules. A command word starts at the line start, after a separator, or
 // after whitespace (so `sudo rm`, `env rm` and `/bin/rm` are all caught).
 const B = "(^|[^A-Za-z0-9_.-])([^\\s;&|]*/)?";
@@ -1049,16 +1455,14 @@ function codeOnlyFilter(glob, type) {
  * PURE decision over one tool call — the testable core. Its one filesystem touch is reading a
  * project `.npmrc` to see whether it holds a token (`readText`, injectable).
  * @param {{toolName?: string, filePath?: string, command?: string, glob?: string, type?: string} & FsCtx} [call]
+ * @param {number} [depth] nesting of inline programs that run commands, for the fail-closed bound
  * @returns {{block: boolean, reason?: string}}
  */
-export function protectPathsDecision({
-  toolName = "",
-  filePath = "",
-  command = "",
-  glob = "",
-  type = "",
-  ...fsCtx
-} = {}) {
+export function protectPathsDecision(
+  { toolName = "", filePath = "", command = "", glob = "", type = "", ...fsCtx } = {},
+  depth = 0,
+) {
+  if (depth > MAX_NEST) return { block: true, reason: NEST_REASON };
   // A plugin install carries no `permissions.deny` block, so for Read/Grep this guard is the
   // only thing between the agent and `.env`.
   const verb = /^(Read|Grep|Glob|NotebookRead)$/.test(String(toolName)) ? "read" : "modify";
@@ -1084,8 +1488,19 @@ export function protectPathsDecision({
   if (cmd) {
     const io = secretShellAccess(cmd, fsCtx);
     if (io) return { block: true, reason: io };
+    // The same checks on the line as the shell will run it (quotes, variables and echo
+    // substitutions resolved), plus the findings only that view shows.
+    const norm = normalizeCommand(cmd, fsCtx, depth);
+    if (norm.reason) return { block: true, reason: norm.reason };
+    const resolved = secretShellAccess(norm.full, fsCtx);
+    if (resolved) return { block: true, reason: resolved };
+    // Destructive patterns read the CODE view, so a commit message or an echoed warning that
+    // mentions `rm -rf /` is not a delete. When the split may have lost structure, the raw
+    // text is judged too.
+    const texts = norm.lossy ? [norm.code, cmd] : [norm.code];
     for (const rule of COMMAND_RULES) {
-      if (rule.all.every((re) => re.test(cmd))) return { block: true, reason: rule.reason };
+      if (texts.some((t) => rule.all.every((re) => re.test(t))))
+        return { block: true, reason: rule.reason };
     }
   }
   return { block: false };

@@ -41,6 +41,7 @@ CI when it falls behind, so it cannot drift from the release notes again.
 
 **Fixed**
 
+- The path guard read many spellings of a dangerous command as harmless: a quoted or escaped name (`"rm" -rf /`), a variable (`R=rm; $R -rf /`, `f=.env; cat $f`), `$(echo rm)`, `find -name .env -exec cat {}`, `source .env`, an editor or archiver, and inline programs ( …
 - `forge verify`'s test-integrity check read a line such as `todo: 0,` in a test's expected data as a newly added skip marker, and marked the change `SUSPECT`.
 - Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations.
 - `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout.
