@@ -8,21 +8,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Ten commands leave the Labs group: `taste`, `uicheck`, `imagine`, `lean`, `anchor`, `diagnose`, `deja`, `reuse`, `rank` and `collide`. Each met the production bar in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md): its help lists every flag it reads and its exit statuses, its flags are checked strictly, and its `--json` output has a versioned contract ([`src/contracts.js`](src/contracts.js)) that CI checks in a fixture repository, together with the rule that the exit status is the same with and without `--json`. `forge --help` and the README table now show them in Substrate, Memory, Quality and Config.
-- `forge taste --json` and `forge anchor set|show|clear --json` print JSON; before, only the drift check had it.
 - `forge cloud` and `forge relay` leave Labs for a new Sync group, which empties Labs. Their help now lists every flag per subcommand and their exit statuses, their flags are checked strictly (`relay push --interval 5` is refused: `--interval` applies to `watch`), and their JSON forms have contracts. `relay read --path <p>` now works as well as `--path=<p>`.
 - The relay client catches a receiver that serves an older authentic snapshot. Each device keeps the revisions it has pushed or read; since the receiver's chain is linear, a revision the device saw before its latest, or one built on such a revision, can only be a replay. `relay read` and `relay list` without `--revision` refuse it, `push --replace-remote` refuses to rebuild on it, and `relay status --remote` reports `history` (`first`, `current`, `newer`, `older`, `fork` or `missing`) with a warning. Before, only a revision received over an independent channel caught a rollback ([docs/CLOUD.md](docs/CLOUD.md#what-the-relay-can-observe)).
 - `forge dash` and `forge report` leave Labs too, for the Core group. `dash --json` prints one line, `{url, port, root}`, once the server is listening, so a script can start it on `--port 0` and find it; the write token is never printed. `report --json` prints `{path, bytes}`. Both have contracts in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md).
 
 ### Changed
 
-- A graduated command now refuses a flag its help does not list, with the nearest one suggested (`unknown flag --jsn (did you mean --json?)`), and exits 1 before doing anything. Before, `deja`, `lean` and `anchor` folded an unknown flag into the task text and the others ignored it. A flag given to the wrong form (`uicheck contrast … --mint`), a value out of range (`rank --top 0`, which used to fall back to 15 silently) and `imagine --sandbox` or `--allow-dirty` without `--run` are refused the same way. Arguments are parsed with Node's built-in `util.parseArgs`, driven by the flag list `--help` prints.
-- `forge uicheck --help` now documents `interact` and the `--remote`, `--record` and `--enforce` flags, and `forge rank --help` documents `--task`; all of them existed but were missing from the help.
-
 - The dashboard page is served with a full Content-Security-Policy: only its own script runs, carrying a nonce minted at each start, it may connect only to its own server, and nothing can be loaded from elsewhere. JSON and the page also carry `X-Content-Type-Options: nosniff`. Before, the policy set only `frame-ancestors`. The page shows ledger text that others wrote, and holds the write token, so an injected script was the case to close.
 - `forge report` writes a Content-Security-Policy and a generator mark into the file. `--out` no longer overwrites a file ForgeKit did not write (add `--force`), and refuses a directory or a missing directory with a reason instead of an `ENOENT` error.
 - A cloud or relay request that cannot reach the receiver now says why, for example `Cloud request to https://relay.example.org failed: ECONNREFUSED. Any pending upload is kept`, instead of the bare `fetch failed` that Node reports.
 - `forge dash` stops cleanly on Ctrl+C or SIGTERM and exits 0, and a port that is in use or not allowed is reported as such (`port 4242 is in use — choose another with --port, or --port 0 for any free port`).
+
+## [1.21.0] - 2026-11-27
+
+### Added
+
+- Ten commands leave the Labs group: `taste`, `uicheck`, `imagine`, `lean`, `anchor`, `diagnose`, `deja`, `reuse`, `rank` and `collide`. Each met the production bar in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md): its help lists every flag it reads and its exit statuses, its flags are checked strictly, and its `--json` output has a versioned contract ([`src/contracts.js`](src/contracts.js)) that CI checks in a fixture repository, together with the rule that the exit status is the same with and without `--json`. `forge --help` and the README table now show them in Substrate, Memory, Quality and Config.
+- `forge taste --json` and `forge anchor set|show|clear --json` print JSON; before, only the drift check had it.
+
+### Changed
+
+- A graduated command now refuses a flag its help does not list, with the nearest one suggested (`unknown flag --jsn (did you mean --json?)`), and exits 1 before doing anything. Before, `deja`, `lean` and `anchor` folded an unknown flag into the task text and the others ignored it. A flag given to the wrong form (`uicheck contrast … --mint`), a value out of range (`rank --top 0`, which used to fall back to 15 silently) and `imagine --sandbox` or `--allow-dirty` without `--run` are refused the same way. Arguments are parsed with Node's built-in `util.parseArgs`, driven by the flag list `--help` prints.
+- `forge uicheck --help` now documents `interact` and the `--remote`, `--record` and `--enforce` flags, and `forge rank --help` documents `--task`; all of them existed but were missing from the help.
 
 ### Fixed
 
@@ -3961,7 +3968,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...HEAD
+[1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
 [1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
 [1.19.4]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.3...v1.19.4
