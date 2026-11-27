@@ -187,6 +187,53 @@ export function loadHarnessConfig(root, { trusted = true } = {}) {
     throw new Error("Review harness/ and run forge harness trust in this worktree");
   return cfg;
 }
+/**
+ * Switch native supervision on or off in one step: write `nativeMode` into
+ * harness/policy.yaml and trust exactly that change. It refuses when the controls already
+ * differ from what was trusted, so it can never be used to trust some other, unreviewed
+ * edit. This is the operator's way out when supervised hosts are stuck, for example behind a
+ * model route that fails: the host's own tools are denied while supervision is on, so an
+ * agent cannot run it, and a person runs it from a terminal.
+ * @param {string} root
+ * @param {"supervised"|"parallel"} mode
+ */
+export function setHarnessNativeMode(root, mode) {
+  if (mode !== "supervised" && mode !== "parallel")
+    throw new Error('Expected "supervised" or "parallel"');
+  const path = join(root, "harness", "policy.yaml");
+  const lock = `${bindingPath(root)}.connect-lock`;
+  const before = loadHarnessConfig(root);
+  if (before.policy.nativeMode === mode)
+    return { root, mode, changed: false, digest: before.digest };
+  try {
+    writeFileSync(lock, String(process.pid), { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (error.code === "EEXIST")
+      throw new Error(
+        `Harness controls are locked at ${lock}. Retry, or remove the lock after checking its process has exited.`,
+      );
+    throw error;
+  }
+  let temp;
+  try {
+    const cfg = loadHarnessConfig(root);
+    const updated = { ...cfg.policy, nativeMode: mode };
+    temp = join(dirname(path), `.forge-mode-${randomUUID()}`);
+    writeFileSync(temp, `${JSON.stringify(updated, null, 2)}\n`, {
+      flag: "wx",
+      mode: lstatSync(path).mode & 0o777,
+    });
+    if (controls(root).digest !== cfg.digest)
+      throw new Error("Harness controls changed while switching; review them and retry");
+    renameSync(temp, path);
+    temp = undefined;
+    const trusted = trustHarness(root, configDigest({ ...cfg, policy: updated }));
+    return { root, mode, changed: true, previous: cfg.policy.nativeMode, digest: trusted.digest };
+  } finally {
+    if (temp) rmSync(temp, { force: true });
+    rmSync(lock, { force: true });
+  }
+}
 // Connect only appends hosts to an already trusted project. Bind the exact intended
 // controls so concurrent edits cannot silently authorize a new route or policy.
 export async function connectHarnessHosts(root, add, wire) {

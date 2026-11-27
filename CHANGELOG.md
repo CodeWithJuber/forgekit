@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `forge harness supervise on|off` switches native supervision in one step: it writes `nativeMode` into `harness/policy.yaml` and trusts exactly that change, and refuses when the controls already differ from what was trusted. Before, turning supervision off meant editing the policy by hand and re-running `forge harness trust` ([docs/HARNESS.md](docs/HARNESS.md#when-a-supervised-host-is-stuck)).
+
+### Fixed
+
+- A supervised checkout whose model route failed left the agent with no way out: every host tool, including reads and Claude Code's question dialog, was denied, and the harness reported only `provider_failed` with `http_404`. Three changes. The run's `reason` now names the route, its model and address, the likely cause and the fix (for a 404 from Ollama, `ollama pull <model>`), built from the route's configuration only, since the provider's reply is never read. Claude Code's `AskUserQuestion` is allowed while supervised, because asking the person reads and writes nothing. And the denial message itself tells the agent what to tell the person: fix the route and run `forge harness trust`, or run `forge harness supervise off`.
+
 ## [1.20.0] - 2026-11-27
 
 ### Added

@@ -105,9 +105,10 @@ export const COMMANDS = {
     summary:
       "run host-neutral supervised tasks with policy, budgets, verification and replayable evidence",
     usage:
-      "forge harness init|connect|trust|routes|run|resume|show|replay|stats|audit|drift|approvals|memory|extensions|jobs|council",
+      "forge harness init|connect|trust|supervise on|off|routes|run|resume|show|replay|stats|audit|drift|approvals|memory|extensions|jobs|council",
     examples: [
       "forge harness init --hosts claude,codex,kimi,generic --supervised",
+      "forge harness supervise off",
       'forge harness run "Fix the retry bug" --accept "Retry tests pass"',
       "forge harness jobs tick",
     ],
