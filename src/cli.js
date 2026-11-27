@@ -1499,8 +1499,37 @@ HANDLERS.impact = async (argv) => {
   console.log(
     `  impacted files: ${r.impactedFiles.length}${parts.length ? `  (nodes: ${parts.join(" · ")})` : ""}`,
   );
-  for (const file of r.impactedFiles.slice(0, 20)) console.log(`    - ${file}`);
-  if (r.impactedFiles.length > 20) console.log(`    … ${r.impactedFiles.length - 20} more`);
+  const { forReview } = await import("./atlas.js");
+  const direct = r.directFiles ?? [];
+  const home = r.definedIn ?? [];
+  const downstream = forReview(
+    r.impactedFiles.filter((f) => !direct.includes(f) && !home.includes(f)),
+  );
+  if (!direct.length || !downstream.length) {
+    // One kind of answer: the plain list, code first.
+    const files = forReview(r.impactedFiles);
+    for (const file of files.slice(0, 20)) console.log(`    - ${file}`);
+    if (files.length > 20) console.log(`    … ${files.length - 20} more`);
+  } else {
+    // Direct references first: they use the target and are what a review reads. Downstream
+    // files only depend on one of them, which is a different, weaker question.
+    if (home.length) console.log(`  defined in: ${home.join(", ")}`);
+    console.log(`\n  direct references: ${direct.length} file(s) use the target itself`);
+    for (const file of direct.slice(0, 20)) console.log(`    - ${file}`);
+    if (direct.length > 20) console.log(`    … ${direct.length - 20} more`);
+    const byHop = Object.entries(r.hops ?? {})
+      .filter(([h]) => Number(h) > 1)
+      .map(([h, n]) => `hop ${h}: ${n}`)
+      .join(" · ");
+    console.log(
+      `\n  downstream: ${downstream.length} more file(s) reach it through a direct reference${byHop ? ` (${byHop})` : ""}`,
+    );
+    for (const file of downstream.slice(0, 5)) console.log(`    - ${file}`);
+    if (downstream.length > 5)
+      console.log(
+        `    … ${downstream.length - 5} more — \`${BRAND.cli} impact ${target} --json\` lists all`,
+      );
+  }
   // Completeness: a blast radius is only as good as the graph under it — say when it isn't.
   if (r.capped)
     console.log(

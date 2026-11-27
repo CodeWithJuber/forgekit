@@ -8,11 +8,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `forge verify` runs Maven and Gradle builds. A `pom.xml` runs `./mvnw -B -fae test` (or `mvn` without a wrapper) and a Gradle build runs `./gradlew test --continue --console=plain` (or `gradle`). The root build covers the modules in its `<modules>` or `settings.gradle` includes, so they are not run again one by one, and each module's result is printed under the suite with Maven's test counts (`pricing=FAIL, orders=PASS`). Before, both were detected and skipped: a Spring Boot repository reported `INCOMPLETE` with zero tests run. Windows keeps them report-only, because the wrappers are `.cmd` scripts and verify never runs a shell.
 - `forge --help` leads with eight Start-here commands (`init`, `doctor`, `sync`, `remember`, `impact`, `verify`, `precommit`, `vet`), each with a one-line reason, and names the rest by group. `forge --help --all` prints every command with its summary, as `--help` did before. The README's Start-here table is generated from the same list.
 - `forge init` ends with four next steps that each show one job working in the repository: `doctor`, `remember`, `impact` and `verify`. `forge demo` ends by pointing at `forge init`.
 
 ### Changed
 
+- `forge impact` lists the **direct references** first, the files that use the target itself, then counts the **downstream** files that reach it only through one of them, by hop. Files are ordered source first, then tests, then docs and config, and the file that defines the target is named on its own line. On this repository `contentHash` reads 26 direct references and 197 downstream files, where before 224 files came in alphabetical order with `.github/` workflows first. `--json` adds `directFiles`, `hops` and `definedIn`; `impactedFiles` is unchanged.
 - The README is now a short first read: 193 lines outside the collapsed command table, against 885 before. The quickstart starts with `forge demo`, which needs no setup, and the page leads with what ForgeKit catches. Status notes, setup, orchestration, advisor pairing, team memory, retrieval and every limit moved to [docs/OVERVIEW.md](docs/OVERVIEW.md); measurements, refutations and the research prototypes moved to [docs/EVIDENCE.md](docs/EVIDENCE.md). `forge docs check` reads both pages for env vars, MCP tools, prices and benchmark figures, as it did for the README.
 - The inventory counts in docs/EVIDENCE.md (commands, hook commands, emitters, skill packs, hook budgets, MCP tools) are generated from the tree by `forge docs render`, and the docs check fails when they fall behind. The README had said 61 commands and 14 emitters; the tree has 64 and 15.
 - The "18,262 B of durable memory to an 826 B index" figure is gone: no measurement procedure or fixture for it was ever recorded. The hook byte budgets it sat next to are in `hooks/budget.json`.
@@ -20,6 +22,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `forge verify`'s test-integrity check read a line such as `todo: 0,` in a test's expected data as a newly added skip marker, and marked the change `SUSPECT`. A falsy option value (`false`, `0`, `null`, `undefined`, an empty string) now marks nothing; `skip: <reason>` and `todo: <reason>` are still caught.
 - Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations. The symbol check now reads added lines of source files only; prose and config stay part of the change.
 - `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout. stdout is now the JSON document alone, the steps go to stderr, and a test parses the whole of stdout.
 - `forge integrations install` failed with "Install npm alongside the Node executable" wherever npm lives outside Node's own directory (a distro package, a version manager, some containers), and six tests failed there too. A built-in reader for `engines.node` ranges now takes over when npm's semver is not beside Node; it agrees with npm's semver on the tested ranges and refuses a range it cannot read instead of guessing.
