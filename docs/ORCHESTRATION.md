@@ -45,14 +45,22 @@ its id, for example `` `[orch.no-polling]` ``, so you know which id to switch.
 | --- | --- | --- | --- |
 | `orch.no-polling` | on | Start long commands in the background and wait for the completion signal. No sleep or poll loops; read results with `tail`/`grep`. | Every poll re-reads the agent's whole context. |
 | `orch.parallel-cap` | on (N = 2) | Run at most N agents in parallel, and never more than the scarcest shared resource (test env, ports, DB, CI runners) can serve. | Extra agents only wait, and waiting costs context re-reads. |
+| `orch.multi-agent-gate` | on | Use sub-agents only when the work splits into independent parts that together exceed one context window; otherwise one agent. | Multi-agent runs cost about 15x the tokens of a chat; most coding has few truly parallel parts. |
+| `orch.split-by-angle` | on | One sub-agent per independent angle, started together within the cap; each brief names objective, output format, tools and sources, and bounds. | Vague briefs duplicate work or leave gaps; parallel starts turn sequential search into one round. |
+| `orch.scale-effort` | on | A fact is one agent and a few tool calls, a comparison two to four sub-agents, deep work more; never more agents than angles. | Unbudgeted research agents spawned many sub-agents for simple questions. |
 | `orch.ci-heavy-checks` | on | Full e2e and integration suites run in CI. Locally, only fast checks (typecheck, lint, unit tests of touched code) before pushing. | A heavy local suite serialises every agent behind it. |
-| `orch.fresh-subagents` | on | One small task per fresh sub-agent; hand back a concise report (what changed, checks, open items), not a transcript. | A small context is cheap to re-read; a short report keeps the lead small too. |
+| `orch.fresh-subagents` | on | One small task per fresh sub-agent; it writes findings to a file and hands back the path and a short report (changes, checks, open items). | A small context is cheap to re-read; a path keeps large output out of the lead's context. |
 | `orch.route-models` | on | Pick each agent's model with `forge route "<task>" --json`; never the top tier by default. | The top tier on routine work was ~140M tokens in one session. |
 | `orch.risk-review` | on | Money, auth, secrets, migrations or security changes ship with tests in the same change and a lead review of the diff. UI-only tests may follow later. | The double-charge race was caught only by a lead's review. |
 | `orch.isolated-env` | on | If local e2e is unavoidable, serialise it behind a lock or give each agent its own ports and database. | Shared state turns into flaky failures that look like real bugs. |
 | `orch.lean-lead` | on | As lead, keep replies to notifications short; do not re-read large files or logs. | The lead's context is re-read on every notification. |
 
 The rule text is generic: no tool or model names. Tool-specific wiring stays in the emitters.
+
+The cap defaults to two because coding agents share a test environment, ports and a database.
+Read-only research (web, docs, a repository nobody writes to) shares none of those, so a
+research team can run three to five at once: `forge orchestration set parallelCap 4` in that
+repository. The `research-method` skill describes the lead's brief and the search order.
 
 A second pack, **Working method** (`source/method.json`, ids `method.*`), follows this one in
 `AGENTS.md` and is switched with the same command (`forge orchestration off method.<id>`, or
