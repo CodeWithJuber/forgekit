@@ -8,10 +8,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `forge harness supervise on|off` switches native supervision in one step: it writes `nativeMode` into `harness/policy.yaml` and trusts exactly that change, and refuses when the controls already differ from what was trusted. Before, turning supervision off meant editing the policy by hand and re-running `forge harness trust` ([docs/HARNESS.md](docs/HARNESS.md#when-a-supervised-host-is-stuck)).
-- `forge dash` and `forge report` leave Labs too, for the Core group. `dash --json` prints one line, `{url, port, root}`, once the server is listening, so a script can start it on `--port 0` and find it; the write token is never printed. `report --json` prints `{path, bytes}`. Both have contracts in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md).
-- `forge cloud` and `forge relay` leave Labs for a new Sync group, which empties Labs. Their help now lists every flag per subcommand and their exit statuses, their flags are checked strictly (`relay push --interval 5` is refused: `--interval` applies to `watch`), and their JSON forms have contracts. `relay read --path <p>` now works as well as `--path=<p>`.
-- The relay client catches a receiver that serves an older authentic snapshot. Each device keeps the revisions it has pushed or read; since the receiver's chain is linear, a revision the device saw before its latest, or one built on such a revision, can only be a replay. `relay read` and `relay list` without `--revision` refuse it, `push --replace-remote` refuses to rebuild on it, and `relay status --remote` reports `history` (`first`, `current`, `newer`, `older`, `fork` or `missing`) with a warning. Before, only a revision received over an independent channel caught a rollback ([docs/CLOUD.md](docs/CLOUD.md#what-the-relay-can-observe)).
 - `forge --help` leads with eight Start-here commands (`init`, `doctor`, `sync`, `remember`, `impact`, `verify`, `precommit`, `vet`), each with a one-line reason, and names the rest by group. `forge --help --all` prints every command with its summary, as `--help` did before. The README's Start-here table is generated from the same list.
 - `forge init` ends with four next steps that each show one job working in the repository: `doctor`, `remember`, `impact` and `verify`. `forge demo` ends by pointing at `forge init`.
 
@@ -21,6 +17,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The inventory counts in docs/EVIDENCE.md (commands, hook commands, emitters, skill packs, hook budgets, MCP tools) are generated from the tree by `forge docs render`, and the docs check fails when they fall behind. The README had said 61 commands and 14 emitters; the tree has 64 and 15.
 - The "18,262 B of durable memory to an 826 B index" figure is gone: no measurement procedure or fixture for it was ever recorded. The hook byte budgets it sat next to are in `hooks/budget.json`.
 - A `forge verify --json` receipt names its signer, a public tag of the profile's evidence key. `forge verify --claim` on a receipt from another profile or machine now reads `UNVERIFIABLE` with "unknown signer on this machine" and the next step (run `forge verify` here), instead of `REFUTED`: a key this machine does not hold says nothing against the claim. A receipt changed after signing is still `REFUTED`.
+
+### Fixed
+
+- Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations. The symbol check now reads added lines of source files only; prose and config stay part of the change.
+- `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout. stdout is now the JSON document alone, the steps go to stderr, and a test parses the whole of stdout.
+- `forge integrations install` failed with "Install npm alongside the Node executable" wherever npm lives outside Node's own directory (a distro package, a version manager, some containers), and six tests failed there too. A built-in reader for `engines.node` ranges now takes over when npm's semver is not beside Node; it agrees with npm's semver on the tested ranges and refuses a range it cannot read instead of guessing.
+
+## [1.22.0] - 2026-11-27
+
+### Added
+
+- `forge harness supervise on|off` switches native supervision in one step: it writes `nativeMode` into `harness/policy.yaml` and trusts exactly that change, and refuses when the controls already differ from what was trusted. Before, turning supervision off meant editing the policy by hand and re-running `forge harness trust` ([docs/HARNESS.md](docs/HARNESS.md#when-a-supervised-host-is-stuck)).
+- `forge dash` and `forge report` leave Labs too, for the Core group. `dash --json` prints one line, `{url, port, root}`, once the server is listening, so a script can start it on `--port 0` and find it; the write token is never printed. `report --json` prints `{path, bytes}`. Both have contracts in [docs/CLI-CONTRACTS.md](docs/CLI-CONTRACTS.md).
+- `forge cloud` and `forge relay` leave Labs for a new Sync group, which empties Labs. Their help now lists every flag per subcommand and their exit statuses, their flags are checked strictly (`relay push --interval 5` is refused: `--interval` applies to `watch`), and their JSON forms have contracts. `relay read --path <p>` now works as well as `--path=<p>`.
+- The relay client catches a receiver that serves an older authentic snapshot. Each device keeps the revisions it has pushed or read; since the receiver's chain is linear, a revision the device saw before its latest, or one built on such a revision, can only be a replay. `relay read` and `relay list` without `--revision` refuse it, `push --replace-remote` refuses to rebuild on it, and `relay status --remote` reports `history` (`first`, `current`, `newer`, `older`, `fork` or `missing`) with a warning. Before, only a revision received over an independent channel caught a rollback ([docs/CLOUD.md](docs/CLOUD.md#what-the-relay-can-observe)).
+
+### Changed
+
 - The dashboard page is served with a full Content-Security-Policy: only its own script runs, carrying a nonce minted at each start, it may connect only to its own server, and nothing can be loaded from elsewhere. JSON and the page also carry `X-Content-Type-Options: nosniff`. Before, the policy set only `frame-ancestors`. The page shows ledger text that others wrote, and holds the write token, so an injected script was the case to close.
 - `forge report` writes a Content-Security-Policy and a generator mark into the file. `--out` no longer overwrites a file ForgeKit did not write (add `--force`), and refuses a directory or a missing directory with a reason instead of an `ENOENT` error.
 - `forge dash` stops cleanly on Ctrl+C or SIGTERM and exits 0, and a port that is in use or not allowed is reported as such (`port 4242 is in use — choose another with --port, or --port 0 for any free port`).
@@ -28,9 +42,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Right after `forge init`, `forge verify` listed English words from the generated `AGENTS.md` and `CLAUDE.md` (and strings in `.mcp.json`) as possible hallucinations. The symbol check now reads added lines of source files only; prose and config stay part of the change.
-- `forge demo --json` printed its three step lines before the JSON, so a standard parser rejected stdout. stdout is now the JSON document alone, the steps go to stderr, and a test parses the whole of stdout.
-- `forge integrations install` failed with "Install npm alongside the Node executable" wherever npm lives outside Node's own directory (a distro package, a version manager, some containers), and six tests failed there too. A built-in reader for `engines.node` ranges now takes over when npm's semver is not beside Node; it agrees with npm's semver on the tested ranges and refuses a range it cannot read instead of guessing.
 - A supervised checkout whose model route failed left the agent with no way out: every host tool, including reads and Claude Code's question dialog, was denied, and the harness reported only `provider_failed` with `http_404`. Three changes. The run's `reason` now names the route, its model and address, the likely cause and the fix (for a 404 from Ollama, `ollama pull <model>`), built from the route's configuration only, since the provider's reply is never read. Claude Code's `AskUserQuestion` is allowed while supervised, because asking the person reads and writes nothing. And the denial message itself tells the agent what to tell the person: fix the route and run `forge harness trust`, or run `forge harness supervise off`.
 
 ## [1.21.0] - 2026-11-27
@@ -3982,7 +3993,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...HEAD
+[1.22.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...v1.22.0
 [1.21.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.20.0...v1.21.0
 [1.20.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.5...v1.20.0
 [1.19.5]: https://github.com/CodeWithJuber/forgekit/compare/v1.19.4...v1.19.5
