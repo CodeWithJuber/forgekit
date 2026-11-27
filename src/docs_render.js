@@ -17,7 +17,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { CHANGELOG_PAGE, renderChangelogPage } from "./changelog_page.js";
-import { commandSummary, GROUPS } from "./commands.js";
+import { commandHelp, commandSummary, GROUPS } from "./commands.js";
+import { CONTRACTS } from "./contracts.js";
 import { HOSTS } from "./hosts.js";
 import { TOOLS } from "./mcp_tools.js";
 import { directedImportGraph } from "./scope.js";
@@ -84,6 +85,31 @@ export function renderGroupsTable() {
     names.map((n) => `\`${BRAND.cli} ${n}\``).join(" · "),
   ]);
   return mdTable(["Group", "Commands"], rows);
+}
+
+/**
+ * The output contracts (src/contracts.js) as a reader sees them: per command form, the
+ * contract version, the fields a script may rely on (`?` = may be null or absent), and the
+ * command's documented exit statuses.
+ */
+export function renderContractsTable() {
+  /** @param {any} spec */
+  const fields = (spec) => {
+    if (spec.type === "array") return `list of ${spec.items ? fields(spec.items) : "values"}`;
+    if (spec.type !== "object" || !spec.props) return spec.type;
+    const required = new Set(spec.required ?? []);
+    return `{${Object.keys(spec.props)
+      .map((k) => (required.has(k) ? k : `${k}?`))
+      .join(", ")}}`;
+  };
+  const rows = Object.entries(CONTRACTS).map(([key, c]) => {
+    const exit = (
+      c.exit?.map(String) ??
+      (commandHelp(key.split(" ")[0])?.exit ?? []).map((e) => e.split(/\s+/)[0])
+    ).join(", ");
+    return [`\`${BRAND.cli} ${key}\``, `v${c.version}`, `\`${fields(c.spec)}\``, exit || "—"];
+  });
+  return mdTable(["Form", "Contract", "Fields a script may rely on", "Exit statuses"], rows);
 }
 
 /** Use the host's event names, including aliases such as Gemini's BeforeAgent. */
@@ -215,6 +241,12 @@ const BLOCK_TARGETS = [
     file: "docs/GUIDE.md",
     name: "mcp-tools",
     render: () => renderMcpToolsTable(),
+    strict: true,
+  },
+  {
+    file: "docs/CLI-CONTRACTS.md",
+    name: "cli-contracts",
+    render: () => renderContractsTable(),
     strict: true,
   },
   {

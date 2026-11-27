@@ -3,10 +3,18 @@
 // no longer ship (or disappear) without the docs check noticing.
 //
 // An entry is EITHER a one-line summary string OR a rich object
-// `{summary, usage?, flags?, examples?, env?}` — both coexist permanently. Read a
+// `{summary, usage?, flags?, examples?, env?, exit?, strict?, subcommands?, defaultSub?}` —
+// both coexist permanently. A flag object may carry `for` (the subcommands it applies to),
+// `values` (an enumeration), `int` ({min, max}), `multiple` (repeatable) and `requires`
+// (another flag it only makes sense with); src/cli/args.js enforces them for strict entries. Read a
 // summary via commandSummary(name) (printHelp is the only value-reader), and the full
 // per-command help via commandHelp(name). docs_check only reads Object.keys(COMMANDS),
 // so migrating a value from string to object never affects the docs reconciler.
+
+/**
+ * @typedef {{flag: string, desc: string, for?: string[], values?: string[],
+ *   int?: {min?: number, max?: number}, multiple?: boolean, requires?: string}} FlagEntry
+ */
 
 export const COMMANDS = {
   relay: {
@@ -96,7 +104,27 @@ export const COMMANDS = {
     ],
     examples: ["forge update --check", "forge update --to 0.19.0"],
   },
-  taste: "enable one UI-taste tool for this repo (no arg = list)",
+  taste: {
+    summary:
+      "pin one visual direction for this repo's UI work by writing a managed DESIGN.md (no style = list them)",
+    usage: "forge taste [<style>] [--json]",
+    strict: true,
+    flags: [
+      {
+        flag: "[<style>]",
+        desc: "the direction to pin; without it the available styles are listed",
+      },
+      {
+        flag: "--json",
+        desc: "machine-readable result: {styles} when listing, {style, action} when pinning",
+      },
+    ],
+    exit: [
+      "0  the styles were listed, or DESIGN.md was written or is already current",
+      "1  unknown style, a DESIGN.md that ForgeKit does not manage (it is left untouched), or a usage error",
+    ],
+    examples: ["forge taste", "forge taste editorial", "forge taste minimalist --json"],
+  },
   atlas: "build / query the code-graph (where-is-Y, has-symbol)",
   stack: "detect this repo's real stack (languages, frameworks, test commands) from its manifests",
   radar:
@@ -294,7 +322,27 @@ export const COMMANDS = {
   },
   spec: "spec-as-contract — init (OpenSpec) / lock / check drift",
   cortex: "self-correcting project memory — status / why <symbol>",
-  deja: "anti-repetition — have you done this task before? ranks prior solved/verified sessions",
+  deja: {
+    summary:
+      "anti-repetition — have you done this task before? ranks prior solved and verified sessions from the ledger",
+    usage: 'forge deja "<task you are about to start>" [--json]',
+    strict: true,
+    flags: [
+      { flag: '"<task>"', desc: "the task you are about to start" },
+      {
+        flag: "--json",
+        desc: "machine-readable list of the closest prior claims: id, kind, score, verified, day and gist",
+      },
+    ],
+    exit: [
+      "0  the ledger was searched, with or without a match",
+      "1  no task given, or a usage error",
+    ],
+    examples: [
+      'forge deja "add pagination to the orders endpoint"',
+      'forge deja "retry on 429" --json',
+    ],
+  },
   ledger:
     "evidence-referenced memory — stats / verify / show / blame / query / compact / at / diff / root / ratify / retract / merge / sync / import",
   claim: {
@@ -313,7 +361,40 @@ export const COMMANDS = {
     ],
     examples: ["forge claim export --pretty", "forge claim export --out claims.json --pretty"],
   },
-  reuse: "proof-carrying code cache — query <spec> / mint <spec> --file <path> / stats",
+  reuse: {
+    summary:
+      "proof-carrying code cache — query a spec for verified code, mint code with its evidence, or show stats",
+    usage:
+      'forge reuse query "<what you are about to build>" [--json] | mint "<task the code solves>" --file <path> [--ref <test-run/commit>] [--json] | stats [--json]',
+    strict: true,
+    subcommands: ["query", "mint", "stats"],
+    defaultSub: "stats",
+    flags: [
+      {
+        flag: "--file <path>",
+        for: ["mint"],
+        desc: "the file that solves the task; its exports and dependency declarations are fingerprinted, so a later signature change invalidates it",
+      },
+      {
+        flag: "--ref <test-run/commit>",
+        for: ["mint"],
+        desc: "the verification that backs it (a test run or commit); without one the artifact stays at the 0.5 prior and is not served",
+      },
+      {
+        flag: "--json",
+        desc: "machine-readable result: the tier and reasons for query, the minted claim for mint, the counters for stats",
+      },
+    ],
+    exit: [
+      "0  query ran (hit or miss), mint stored the artifact, or stats printed",
+      "1  mint refused (for example a file that does not exist); or a usage error",
+    ],
+    examples: [
+      'forge reuse query "parse an ISO-8601 duration"',
+      'forge reuse mint "parse an ISO-8601 duration" --file src/duration.js --ref ci-run-4411',
+      "forge reuse stats --json",
+    ],
+  },
   context: {
     summary:
       "budgeted context assembly + completeness gate — what an edit NEEDS known, delivered or owed",
@@ -439,70 +520,235 @@ export const COMMANDS = {
     summary:
       "parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing",
     usage: "forge collide [<file>…] [--json]",
+    strict: true,
     flags: [
       {
         flag: "[<file>…]",
         desc: "check these files instead of the working diff",
       },
-      { flag: "--json", desc: "machine-readable report" },
+      {
+        flag: "--json",
+        desc: "machine-readable report: risk, the sessions found, and the files in play",
+      },
     ],
+    exit: ["0  always once the check ran: a collision is advice to coordinate, not a failure"],
     examples: ["forge collide", "forge collide src/auth.js --json"],
   },
   rank: {
     summary:
       "load-bearing code — PageRank centrality × past-incident history, circular-dependency clusters, chokepoint files",
-    usage: "forge rank [--top <n>] [--json]",
+    usage: 'forge rank [--top <n>] [--task "<terms>"] [--json]',
+    strict: true,
     flags: [
       {
         flag: "--top <n>",
-        desc: "how many files/symbols to list (default 15)",
+        int: { min: 1 },
+        desc: "how many files and symbols to list (default 15)",
+      },
+      {
+        flag: '--task "<terms>"',
+        desc: "rank around a task: the symbols and files it names seed a personalised PageRank, so the list shows what that task leans on",
       },
       { flag: "--json", desc: "machine-readable full report" },
     ],
-    examples: ["forge rank", "forge rank --top 5 --json"],
+    exit: [
+      "0  the report was computed",
+      "1  no code atlas yet (run `forge atlas build`), or a usage error",
+    ],
+    examples: [
+      "forge rank",
+      "forge rank --top 5 --json",
+      'forge rank --task "change verifyHandshake"',
+    ],
   },
   substrate: "one pre-action gate: assumptions, route, impact, scope, memory, verify",
   scope: "decompose files into independent clusters (+ coupled files you didn't name)",
-  anchor: "goal-drift check — are your actual (git) changes still on the stated goal?",
-  handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
-  decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
-  know: "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
-  diagnose:
-    "doom-loop check — record a failure; 3× the same signature mints a diagnosis + escalation",
-  imagine: "consequence simulation — predicted breaks + the minimal dry-run test suite for a task",
-  lean: "scope-minimality (M5) — measure the diff's footprint vs what the task asked for",
-  uicheck: {
+  anchor: {
     summary:
-      "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url>",
-    usage:
-      "forge uicheck contrast <fg> <bg> [--large] [--json] | fingerprint <file...> [--theme <file>]... [--mint] [--json] | design <file...> [--theme <file>]... [--taste <name>] [--json] | visual <file-or-url> | interact <file-or-url>",
+      "goal-drift check — are your actual (git) changes still on the stated goal? set/show/clear keep the goal across sessions",
+    usage: 'forge anchor ["<goal>"] [--json] | forge anchor set "<goal>" | show | clear [--json]',
+    strict: true,
+    subcommands: ["set", "show", "clear"],
     flags: [
       {
-        flag: "--large",
-        desc: "contrast: grade against the large-text / UI-component bar (AA 3:1) instead of normal text (AA 4.5:1); exit 1 when AA fails either way",
+        flag: '["<goal>"]',
+        desc: "the goal to check the changes against; without it the goal stored by `anchor set` is used",
       },
       {
         flag: "--json",
-        desc: "machine-readable result (contrast: ratio, level, the composited hexes compared, notes; design: verdict pass | fail | insufficient-signal)",
+        desc: "machine-readable result: the drift report, or {goal} for set and show, {cleared} for clear",
+      },
+    ],
+    exit: [
+      "0  the changes were checked, on goal or not (drift is advice); or the goal was set, shown or cleared",
+      "1  no goal given and none stored; `set` refused (empty, or it looks like a secret); or a usage error",
+    ],
+    examples: [
+      'forge anchor set "make the billing export resumable"',
+      "forge anchor",
+      'forge anchor "fix the login redirect" --json',
+      "forge anchor clear",
+    ],
+  },
+  handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
+  decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
+  know: "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
+  diagnose: {
+    summary:
+      "doom-loop check — record a failure; the same signature three times mints a diagnosis and an escalation",
+    usage:
+      'forge diagnose "<error text>" [--file <path>] [--symbol <name>] [--task "<task>"] [--json]',
+    strict: true,
+    flags: [
+      {
+        flag: '"<error text>"',
+        desc: "the failure as it was printed; numbers, paths and hex ids are normalised away before the signature is taken",
+      },
+      { flag: "--file <path>", desc: "the file the failure points at, part of the signature" },
+      { flag: "--symbol <name>", desc: "the symbol the failure points at, part of the signature" },
+      {
+        flag: '--task "<task>"',
+        desc: "the task this failure came from, the same text `forge route` was given; when a routing decision for it is on record, the escalation names that decision's tier",
+      },
+      {
+        flag: "--json",
+        desc: "machine-readable result: signature, count, thrash, and the escalation when there is one",
+      },
+    ],
+    exit: [
+      "0  the failure was recorded, whether or not it crossed the thrash threshold; stopping the retry loop is the agent's move",
+      "1  no error text given, or a usage error",
+    ],
+    examples: [
+      "forge diagnose \"TypeError: cannot read properties of undefined (reading 'id')\" --file src/user.js",
+      'forge diagnose "$(npm test 2>&1 | tail -5)" --task "fix the flaky date test" --json',
+    ],
+  },
+  imagine: {
+    summary:
+      "consequence simulation — predicted breaks and the smallest test suite for a task, optionally run in an isolated checkout",
+    usage: 'forge imagine "<task>" [--run [--sandbox auto|required|off] [--allow-dirty]] [--json]',
+    strict: true,
+    flags: [
+      {
+        flag: '"<task>"',
+        desc: "what you are about to change. Name the symbol (`pushCloud`) or file (`src/cloud_client.js`) it touches: a task that names neither has no targets, and nothing is predicted",
+      },
+      {
+        flag: "--run",
+        desc: "also run the selected tests in a detached git worktree of HEAD and report what they measured",
+      },
+      {
+        flag: "--sandbox <auto|required|off>",
+        values: ["auto", "required", "off"],
+        requires: "--run",
+        desc: "process confinement of the run: auto uses an installed sandbox runtime (srt) when present, required refuses to run without one, off never uses it (default auto)",
+      },
+      {
+        flag: "--allow-dirty",
+        requires: "--run",
+        desc: "run even with uncommitted changes; the run still measures HEAD, so those changes are not in it",
+      },
+      {
+        flag: "--json",
+        desc: "machine-readable prediction; with --run it also carries dryRun with the measured counts and the isolation that applied",
+      },
+    ],
+    exit: [
+      "0  a prediction was made (including none, when the task names no known symbol or file); with --run, the suite ran and produced a verdict, passing or failing",
+      "1  with --run: a dirty working tree without --allow-dirty, --sandbox required with no runtime, or a run that produced no verdict; or a usage error",
+    ],
+    examples: [
+      'forge imagine "add a retry to pushCloud"',
+      'forge imagine "rename parseConfig in src/config.js" --run',
+      'forge imagine "change verifyHandshake" --run --sandbox required --json',
+    ],
+  },
+  lean: {
+    summary:
+      "scope-minimality check — measure the working diff's footprint against what the task asked for",
+    usage: 'forge lean "<task>" [--json]',
+    strict: true,
+    flags: [
+      {
+        flag: '"<task>"',
+        desc: "the task as it was given; abstractions the diff adds that the task does not mention are reported as unrequested",
+      },
+      { flag: "--json", desc: "machine-readable footprint and warnings" },
+    ],
+    exit: [
+      "0  the footprint was measured; warnings are advice and never fail the command",
+      "1  no task given, or a usage error",
+    ],
+    examples: [
+      'forge lean "fix the off-by-one in paginate"',
+      'forge lean "add a --top flag" --json',
+    ],
+  },
+  uicheck: {
+    summary:
+      "deterministic UI checks — contrast <fg> <bg> · fingerprint <file...> · design <file...> · visual <file-or-url> · interact <file-or-url>",
+    usage:
+      "forge uicheck contrast <fg> <bg> [--large] [--json] | fingerprint <file...> [--theme <file>]... [--mint] [--json] | design <file...> [--theme <file>]... [--taste <name>] [--json] | visual <file-or-url> [--taste <name>] [--remote] [--json] | interact <file-or-url> [--record] [--enforce] [--remote] [--json]",
+    strict: true,
+    subcommands: ["contrast", "fingerprint", "design", "visual", "interact"],
+    defaultSub: "contrast",
+    flags: [
+      {
+        flag: "--large",
+        for: ["contrast"],
+        desc: "grade against the large-text / UI-component bar (AA 3:1) instead of normal text (AA 4.5:1)",
       },
       {
         flag: "--theme <file>",
-        desc: "fingerprint/design: the Tailwind theme source(s) — a v4 @theme stylesheet or a tailwind.config — that resolve token utilities (rounded-card, shadow-lift, bg-brand); repeatable; replaces auto-discovery",
+        for: ["fingerprint", "design"],
+        multiple: true,
+        desc: "the Tailwind theme source — a v4 @theme stylesheet or a tailwind.config — that resolves token utilities (rounded-card, shadow-lift, bg-brand); repeatable; replaces auto-discovery; a named file that does not exist is an error",
       },
       {
         flag: "--taste <name>",
-        desc: "design/visual: gate thresholds + checks from a taste profile (default: the style pinned by a forge-taste DESIGN.md)",
+        for: ["design", "visual"],
+        desc: "gate thresholds and checks from a taste profile (default: the style pinned by a forge-taste DESIGN.md)",
       },
       {
         flag: "--mint",
-        desc: "fingerprint: store the vector as the project's design claim (refused, exit 1, when it is empty)",
+        for: ["fingerprint"],
+        desc: "store the vector as the project's design claim, the gate's reference point (refused when the vector is empty)",
       },
+      {
+        flag: "--remote",
+        for: ["visual", "interact"],
+        desc: "allow a non-loopback URL. Without it only files and localhost are opened, because fetching an arbitrary URL can leak data",
+      },
+      {
+        flag: "--record",
+        for: ["interact"],
+        desc: "record the verdict as behavioural evidence for the completion gate",
+      },
+      {
+        flag: "--enforce",
+        for: ["interact"],
+        desc: "make a failing interaction check exit 1 (also FORGE_ENFORCE=1); without it interact is advisory",
+      },
+      {
+        flag: "--json",
+        desc: "machine-readable result (contrast: ratio, level and the composited hexes compared; fingerprint: the feature vector; design and visual: verdict pass | fail | insufficient-signal; interact: the checks)",
+      },
+    ],
+    env: [
+      "FORGE_ENFORCE=1      interact: a failing check exits 1, as with --enforce",
+      "FORGE_PLAYWRIGHT     visual/interact: path to an existing playwright-core install",
+    ],
+    exit: [
+      "0  the check passed; visual or interact found no browser runtime (skipped, reported as such); interact failed without --enforce",
+      "1  contrast below AA; design or visual verdict fail or insufficient-signal; --mint refused; interact failed with --enforce; a named --theme file missing; or a usage error",
     ],
     examples: [
       'forge uicheck contrast "#777" "#fff"',
       'forge uicheck contrast "oklch(0.55 0.1 250)" "#fff" --large --json',
       "forge uicheck design src/components/Card.tsx",
       "forge uicheck design src/components/*.tsx --theme src/app/globals.css",
+      "forge uicheck interact http://localhost:3000 --enforce",
     ],
   },
   dash: {
@@ -581,7 +827,10 @@ export const COMMANDS = {
 // Groups order the --help surface from the stable reliability loop down to experiments.
 // "Labs" is the audit's P1-01 signal: those commands are experimental, not part of the
 // core loop — grouped here so new users see the load-bearing beams first (nothing is
-// removed; the full surface still ships).
+// removed; the full surface still ships). A command leaves Labs when it meets the
+// production bar in docs/CLI-CONTRACTS.md: a strict, complete help entry with documented
+// exit statuses, a versioned --json contract checked in CI (src/contracts.js), and tests
+// of its failure cases.
 export const GROUPS = {
   Core: ["init", "sync", "doctor", "tools", "catalog", "docs", "update", "config"],
   Substrate: [
@@ -602,6 +851,11 @@ export const GROUPS = {
     "demo",
     "precommit",
     "test-select",
+    "imagine",
+    "lean",
+    "anchor",
+    "diagnose",
+    "collide",
   ],
   Memory: [
     "hikmah",
@@ -614,8 +868,10 @@ export const GROUPS = {
     "handoff",
     "decide",
     "know",
+    "deja",
+    "reuse",
   ],
-  Quality: ["scan", "vet", "spec", "harden", "radar", "hooks"],
+  Quality: ["scan", "vet", "spec", "harden", "radar", "hooks", "uicheck", "rank"],
   Config: [
     "prompts",
     "discover",
@@ -626,23 +882,9 @@ export const GROUPS = {
     "cost",
     "budget",
     "models",
-  ],
-  "Labs (experimental)": [
     "taste",
-    "uicheck",
-    "imagine",
-    "lean",
-    "anchor",
-    "diagnose",
-    "dash",
-    "report",
-    "deja",
-    "reuse",
-    "rank",
-    "collide",
-    "cloud",
-    "relay",
   ],
+  "Labs (experimental)": ["dash", "report", "cloud", "relay"],
 };
 
 /** Commands that exist but are deliberately not advertised in --help or docs tables. */
@@ -665,18 +907,37 @@ export function commandSummary(name) {
  * Normalized per-command help — always the full shape regardless of how the entry was
  * authored. A string entry yields its summary with empty usage/flags/examples/env.
  * @param {string} name
- * @returns {{summary:string, usage:string, flags:{flag:string,desc:string}[],
- *   examples:string[], env:string[]}|null} null for an unknown command
+ * @returns {{summary:string, usage:string, flags:FlagEntry[], examples:string[], env:string[],
+ *   exit:string[], strict:boolean, subcommands:string[], defaultSub:string|null}|null}
+ *   null for an unknown command
  */
 export function commandHelp(name) {
   const e = COMMANDS[name];
   if (!e) return null;
-  if (typeof e === "string") return { summary: e, usage: "", flags: [], examples: [], env: [] };
+  if (typeof e === "string")
+    return {
+      summary: e,
+      usage: "",
+      flags: [],
+      examples: [],
+      env: [],
+      exit: [],
+      strict: false,
+      subcommands: [],
+      defaultSub: null,
+    };
   return {
     summary: e.summary ?? "",
     usage: e.usage ?? "",
     flags: Array.isArray(e.flags) ? e.flags : [],
     examples: Array.isArray(e.examples) ? e.examples : [],
     env: Array.isArray(e.env) ? e.env : [],
+    // A strict command has every flag it reads listed above, so src/cli/args.js refuses any
+    // other; `exit` documents its exit statuses; `subcommands` and `defaultSub` let a flag
+    // name the forms it applies to (`for`).
+    exit: Array.isArray(e.exit) ? e.exit : [],
+    strict: e.strict === true,
+    subcommands: Array.isArray(e.subcommands) ? e.subcommands : [],
+    defaultSub: e.defaultSub ?? null,
   };
 }

@@ -727,7 +727,9 @@ test("cli: `--theme <file>` names the theme explicitly; a valueless --theme is a
   assert.deepEqual(out.theme.sources, [".design/theme.css"]);
   const bad = runCli(["uicheck", "design", "Token.tsx", "--theme"], cwd);
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /usage: .*--theme <css\|tailwind\.config>/);
+  // Refused by the strict argument guard before the handler runs (src/cli/args.js).
+  assert.match(bad.stderr, /--theme needs a value <file>/);
+  assert.equal(bad.stdout, "");
   const ghost = runCli(["uicheck", "design", "Token.tsx", "--theme", "nope.css"], cwd);
   assert.equal(ghost.status, 1, "a named theme that isn't there is an error, not a no-op");
   assert.match(ghost.stderr, /theme source not found: nope\.css/);
