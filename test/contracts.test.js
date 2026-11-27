@@ -9,7 +9,7 @@
 // so the strict guard (src/cli/args.js) cannot refuse a flag the command actually uses.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
@@ -40,7 +40,9 @@ const put = (rel, text) => {
 const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
 
 before(() => {
-  root = mkdtempSync(join(tmpdir(), "forge-contracts-"));
+  // The real path: on macOS the temp directory is a symlink (/var → /private/var), and the
+  // CLI reports paths from its own working directory, which is always resolved.
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "forge-contracts-")));
   git("init", "-q");
   git("config", "user.email", "contracts@test.invalid");
   git("config", "user.name", "contracts");
