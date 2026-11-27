@@ -320,20 +320,23 @@ finding: [docs/ORCHESTRATION.md](ORCHESTRATION.md).
 #### The working method — how any agent works through a problem
 
 A second pack, **Working method** (`source/method.json`), follows the orchestration rules in
-`AGENTS.md`. Its fourteen short rules apply to any task, not only to a lead running sub-agents:
+`AGENTS.md`. Its seventeen short rules apply to any task, not only to a lead running sub-agents:
 
 | Id | Rule, in short |
 | --- | --- |
 | `method.goal-and-means` | Check that the goal is right and that the context, tools and access are there; fix the missing one first. |
 | `method.evidence-first` | Act on what you checked, and check a claim's source before relying on it. |
 | `method.thinking-traps` | Watch habit, the easy fix dressed as the right one, and untested assumptions. |
+| `method.rule-out-then-rank` | Strike the options that break a hard limit, then rank the rest by benefit, certainty and cost. |
 | `method.isolate` | Read the log and inputs, then change one thing at a time until the cause is isolated. |
+| `method.confirm-effect` | After each action, check the state changed; if not, choose a different action. |
 | `method.proof-of-done` | Done needs a check that failed before and passes now. |
 | `method.smallest-cases` | Test empty, zero, null, boundaries, time zones, leap days, Unicode and right-to-left text. |
 | `method.write-it-down` | Write scope, acceptance criteria and interfaces before the work. |
 | `method.no-harmful-shortcut` | Never reach green by breaking a rule or a user. |
 | `method.fix-without-breaking` | Keep public contracts stable, keep security fixes minimal, phase a break. |
 | `method.consult` | Get an independent review for high-stakes choices; reconcile conflicts on evidence. |
+| `method.plain-code-first` | Do mechanical steps in plain code or a tool; keep model reasoning for the ambiguous parts. |
 | `method.pointers-not-summaries` | Hand work on with file-and-line or hash pointers, not retold summaries. |
 | `method.supersede-stale` | When a decision changes, replace the old fact and keep it only in history. |
 | `method.say-what-is-missing` | Name the missing context instead of guessing. |

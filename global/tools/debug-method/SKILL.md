@@ -47,3 +47,7 @@ diagnosis, and the doom-loop hook stops the session from patching blindly. At th
 Feed every linter error, compiler message and test failure back into the next attempt
 verbatim. The agent that reads its own failures and corrects course converges; the one that
 retries the same edit does not.
+
+Confirm each step had an effect before taking the next one. Compare the state before and
+after: the file content, the exit code, the URL or page, the row count. A step that changed
+nothing is a signal to choose a different step, not to repeat it.

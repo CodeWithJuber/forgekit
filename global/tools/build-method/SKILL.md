@@ -50,6 +50,9 @@ what "done" means. Agents and people both drift when the terms live only in a co
 | Self-correction | Feed lint, compiler and test output back so the agent fixes its own work. |
 | Monitoring | Heartbeats and timeouts for every running agent; notice when one goes missing. |
 | Sub-agents | Gather and report, do not change state early. Verify a sub-agent's report with a deterministic check before acting on it. |
+| Plain code first | Do clear, mechanical steps (a known form field, a pager, a cookie banner, a file rename) with plain code or a tool. Call the model only where the state is ambiguous, and give it a pruned view: the few candidates that matter, not the whole page or log. |
+| Choosing | List the options, strike the ones that break a hard limit (harm, the contract, the evidence), then rank what is left by benefit, certainty and cost. |
+| Confirming | After each action, check that the state changed. A no-op means choose another action; never repeat a dead one. |
 
 ForgeKit supplies the gates: the harness runs supervised tasks with approvals and budgets
 (`forge harness`), and `forge prompts show <role>` prints portable role briefs.
