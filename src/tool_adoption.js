@@ -221,7 +221,8 @@ export function unregisterCatalogTool(root, id) {
 }
 
 // npm already ships node-semver. Resolve from the npm installation paired with the
-// current Node executable, never from project-controlled node_modules or PATH.
+// current Node executable, never from project-controlled node_modules or PATH. `null` when
+// npm is installed somewhere else (a distro package, a version manager, a container image).
 function npmCliPath() {
   const dir = dirname(process.execPath);
   const paths = [
@@ -230,13 +231,110 @@ function npmCliPath() {
     join(dir, "..", "share", "nodejs", "npm", "bin", "npm-cli.js"),
   ];
   const path = paths.find((p) => existsSync(p));
-  if (!path) throw new Error("Install npm alongside the Node executable");
-  return realpathSync(path);
+  return path ? realpathSync(path) : null;
 }
+
+/** "1", "1.2", "1.2.3", "1.x", "*" → [major, minor, patch], a wildcard part as null. */
+function partialVersion(text) {
+  const m = /^v?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?$/.exec(text);
+  if (!m) return null;
+  const parts = [m[1], m[2], m[3]].map((p) =>
+    p === undefined || /^[xX*]$/.test(p) ? null : Number(p),
+  );
+  for (let i = 1; i < 3; i++) if (parts[i - 1] === null) parts[i] = null;
+  return parts;
+}
+const fill = (p) => p.map((n) => n ?? 0);
+const cmpVersion = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+/** The first version past every version `p` matches: 1.2 → 1.3.0, 1 → 2.0.0. */
+const bumpPartial = (p) =>
+  p[1] === null ? [p[0] + 1, 0, 0] : p[2] === null ? [p[0], p[1] + 1, 0] : [p[0], p[1], p[2] + 1];
+
+/**
+ * One comparator ("^20.1", ">=18", "~1.2", "1.x", "20") as [low, lowInclusive, high,
+ * highInclusive] bounds, `null` for an open side. `undefined` when it cannot be read.
+ * @param {string} c
+ */
+function comparatorBounds(c) {
+  const m = /^(\^|~|>=|<=|>|<|=)?(.*)$/.exec(c);
+  if (!m) return undefined;
+  const op = m[1] ?? "";
+  const p = partialVersion(m[2]);
+  if (!p) return undefined;
+  if (p[0] === null) return op === "<" || op === ">" ? [[0, 0, 0], true, [0, 0, 0], false] : [];
+  const low = fill(p);
+  switch (op) {
+    case "":
+    case "=":
+      return p[2] === null ? [low, true, bumpPartial(p), false] : [low, true, low, true];
+    case ">=":
+      return [low, true, null, false];
+    case ">":
+      return p[2] === null ? [bumpPartial(p), true, null, false] : [low, false, null, false];
+    case "<":
+      return [null, false, low, false];
+    case "<=":
+      return p[2] === null ? [null, false, bumpPartial(p), false] : [null, false, low, true];
+    case "~":
+      return [low, true, p[1] === null ? [p[0] + 1, 0, 0] : [p[0], p[1] + 1, 0], false];
+    default: {
+      // ^: keep the left-most non-zero part fixed.
+      const high =
+        p[0] > 0 || p[1] === null
+          ? [p[0] + 1, 0, 0]
+          : p[1] > 0 || p[2] === null
+            ? [0, p[1] + 1, 0]
+            : [0, 0, p[2] + 1];
+      return [low, true, high, false];
+    }
+  }
+}
+
+/**
+ * Does a release version satisfy an `engines.node` range? Covers the range grammar packages
+ * use for Node: `||` alternatives, space-joined comparators, hyphen ranges, x-ranges and
+ * partial versions, `^` and `~`. `null` for a range it cannot read (a prerelease tag, say),
+ * so the caller can refuse rather than guess. Used when npm's own semver is not reachable.
+ * @param {string} range @param {string} version a release version such as "22.23.5"
+ * @returns {boolean|null}
+ */
+export function nodeRangeFits(range, version) {
+  const v = partialVersion(String(version).trim());
+  if (!v || v.includes(null)) return null;
+  let readable = true;
+  const fits = String(range)
+    .split("||")
+    .some((alt) => {
+      const norm = alt.trim().replace(/([<>=^~]+)\s+/g, "$1");
+      const hyphen = /^(\S+)\s+-\s+(\S+)$/.exec(norm);
+      const comparators = hyphen ? [`>=${hyphen[1]}`, `<=${hyphen[2]}`] : norm.split(/\s+/);
+      return comparators.every((c) => {
+        if (!c) return true;
+        const b = comparatorBounds(c);
+        if (b === undefined) {
+          readable = false;
+          return false;
+        }
+        if (!b.length) return true;
+        const [low, lowIn, high, highIn] = b;
+        if (low && (lowIn ? cmpVersion(v, low) < 0 : cmpVersion(v, low) <= 0)) return false;
+        if (high && (highIn ? cmpVersion(v, high) > 0 : cmpVersion(v, high) >= 0)) return false;
+        return true;
+      });
+    });
+  return fits ? true : readable ? false : null;
+}
+
 function nodeFits(range, runtime) {
   if (!range || range === "*") return true;
-  const npmRequire = createRequire(npmCliPath());
-  return npmRequire("semver").satisfies(runtime, range);
+  const cli = npmCliPath();
+  if (cli) return createRequire(cli)("semver").satisfies(runtime, range);
+  const fits = nodeRangeFits(range, runtime);
+  if (fits === null)
+    throw new Error(
+      `Cannot read engines.node "${range}" without npm's semver: install npm alongside the Node executable, or pass an exact --version`,
+    );
+  return fits;
 }
 
 function repoURL(raw) {

@@ -3,7 +3,7 @@
 // needed when the tree is unchanged (the MAC'd, fingerprint-bound stamp IS the evidence).
 import assert from "node:assert/strict";
 import { execFileSync, execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -134,4 +134,40 @@ test("signProvenance still round-trips through verifyClaim (B7 binding intact)",
   assert.ok(stamp.signature, "signed");
   const r = verifyClaim({ provenance: stamp, tests: { status: "PASS" }, ok: true }, { cwd: dir });
   assert.equal(r.verdict, "CONFIRMED");
+});
+
+test("a receipt from another profile is an unknown signer, not REFUTED (developer handoff)", () => {
+  const dir = gitRepo();
+  const saved = process.env.FORGE_HOME;
+  const profileA = mkdtempSync(join(tmpdir(), "forge-profile-a-"));
+  const profileB = mkdtempSync(join(tmpdir(), "forge-profile-b-"));
+  try {
+    process.env.FORGE_HOME = profileA; // the first developer mints the receipt
+    const receipt = receiptFor(dir);
+    assert.match(receipt.provenance.signer, /^[0-9a-f]{16}$/, "the receipt names its signer");
+    assert.ok(
+      !JSON.stringify(receipt).includes(
+        readFileSync(join(profileA, "evidence.key"), "utf8").trim(),
+      ),
+    );
+    process.env.FORGE_HOME = profileB; // the reviewer checks it on the same tree
+    const r = verifyClaim(receipt, { cwd: dir });
+    assert.equal(r.verdict, "UNVERIFIABLE");
+    assert.equal(r.signature, "UNAVAILABLE");
+    assert.equal(r.tree, "MATCHED");
+    assert.match(r.reason, /unknown signer on this machine/);
+    assert.match(r.reason, /run `forge verify` here/);
+    // The reviewer's own run is then checkable on this profile.
+    assert.equal(verifyClaim(receiptFor(dir), { cwd: dir }).verdict, "CONFIRMED");
+    // A tampered receipt from this profile is still REFUTED: the signer name matches.
+    const mine = receiptFor(dir);
+    mine.provenance.tests.status = mine.provenance.tests.status === "PASS" ? "FAIL" : "PASS";
+    assert.equal(verifyClaim(mine, { cwd: dir }).verdict, "REFUTED");
+    // And a foreign receipt on a changed tree is STALE, with the re-run as the next step.
+    writeFileSync(join(dir, "c.js"), "export const c = 3;\n");
+    assert.equal(verifyClaim(receipt, { cwd: dir }).verdict, "STALE");
+  } finally {
+    if (saved === undefined) delete process.env.FORGE_HOME;
+    else process.env.FORGE_HOME = saved;
+  }
 });

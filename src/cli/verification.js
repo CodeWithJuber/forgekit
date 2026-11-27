@@ -688,15 +688,18 @@ HANDLERS.demo = async (argv) => {
   // FAILED) and the fix verified — a demo that never fails proves nothing.
   const { demo } = await import("../demo.js");
   const json = argv.includes("--json");
-  heading(`${BRAND.brand} demo — the verification gate, live\n`);
-  const r = demo({ onStep: json ? undefined : (m) => console.log(`  ${m}`) });
-  for (const s of r.steps) console.log(`  ${s.name}: ${s.status}`);
+  // With --json, stdout carries the one JSON document and nothing else, so a script or an
+  // agent can parse it whole; the step lines still go to stderr for a person watching.
+  const say = json ? (m) => console.error(m) : (m) => console.log(m);
+  if (!json) heading(`${BRAND.brand} demo — the verification gate, live\n`);
+  const r = demo({ onStep: json ? undefined : (m) => say(`  ${m}`) });
+  for (const s of r.steps) say(`  ${s.name}: ${s.status}`);
   if (json) {
     console.log(JSON.stringify({ ok: r.ok, steps: r.steps }, null, 2));
   } else {
     console.log(
       r.ok
-        ? `\n  The gate caught the defect and confirmed the fix.`
+        ? `\n  The gate caught the defect and confirmed the fix.\n\n  Next, in your own repo: \`${BRAND.cli} init\`, then \`${BRAND.cli} verify\` after a change.`
         : `\n  DEMO FAILED — the gate did not behave as scripted (see steps above).`,
     );
   }

@@ -15,7 +15,17 @@ import { KNOWN_TOOLS } from "./repo_config.js";
 import { git } from "./util.js";
 
 /** The user-facing prose docs every claim is reconciled against. */
-const DOC_FILES = ["README.md", "docs/GUIDE.md", "ARCHITECTURE.md", "ROADMAP.md"];
+// The prose docs every reconciler reads. docs/OVERVIEW.md and docs/EVIDENCE.md hold what the
+// README carried before it was cut to a short first read, so their env vars, MCP tools, prices
+// and benchmark figures stay checked.
+const DOC_FILES = [
+  "README.md",
+  "docs/OVERVIEW.md",
+  "docs/EVIDENCE.md",
+  "docs/GUIDE.md",
+  "ARCHITECTURE.md",
+  "ROADMAP.md",
+];
 
 // Env vars read in src that are NOT user-facing contract: child-process plumbing and
 // values injected by host tools rather than set by users.
@@ -438,8 +448,14 @@ function measuredTimings(root) {
 function checkBenchmarks(root, docs, issues) {
   const measured = measuredTimings(root);
   if (!measured.size) return;
-  const readme = docs["README.md"] || "";
-  for (const bold of readme.matchAll(/\*\*([^*]+)\*\*/g)) {
+  for (const file of ["README.md", "docs/OVERVIEW.md", "docs/EVIDENCE.md"]) {
+    checkBoldTimings(file, docs[file] || "", measured, issues);
+  }
+}
+
+/** One doc's bold `N ms` runs against the measured set. */
+function checkBoldTimings(file, text, measured, issues) {
+  for (const bold of text.matchAll(/\*\*([^*]+)\*\*/g)) {
     const run = bold[1];
     for (const m of run.matchAll(/(\d+(?:\.\d+)?)\s*ms\b/g)) {
       const num = `${m[1]} ms`;
@@ -447,7 +463,7 @@ function checkBenchmarks(root, docs, issues) {
       issues.push({
         check: "benchmarks",
         severity: "error",
-        detail: `README claims "${run.trim()}" but no row in reports/benchmarks.md measures ${num}`,
+        detail: `${file} claims "${run.trim()}" but no row in reports/benchmarks.md measures ${num}`,
       });
     }
   }
