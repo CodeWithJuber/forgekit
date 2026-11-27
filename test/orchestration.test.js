@@ -328,3 +328,57 @@ test("CLI: list, off, set --global, and errors exit non-zero", () => {
   assert.equal(run("orchestration", "set", "route.topTier", "always").status, 1);
   assert.equal(run("orchestration", "frobnicate").status, 1);
 });
+
+// ---------------------------------------------------------------------------
+// The working-method pack (source/method.json): same layering, same switch.
+// ---------------------------------------------------------------------------
+test("method pack: stable ids, short generic text, every rule on by default", async () => {
+  const { loadMethodPack, methodRuleIds, resolveMethod } = await import("../src/orchestration.js");
+  const pack = loadMethodPack();
+  assert.equal(pack.id, "method");
+  assert.equal(new Set(methodRuleIds()).size, methodRuleIds().length, "ids are unique");
+  for (const r of pack.rules) {
+    assert.match(r.id, /^method\.[a-z-]+$/);
+    assert.ok(r.text.length > 20 && r.text.length < 200, `${r.id}: short text`);
+    assert.ok(r.rationale.length > 20, `${r.id}: has a rationale`);
+    assert.doesNotMatch(r.text, /claude|codex|cursor|gemini|kimi|haiku|sonnet|opus|fable/i);
+  }
+  const state = resolveMethod(fixture(), { global: {}, project: {} });
+  assert.equal(state.enabled, true);
+  assert.ok(state.rules.every((r) => r.enabled && r.source === "default"));
+  const minimal = resolveMethod(fixture(), { global: {}, project: { profile: "minimal" } });
+  assert.equal(minimal.enabled, false, "the minimal profile keeps it out");
+});
+
+test("method pack: switched with forge orchestration, by rule or as a whole, and synced", async () => {
+  const { methodSection } = await import("../src/orchestration.js");
+  freshHome();
+  const root = fixture();
+  sync({ targetRoot: root });
+  let agents = agentsMd(root);
+  assert.match(agents, /## Working method/);
+  assert.ok(agents.includes("[method.isolate]"));
+  assert.ok(Buffer.byteLength(agents) < 12 * 1024, "both packs stay under the 12 KiB budget");
+  // One rule off: written under the `method` key, gone from AGENTS.md on the next sync.
+  const off = setRule(root, "method.smallest-cases", false);
+  assert.equal(off.ok, true);
+  const cfg = JSON.parse(readFileSync(join(root, ".forge", "forge.config.json"), "utf8"));
+  assert.equal(cfg.method.rules["method.smallest-cases"], false);
+  assert.equal(cfg.orchestration, undefined, "the orchestration key is left alone");
+  sync({ targetRoot: root });
+  agents = agentsMd(root);
+  assert.ok(!agents.includes("[method.smallest-cases]"));
+  assert.ok(agents.includes("[method.isolate]"));
+  // The whole pack off with the `method` id; orchestration rules stay.
+  assert.equal(setRule(root, "method", false).ok, true);
+  assert.equal(methodSection(root), null);
+  sync({ targetRoot: root });
+  agents = agentsMd(root);
+  assert.doesNotMatch(agents, /## Working method/);
+  assert.match(agents, /## Agent orchestration/);
+  // Turning a rule back on switches the pack back on too, with the earlier rule switch kept.
+  assert.equal(setRule(root, "method.isolate", true).ok, true);
+  const { methodRuleIds } = await import("../src/orchestration.js");
+  assert.equal(methodSection(root)?.rules.length, methodRuleIds().length - 1);
+  assert.equal(setRule(root, "method.nope", false).ok, false, "unknown ids are refused");
+});

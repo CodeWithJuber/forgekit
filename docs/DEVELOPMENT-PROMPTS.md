@@ -1,6 +1,6 @@
 # Development prompt profiles
 
-ForgeKit ships the workflows from the supplied *Think Before You Code* guide as one master prompt, nine role briefs and sixteen situation-specific prompts. Every card includes the evidence the agent should return. These instructions guide the agent. Verification receipts and host controls establish which checks actually ran.
+ForgeKit ships the workflows from the supplied *Think Before You Code* guide as one master prompt, twelve role briefs and sixteen situation-specific prompts. Every card includes the evidence the agent should return. These instructions guide the agent. Verification receipts and host controls establish which checks actually ran.
 
 ## Select a profile
 
@@ -47,7 +47,7 @@ Supported session-start hooks add the selected master text. The normal prompt or
 | Repo convention drift | `conventions` | Applicable instructions and mechanical checks |
 | Learning from a task | `learning` | Raw observations, repeated patterns and evaluated guidance |
 
-Use `forge prompts list` for the nine role IDs. For example, `forge prompts show researcher` gives a versioned-source and license checklist, and `forge prompts show reviewer` gives an independent verification brief. The roles are reusable briefs. Selecting a profile alone starts no worker.
+Use `forge prompts list` for the twelve role IDs. For example, `forge prompts show researcher` gives a versioned-source and license checklist, and `forge prompts show reviewer` gives an independent verification brief. Three roles serve a team working on one change: `mediator` settles a disagreement between agents or requirements on evidence, `impact-cartographer` maps the blast radius read-only before anyone edits, and `compatibility-critic` rejects a breaking contract change that has no flag or phased removal. The roles are reusable briefs. Selecting a profile alone starts no worker.
 
 ## Verify test changes
 

@@ -35,8 +35,26 @@ export function loadPack() {
   return packCache;
 }
 
-/** Every rule id in the pack, in source order. */
+let methodCache = null;
+
+/**
+ * The working-method pack (source/method.json): how any agent works through a problem —
+ * goal and means first, evidence over assumption, isolate one change at a time, proof of done,
+ * fix without breaking. Emitted after the orchestration pack and switched with the same
+ * `forge orchestration on|off` (its rule ids start with `method.`; the pack id is `method`).
+ */
+export function loadMethodPack() {
+  if (!methodCache)
+    methodCache = JSON.parse(readFileSync(join(BRAND.root, "source", "method.json"), "utf8"));
+  return methodCache;
+}
+
+/** Every rule id in the orchestration pack, in source order. */
 export const ruleIds = () => loadPack().rules.map((r) => r.id);
+/** Every rule id in the method pack, in source order. */
+export const methodRuleIds = () => loadMethodPack().rules.map((r) => r.id);
+/** Every rule id `forge orchestration on|off` can switch, orchestration first. */
+export const switchableRuleIds = () => [...ruleIds(), ...methodRuleIds()];
 
 const isObj = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
 const unit = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
@@ -129,6 +147,73 @@ export function orchestrationSection(root = process.cwd(), layers) {
   const on = state.rules.filter((r) => r.enabled);
   if (!on.length) return null;
   const pack = loadPack();
+  return { id: pack.id, title: pack.title, rules: on.map((r) => `${r.text} \`[${r.id}]\``) };
+}
+
+/**
+ * The effective method rule set: the same layering as the orchestration pack, read from the
+ * `method` key of each config (`"method": {"enabled": false, "rules": {"method.isolate": false}}`).
+ * The minimal profile keeps it off unless a layer turns it on.
+ * @param {string} [root]
+ * @param {{global?: Record<string, any>, project?: Record<string, any>}} [layers]
+ * @returns {{enabled: boolean, enabledSource: string,
+ *   rules: {id:string, text:string, rationale:string, default:boolean, enabled:boolean,
+ *     source:"default"|"global"|"project"}[]}}
+ */
+export function resolveMethod(root = process.cwd(), layers) {
+  const pack = loadMethodPack();
+  const { global, project } = readLayers(root, layers);
+  const g = isObj(global.method) ? global.method : {};
+  const p = isObj(project.method) ? project.method : {};
+  let enabled = project.profile !== "minimal";
+  let enabledSource = "default";
+  for (const [layer, name] of [
+    [g, "global"],
+    [p, "project"],
+  ]) {
+    if (typeof layer.enabled === "boolean") {
+      enabled = layer.enabled;
+      enabledSource = name;
+    }
+  }
+  const rules = pack.rules.map((r) => {
+    let on = r.default !== false;
+    /** @type {"default"|"global"|"project"} */
+    let source = "default";
+    for (const [layer, name] of /** @type {const} */ ([
+      [g, "global"],
+      [p, "project"],
+    ])) {
+      if (isObj(layer.rules) && typeof layer.rules[r.id] === "boolean") {
+        on = layer.rules[r.id];
+        source = name;
+      }
+    }
+    return {
+      id: r.id,
+      text: r.text,
+      rationale: r.rationale,
+      default: r.default !== false,
+      enabled: on,
+      source,
+    };
+  });
+  return { enabled, enabledSource, rules };
+}
+
+/**
+ * The method section sync appends after the orchestration pack, or null when the pack or every
+ * rule in it is off. Rule text only, like the orchestration section.
+ * @param {string} [root]
+ * @param {{global?: Record<string, any>, project?: Record<string, any>}} [layers]
+ * @returns {{id:string, title:string, rules:string[]}|null}
+ */
+export function methodSection(root = process.cwd(), layers) {
+  const state = resolveMethod(root, layers);
+  if (!state.enabled) return null;
+  const on = state.rules.filter((r) => r.enabled);
+  if (!on.length) return null;
+  const pack = loadMethodPack();
   return { id: pack.id, title: pack.title, rules: on.map((r) => `${r.text} \`[${r.id}]\``) };
 }
 
@@ -237,29 +322,45 @@ function writeLayer(root, global, mutator) {
 }
 
 /**
- * Switch one rule (or `all` rules, or the whole pack with id `pack`) on or off in one layer.
+ * Switch one rule (or `all` rules of both packs, or a whole pack: `pack` for orchestration,
+ * `method` for the working method) on or off in one layer.
  * @param {string} root
- * @param {string} id a rule id, `all`, or `pack`
+ * @param {string} id a rule id, `all`, `pack` or `method`
  * @param {boolean} on
  * @param {{global?: boolean}} [opts]
  * @returns {{ok:true, path:string, ids:string[]}|{ok:false, reason:string}}
  */
 export function setRule(root, id, on, { global = false } = {}) {
-  const known = ruleIds();
-  if (id !== "all" && id !== "pack" && !known.includes(id))
-    return { ok: false, reason: `unknown rule id: ${id} (known: ${known.join(", ")}, all, pack)` };
-  const ids = id === "all" ? known : id === "pack" ? [] : [id];
+  const known = switchableRuleIds();
+  const methodIds = new Set(methodRuleIds());
+  if (id !== "all" && id !== "pack" && id !== "method" && !known.includes(id))
+    return {
+      ok: false,
+      reason: `unknown rule id: ${id} (known: ${known.join(", ")}, all, pack, method)`,
+    };
+  const ids = id === "all" ? known : id === "pack" || id === "method" ? [] : [id];
   const res = writeLayer(root, global, (cfg) => {
-    const o = isObj(cfg.orchestration) ? cfg.orchestration : {};
-    if (id === "pack") o.enabled = on;
-    else {
+    // Each pack keeps its own config key; only the keys this switch touches are written.
+    const touch = (key, mutate) => {
+      const o = isObj(cfg[key]) ? cfg[key] : {};
+      mutate(o);
+      cfg[key] = o;
+    };
+    const switchRules = (o, list) => {
       const rules = isObj(o.rules) ? o.rules : {};
-      for (const r of ids) rules[r] = on;
+      for (const r of list) rules[r] = on;
       o.rules = rules;
       // Turning rules on while the pack is off would change nothing; switch the pack on too.
       if (on && o.enabled === false) o.enabled = true;
+    };
+    if (id === "pack") touch("orchestration", (o) => (o.enabled = on));
+    else if (id === "method") touch("method", (o) => (o.enabled = on));
+    else {
+      const orch = ids.filter((r) => !methodIds.has(r));
+      const meth = ids.filter((r) => methodIds.has(r));
+      if (orch.length) touch("orchestration", (o) => switchRules(o, orch));
+      if (meth.length) touch("method", (o) => switchRules(o, meth));
     }
-    cfg.orchestration = o;
     return cfg;
   });
   if (res.ok === false) return { ok: false, reason: res.reason };

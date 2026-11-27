@@ -116,3 +116,33 @@ test("installable skill packs (skills/forge-*): Agent Skills frontmatter + progr
     }
   }
 });
+
+// The working method and its skills are written in plain, tradition-neutral words: every
+// developer should read them as engineering practice. This keeps that true as they change.
+test("method pack, method skills, role briefs and protocol cards use plain generic words", async () => {
+  const { rolePrompts } = await import("../src/development_prompt_library.js");
+  const { PROTOCOL_CARDS } = await import("../src/intent.js");
+  const problemSolver = read("global/tools/problem-solver/SKILL.md");
+  const agentProtocol = problemSolver.slice(
+    problemSolver.indexOf("## Agent quick protocol"),
+    problemSolver.indexOf("## Core Workflow"),
+  );
+  const texts = {
+    "source/method.json": read("source/method.json"),
+    "problem-solver agent protocol": agentProtocol,
+    ...Object.fromEntries(
+      ["research-method", "debug-method", "build-method", "secure-fix"].map((s) => [
+        s,
+        read(`global/tools/${s}/SKILL.md`),
+      ]),
+    ),
+    "role briefs": JSON.stringify(rolePrompts),
+    "protocol cards": JSON.stringify(PROTOCOL_CARDS),
+  };
+  const terms =
+    /\b(quran|qur'an|tafsir|allah|surah|ayah|ayat|hadith|sunnah|prophet|islam\w*|tabayyun|shura|hudud|burhan|zann|taqlid|mizan|yusr|tadarruj|hadhara|wakalah|amanah|khilafah|fitnah|tawakkul|ihsan|itqan|furqan|nafs|sabr|islah)\b|\b\d{1,3}:\d{1,3}\b/i;
+  for (const [name, text] of Object.entries(texts)) {
+    const hit = text.match(terms);
+    assert.equal(hit, null, `${name} uses "${hit?.[0]}"`);
+  }
+});

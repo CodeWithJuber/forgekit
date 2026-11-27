@@ -54,6 +54,11 @@ its id, for example `` `[orch.no-polling]` ``, so you know which id to switch.
 
 The rule text is generic: no tool or model names. Tool-specific wiring stays in the emitters.
 
+A second pack, **Working method** (`source/method.json`, ids `method.*`), follows this one in
+`AGENTS.md` and is switched with the same command (`forge orchestration off method.<id>`, or
+`off method` for the whole section). Its rules are listed in the
+[guide](GUIDE.md#the-working-method--how-any-agent-works-through-a-problem).
+
 ### Where the rules land
 
 The pack is part of the one canonical source, so it reaches every target the same way the other

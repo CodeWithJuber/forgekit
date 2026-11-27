@@ -317,6 +317,48 @@ The project file wins over the global one, key by key. The minimal profile leave
 unless `orchestration.enabled` is set to `true`. Rules, defaults, evidence and the Kimi Code
 finding: [docs/ORCHESTRATION.md](ORCHESTRATION.md).
 
+#### The working method — how any agent works through a problem
+
+A second pack, **Working method** (`source/method.json`), follows the orchestration rules in
+`AGENTS.md`. Its fourteen short rules apply to any task, not only to a lead running sub-agents:
+
+| Id | Rule, in short |
+| --- | --- |
+| `method.goal-and-means` | Check that the goal is right and that the context, tools and access are there; fix the missing one first. |
+| `method.evidence-first` | Act on what you checked, and check a claim's source before relying on it. |
+| `method.thinking-traps` | Watch habit, the easy fix dressed as the right one, and untested assumptions. |
+| `method.isolate` | Read the log and inputs, then change one thing at a time until the cause is isolated. |
+| `method.proof-of-done` | Done needs a check that failed before and passes now. |
+| `method.smallest-cases` | Test empty, zero, null, boundaries, time zones, leap days, Unicode and right-to-left text. |
+| `method.write-it-down` | Write scope, acceptance criteria and interfaces before the work. |
+| `method.no-harmful-shortcut` | Never reach green by breaking a rule or a user. |
+| `method.fix-without-breaking` | Keep public contracts stable, keep security fixes minimal, phase a break. |
+| `method.consult` | Get an independent review for high-stakes choices; reconcile conflicts on evidence. |
+| `method.pointers-not-summaries` | Hand work on with file-and-line or hash pointers, not retold summaries. |
+| `method.supersede-stale` | When a decision changes, replace the old fact and keep it only in history. |
+| `method.say-what-is-missing` | Name the missing context instead of guessing. |
+| `method.finish` | Once tested, carry the plan out, then record the result and the lesson. |
+
+It is switched with the same command: `forge orchestration off method.smallest-cases` turns one
+rule off, `forge orchestration off method` drops the whole section, and `forge orchestration`
+lists both packs with the reason for every rule. Its config lives under the `method` key of the
+same files. The minimal profile leaves it out unless `method.enabled` is `true`.
+
+Four skills carry the longer protocols, and the prompt hook names the right one for the kind of
+work it recognizes (see [Auto-use inside an agent](#auto-use-inside-an-agent)):
+
+| Skill | For | Recognized from a prompt as |
+| --- | --- | --- |
+| `debug-method` | a failure: inputs and log first, reproduce, isolate one variable, prove the fix | bugfix |
+| `research-method` | new research: proven vs assumed, look at the real thing, rule out, prove small; plus a five-minute drill for crowded problems | research |
+| `build-method` | agents, apps and UI: contract first, ease, proportional architecture, narrow agent mandates, grounding and memory, testing under pressure | feature |
+| `secure-fix` | a vulnerability: blast radius first, stable interface, smallest diff, phased break, two proofs | security |
+
+`problem-solver` gained a short agent protocol for any other problem: check the goal and the
+means, classify the problem and use its tool, the three thinking traps, five layers in order,
+and four moves for hard moments. When the same test failure repeats three times, the doom-loop
+advisory now points at `debug-method` too.
+
 ### `forge advisor` — a stronger second model at decision points
 
 Claude Code's [advisor tool](https://code.claude.com/docs/en/advisor) pairs the session's main
@@ -2083,7 +2125,7 @@ completion gate and `forge docs sync` diff against. A `--resume` never moves the
 **Intent protocol cards (UserPromptSubmit).** The prompt is classified by the same
 exemplar k-NN math as model routing (labeled examples + overlap similarity — extended by
 adding rows, including Hinglish ones, never by editing regexes). A work intent
-(bugfix / feature / refactor / release) injects a ~6-line protocol card once per run of
+(bugfix / feature / refactor / research / security / release) injects a ~6-line protocol card once per run of
 that intent; questions get no ceremony, and below-confidence prompts get nothing.
 Each card ends with the skills to load and the crew agent to hand work to for that kind
 of work. A message the agent host submits by itself (a subagent's hand-back, a

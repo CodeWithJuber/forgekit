@@ -23,7 +23,7 @@ import opencode from "./emit/opencode.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
-import { orchestrationSection } from "./orchestration.js";
+import { methodSection, orchestrationSection } from "./orchestration.js";
 import {
   hasProjectConfig,
   KNOWN_TOOLS,
@@ -139,7 +139,8 @@ function readLegacyRules(targetRoot) {
  *      (including the deprecated legacy names web-app/backend-service/library/regulated,
  *      which warn once per process) behaves as `standard`, the full source pack (RA-14).
  *   2. disableSections — drop sections by id or title.
- *   3. orchestration — the agent-orchestration pack, rule by rule as configured (orchestration.js).
+ *   3. orchestration — the agent-orchestration pack, rule by rule as configured (orchestration.js),
+ *      then the working-method pack (source/method.json) the same way.
  *   4. advisor — the "Advisor" section, only when Forge's config names an advisor (advisor.js).
  *   5. appends — legacy `.forge/rules.json` sections, then `config.rules` sections.
  */
@@ -171,6 +172,12 @@ function loadRules(targetRoot) {
     Array.isArray(cfg.disableSections) &&
     (cfg.disableSections.includes(orch?.id) || cfg.disableSections.includes(orch?.title));
   if (orch && !dropped) base.sections = [...(base.sections || []), orch];
+  // The working-method pack (source/method.json): same layering, same escape hatches.
+  const meth = methodSection(targetRoot, { global: readUserConfig(), project: cfg });
+  const methDropped =
+    Array.isArray(cfg.disableSections) &&
+    (cfg.disableSections.includes(meth?.id) || cfg.disableSections.includes(meth?.title));
+  if (meth && !methDropped) base.sections = [...(base.sections || []), meth];
   // The advisor section (source/advisor.json): present only when a Forge config layer names an
   // advisor model, so a personal `/advisor` pick never reaches the shared file. Same
   // `disableSections` escape hatch as every other section.

@@ -80,6 +80,8 @@ test("intentCard: FORGE_INTENT=0 disables; cards exist only for work intents", (
     "feature",
     "refactor",
     "release",
+    "research",
+    "security",
   ]);
 });
 
@@ -173,4 +175,21 @@ test("questions and acknowledgements skip pre-action guidance while requests ret
   }
   assert.equal(isDialogueTurn("ambiguous", "question"), true);
   assert.equal(isDialogueTurn("why?", "bugfix"), false);
+});
+
+test("classifyIntent: research and security work get their own protocols", () => {
+  assert.equal(
+    classifyIntent("research a better approach for caching sessions").intent,
+    "research",
+  );
+  assert.equal(classifyIntent("compare the options for a pdf parser").intent, "research");
+  assert.equal(classifyIntent("fix the sql injection in the login form").intent, "security");
+  assert.equal(classifyIntent("rotate the leaked stripe key").intent, "security");
+  assert.equal(classifyIntent("xss vulnerability patch karo").intent, "security");
+  const root = mkdtempSync(join(tmpdir(), "forge-intent-"));
+  assert.match(
+    intentCard(root, "s3", "patch the xss in the profile page"),
+    /Security fix protocol/,
+  );
+  assert.match(intentCard(root, "s3", "research a faster way to index logs"), /Research protocol/);
 });

@@ -15,14 +15,14 @@ export const rolePrompts = [
     id: "planner",
     title: "Planner",
     prompt:
-      "Define the success case and trace affected callers. Compare up to three feasible options, including reuse, with their cost, maintenance, license and downstream effects. Choose the smallest verifiable steps and name what evidence would change the choice.",
+      "Check the goal and the means first: is the outcome right, and are the context, tools and access in place? Define the success case and trace affected callers. Compare up to three feasible options, including reuse, with their cost, maintenance, license and downstream effects. Choose the smallest verifiable steps and name what evidence would change the choice.",
     proof: "Each step has a check, and each hard-to-reverse step has a recovery path and an owner.",
   },
   {
     id: "researcher",
     title: "Researcher and reuse scout",
     prompt:
-      "Check the installed version and first-party docs. Inspect maintained upstream projects and community examples. For each candidate, cite its source, release, license, maintenance history and a minimal fit test. Distinguish observations, reports and open questions.",
+      "List what is proven and what is assumed, and treat each assumption as a hypothesis to test. Check the installed version and first-party docs, then run the real code rather than trusting names. Inspect maintained upstream projects, community examples and mechanisms from other domains. For each candidate, cite its source, release, license, maintenance history and a minimal fit test. Distinguish observations, reports and open questions.",
     proof:
       "The shortlist includes a versioned upstream reference and a reproducible trial for the preferred candidate.",
   },
@@ -37,7 +37,7 @@ export const rolePrompts = [
     id: "debugger",
     title: "Debugger",
     prompt:
-      "Capture the smallest reproducible failure and state a hypothesis with a falsifying observation. Test that observation, fix the cause, and rerun the same reproduction and adjacent tests. Label a workaround and the open cause explicitly.",
+      "Read the full error, the log and the exact inputs before acting, and treat each source as unverified until checked. Capture the smallest reproducible failure and state a hypothesis with a falsifying observation. Change one variable at a time, fix the cause, and rerun the same reproduction, adjacent tests and the smallest edge cases. Label a workaround and the open cause explicitly.",
     proof:
       "Record the failing input, the original failure, the result after the fix and the causal explanation.",
   },
@@ -72,6 +72,30 @@ export const rolePrompts = [
       "Save a scoped, redacted record of observations, commands, outcomes and rejected options. Distinguish a repeated pattern from a single observation. Propose durable guidance only with supporting verification and record contrary evidence.",
     proof:
       "A later reader can trace each proposed rule to dated observations and its evaluation result.",
+  },
+  {
+    id: "mediator",
+    title: "Mediator",
+    prompt:
+      "Settle a disagreement between agents, reviewers or requirements. Write the disputed terms down first. Hear each side's evidence separately, test the claims that conflict, and aim to reconcile rather than to pick a winner. When the positions cannot be reconciled, split the work cleanly by file, owner or task.",
+    proof:
+      "The record lists each side's claims, the checks run on them, the agreed resolution or the clean split, and who owns each part.",
+  },
+  {
+    id: "impact-cartographer",
+    title: "Impact cartographer",
+    prompt:
+      "Read-only. Before anyone edits, map the blast radius of the target: upstream callers, downstream consumers, exported types, shared data, public routes, webhooks and external clients, plus the tests that cover each. List the legitimate users a change could hit and the tests that are missing.",
+    proof:
+      "A blast-radius report naming each affected file, contract and client with its source location, and the coverage gaps.",
+  },
+  {
+    id: "compatibility-critic",
+    title: "Compatibility critic",
+    prompt:
+      "Compare the public contracts before and after the change: function signatures, request and response shapes, status codes, types, schemas, migrations and configuration names. Reject a breaking change that has no flag, no dual support and no phased removal. Require a test that the old valid inputs still behave the same.",
+    proof:
+      "Each contract difference is listed with its location and verdict, and each accepted break names its flag or phase plan.",
   },
   {
     id: "orchestrator",
