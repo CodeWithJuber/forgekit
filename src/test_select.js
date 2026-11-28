@@ -178,6 +178,19 @@ export async function selectTests({ root = process.cwd(), files = [] } = {}) {
       const srcTargets = [...result.srcFiles, ...blast.files.filter((f) => SRC_FILE.test(f))];
       const testTargets = blast.files.filter((f) => TEST_FILE.test(f));
       result.tests = [...new Set([...testTargets, ...mapToTests(root, srcTargets)])].sort();
+      // Runtime evidence: tests recorded executing the changed files (`forge impact --record`)
+      // reach them in ways the graph and the naming convention cannot see.
+      const { loadRuntimeMap, runtimeTests } = await import("./runtime_map.js");
+      const map = loadRuntimeMap(root);
+      if (map) {
+        const seen = runtimeTests(root, map, { files: result.srcFiles, names: [] });
+        const added = seen.tests.filter((t) => !result.tests?.includes(t));
+        if (added.length) {
+          result.tests = [...new Set([...(result.tests ?? []), ...added])].sort();
+          result.reason += ` + ${added.length} test file(s) recorded running this code`;
+        }
+        if (seen.stale.length) result.reason += " (runtime map older than the change)";
+      }
     }
     delete result.srcFiles;
   }
