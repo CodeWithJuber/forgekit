@@ -34,6 +34,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { foldFragments, readFragments } from "../src/changelog_fragments.js";
 import { CHANGELOG_PAGE } from "../src/changelog_page.js";
 import { renderFile } from "../src/docs_render.js";
 import {
@@ -380,8 +381,21 @@ export function applyBump(root, currentVersion, newVersion, date) {
   }
 
   const clRel = "CHANGELOG.md";
-  const changelog = readIfExists(path.join(root, clRel));
+  let changelog = readIfExists(path.join(root, clRel));
   if (changelog !== null) {
+    // changelog.d/: each merged change left its own fragment; fold them into [Unreleased]
+    // first, so the release section holds them, then delete the files.
+    const fragments = readFragments(root) ?? [];
+    if (fragments.length) {
+      changelog = setUnreleasedBody(
+        changelog,
+        foldFragments(extractUnreleased(changelog) ?? "", fragments),
+      );
+      for (const f of fragments) {
+        fs.rmSync(path.join(root, f.file));
+        changed.push(f.file);
+      }
+    }
     write(clRel, rotateChangelog(changelog, newVersion, currentVersion, date));
     // The docs site's changelog page is generated from CHANGELOG.md (docs check fails when
     // it is stale), so the release commit regenerates it: [Unreleased] became this version.
@@ -461,7 +475,11 @@ function main(argv) {
   if (cmd === "auto") {
     const commits = gitCommitsSinceLastTag(root);
     const changelogText = readIfExists(path.join(root, "CHANGELOG.md")) || "";
-    const unreleased = extractUnreleased(changelogText) || "";
+    // Unreleased notes = the [Unreleased] body plus any changelog.d/ fragments.
+    const unreleased = foldFragments(
+      extractUnreleased(changelogText) || "",
+      readFragments(root) ?? [],
+    );
     const hasNotes = Boolean(unreleased.trim());
 
     kind = inferKindFromCommits(commits) || inferKindFromChangelog(unreleased);
