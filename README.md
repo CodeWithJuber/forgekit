@@ -160,8 +160,9 @@ Refutations, boundaries and the research prototypes are in [docs/EVIDENCE.md](do
   [docs/STABILITY.md](docs/STABILITY.md).
 - **Impact is heuristic.** A regex-derived code graph, not a sound call graph: it can miss
   files and over-warn.
-- **Guardrails are defence in depth, not a sandbox.** A creative shell command can still get
-  past a regex guard.
+- **Guardrails are defence in depth, not a sandbox.** Commands are normalized the way the shell
+  reads them (quotes, variables, substitutions, inline programs) before they are judged. It is
+  static analysis: a program the guard cannot evaluate can still get past it.
 - **Memory is external state.** Facts live in files and are retrieved into context; no model is
   retrained.
 
