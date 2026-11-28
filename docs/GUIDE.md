@@ -1446,9 +1446,9 @@ with probabilities, and reconciled with the deterministic rule that already ran 
 | --- | --- | --- | --- |
 | working | which memory items enter the context window | `forge context` / `substrate_check` assembly | drops items it judges unneeded (p < 0.5); required code context is never offered to it |
 | episodic | which prior session is replayed for a new task | the déjà-vu advisory on every prompt | picks a better hit, or stays silent |
-| semantic | is a fact durable, a duplicate, or a contradiction | `forge remember`, `forge know`, `forge_remember` | refuses a one-off (`--force` overrides), skips a duplicate, archives the fact a new one contradicts |
-| procedural | which repeated, test-confirmed work becomes a skill | the Stop hook | installs `.claude/skills/forge-learned-<slug>/` (one per session, eight in all, skillgate-scanned) |
-| forgetting | what is archived | the Stop-hook prune | keeps a memory the idle rule would archive, or archives a stale one (cause `judged`) |
+| semantic | is a fact durable, a duplicate, or a contradiction | `forge remember`, `forge know` (repo facts), `forge_remember` | refuses a one-off (`--force` / `force: true` overrides), skips a duplicate, archives the fact a new one contradicts — unless evidence confirms it, it was used today, or a fact file backs it (then it only reports) |
+| procedural *(opt-in)* | which repeated, test-confirmed work becomes a skill | the Stop hook | installs `.claude/skills/forge-learned-<slug>/` built from keywords, files and ledger ids only — never request text (one a day, eight in all; a removed skill is never re-proposed) |
+| forgetting *(opt-in)* | what is archived | the Stop-hook prune, once a day | keeps a memory the idle rule would archive, or archives a fact/lesson/summary/diagnosis idle 30+ days (cause `judged`); never a decision, never cached code |
 
 Each layer sends **one** call: one `noul` per candidate (48 at most), plus a `choice` where a
 relation is asked. A change to stored memory needs a confident answer (p ≥ 0.8 or ≤ 0.2), and
@@ -1459,10 +1459,13 @@ restores it), every action is journaled in `.forge/jev-memory.jsonl`, and `forge
 --remove <slug>` undoes a learned skill.
 
 **Off by default, and unchanged when off.** Jev needs `TYPESAFE_API_KEY` *and* the decisions
-opt-in (`forge discover setup --decisions on`, `FORGE_LLM=1`, or `--llm` per command).
-`FORGE_JEV_MEMORY=0` turns every layer off; a list such as `working,episodic` keeps only those.
-Without Jev each layer behaves exactly as before, and a failed or timed-out call (2.5 s) falls
-back the same way.
+opt-in (`forge discover setup --decisions on`, `FORGE_LLM=1`, or `--llm` per command). With
+those, the three layers that choose what is read and check a fact as it is written are on. The
+two that change memory on their own from the Stop hook, procedural and forgetting, also need
+`FORGE_JEV_MEMORY=all` (or naming them), so enabling Jev for routing never grants them
+silently. `FORGE_JEV_MEMORY=0` turns every layer off. Without Jev each layer behaves exactly as
+before, and a failed, partly garbled or timed-out call (800 ms on the per-prompt path, 2.5 s
+elsewhere) falls back the same way.
 
 ```console
 $ forge memory admit "make retentionPlan keep claims that were served this week" --llm
@@ -2792,7 +2795,7 @@ code reads but this table misses fails CI on the forge repo):
 | `FORGE_EVIDENCE_WEB` | Set to `1` to enable automatic fixed-vocabulary public research. A separate explicit `--web` query still runs unless all catalog fetching is offline. |
 | `FORGE_NO_CATALOG_FETCH` | `1` never fetches a model catalog (Anthropic Models API, gateway `/v1/models`, OpenRouter prices): ids and prices come from the `.forge/cache/` copy, else the shipped snapshot — for air-gapped machines |
 | `FORGE_DEBUG` | `1` writes fail-safe error details to stderr instead of swallowing them |
-| `FORGE_JEV_MEMORY` | Which memory layers Jev decides (`forge memory`): unset = all five, `0` = none, or a list such as `working,episodic`. Jev itself still needs `TYPESAFE_API_KEY` and the decisions opt-in. |
+| `FORGE_JEV_MEMORY` | Which memory layers Jev decides (`forge memory`): unset = `working,episodic,semantic`; `all` = all five (adds the autonomous `procedural` and `forgetting`); `0` / `off` = none; or a list such as `working,forgetting`. Jev itself still needs `TYPESAFE_API_KEY` and the decisions opt-in. |
 
 ---
 

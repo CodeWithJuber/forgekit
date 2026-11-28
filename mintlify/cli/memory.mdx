@@ -166,9 +166,10 @@ a probability and reconciled with the rule already there:
 - **forgetting**: what is archived to the attic
 
 Jev is off by default. It needs `TYPESAFE_API_KEY` plus the decisions opt-in (or `--llm`);
-without it every layer behaves exactly as before. Stored changes need p ≥ 0.8, stay
-reversible, and are logged in `.forge/jev-memory.jsonl`. `FORGE_JEV_MEMORY=0` turns every layer
-off.
+without it every layer behaves exactly as before. The procedural and forgetting layers change
+memory on their own, so they also need `FORGE_JEV_MEMORY=all`. Stored changes need p ≥ 0.8,
+stay reversible, and are logged in `.forge/jev-memory.jsonl`. `FORGE_JEV_MEMORY=0` turns every
+layer off.
 
 ```bash
 forge memory                       # layers, measured calls, latency, overrides

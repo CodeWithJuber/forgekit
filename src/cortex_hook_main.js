@@ -60,7 +60,8 @@ async function enrichCreated(root, results) {
       const text = `${better.correctedBehavior} — ${better.whatWentWrong}`;
       const route = routeFact(text);
       if ((route.home === "decision" || route.home === "ledger-fact") && route.confidence >= 0.5)
-        storeFact(root, text, { route });
+        // Autonomous: a distilled lesson may be checked, never archive a team fact.
+        storeFact(root, text, { route, archive: false });
     } catch {}
   }
 }

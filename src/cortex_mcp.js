@@ -201,13 +201,21 @@ async function callTool(name, args = {}, host = undefined) {
     // Report what the store actually did: it REFUSES secret-shaped content, and saying
     // "Remembered" over a refusal taught the caller a fact that was never stored. Jev's
     // semantic layer (opt-in) may also refuse a one-off or skip a duplicate — say so too.
-    const r = rememberVerified(root, String(args.name ?? ""), String(args.body ?? ""));
-    if (!r.ok) return `Not remembered — ${r.reason ?? "the store refused the write"}.`;
+    const r = rememberVerified(root, String(args.name ?? ""), String(args.body ?? ""), {
+      force: args.force === true,
+    });
+    if (!r.ok)
+      return r.refused
+        ? `Not remembered — ${r.reason}. Call again with force: true to store it anyway.`
+        : `Not remembered — ${r.reason ?? "the store refused the write"}.`;
     if (r.duplicate) return `Not stored again — ${r.reason}.`;
-    const archived = r.superseded
-      ? ` Archived the contradicted fact "${r.superseded.name ?? r.superseded.id.slice(0, 8)}".`
-      : "";
-    return `Remembered "${args.name}" in ${store}.${archived}`;
+    const other = r.superseded ?? r.contradicts;
+    const note = r.superseded
+      ? ` Archived the contradicted fact "${other.name ?? other.id.slice(0, 8)}".`
+      : r.contradicts
+        ? ` It contradicts "${other.name ?? other.id.slice(0, 8)}", which was kept because ${r.kept}.`
+        : "";
+    return `Remembered "${args.name}" in ${store}.${note}`;
   }
   if (name === "collide_check") {
     const { collideReport } = await import("./collide.js");

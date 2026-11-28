@@ -310,10 +310,15 @@ export function factName(text) {
  * @param {string} root repo root
  * @param {string} text the fact
  * @param {{mode?:"auto"|"advise", route?:ReturnType<typeof routeFact>, force?:boolean,
- *   llm?:boolean, call?:(payload:object)=>object}} [opts]
+ *   llm?:boolean, call?:(payload:object)=>object, archive?:boolean}} [opts] archive: false
+ *   never archives a contradicted fact (autonomous callers)
  * @returns {{ok:boolean, home:string, stored:boolean, reason?:string, refused?:boolean, ref?:string, advice?:string, duplicate?:boolean, superseded?:string}}
  */
-export function storeFact(root, text, { mode = "auto", route, force = false, llm, call } = {}) {
+export function storeFact(
+  root,
+  text,
+  { mode = "auto", route, force = false, llm, call, archive = true } = {},
+) {
   const body = String(text ?? "")
     .trim()
     .replace(/\s+/g, " ");
@@ -338,16 +343,19 @@ export function storeFact(root, text, { mode = "auto", route, force = false, llm
         ? { ok: true, home: r.home, stored: true, ref: d.id }
         : { ok: false, home: r.home, stored: false, reason: d.reason };
     }
-    const check = force
-      ? null
-      : verifyFact(root, { name: factName(body), text: body }, { llm, call });
+    // The semantic layer checks REPO facts only: a recall note is personal and cross-repo,
+    // so this repo's ledger is the wrong yardstick for "duplicate" or "transient".
+    const check =
+      force || r.home === "recall"
+        ? null
+        : verifyFact(root, { name: factName(body), text: body }, { llm, call });
     if (check?.verdict === "transient")
       return {
         ok: false,
         home: r.home,
         stored: false,
         refused: true,
-        reason: `not stored — ${check.reason}; pass --force to store it anyway`,
+        reason: `not stored — ${check.reason}${check.p == null ? "" : ` (p=${check.p.toFixed(2)})`}; pass --force to store it anyway`,
       };
     if (check?.verdict === "duplicate" && check.nearest) {
       recordUse(repoLedger(root), [check.nearest.id], { via: "jev-memory" });
@@ -376,11 +384,19 @@ export function storeFact(root, text, { mode = "auto", route, force = false, llm
     // decay semantics make an unsure placement safe (unverified → fades to unsure).
     const s = shadowFact(repoLedger(root), factName(body), body);
     if (!s.ok) return { ok: false, home: "ledger-fact", stored: false, reason: s.reason };
-    // A contradicted REPO fact is archived only for a repo-ledger write; a personal
-    // (recall) note never overrules the team's ledger.
-    return supersede(root, check, factName(body))
-      ? { ok: true, home: "ledger-fact", stored: true, ref: s.id, superseded: check?.nearest?.id }
-      : { ok: true, home: "ledger-fact", stored: true, ref: s.id };
+    // A contradicted REPO fact is archived only for a repo-ledger write a caller allows to
+    // archive (`archive: false` — the autonomous distill path — only reports it), and only
+    // past supersede's floors.
+    const sup = archive ? supersede(root, check, factName(body)) : { archived: false };
+    if (sup.archived)
+      return {
+        ok: true,
+        home: "ledger-fact",
+        stored: true,
+        ref: s.id,
+        superseded: check?.nearest?.id,
+      };
+    return { ok: true, home: "ledger-fact", stored: true, ref: s.id };
   } catch (err) {
     return {
       ok: false,

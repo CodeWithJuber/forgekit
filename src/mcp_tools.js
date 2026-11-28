@@ -189,6 +189,11 @@ export const TOOLS = [
           description: "short slug for the fact (used as filename)",
         },
         body: { type: "string", description: "the fact content (markdown)" },
+        force: {
+          type: "boolean",
+          description:
+            "store it even when Jev's semantic layer judges it a one-off (only when the user insists)",
+        },
       },
       required: ["name", "body"],
     },

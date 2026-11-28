@@ -412,10 +412,12 @@ export function assemble(
       let dropped = 0;
       // Not asked: the batch is the most RELEVANT memory, so an item past it ranks below
       // every item Jev judged — it stays out (left in, a short off-topic fact won on value
-      // density alone, which is exactly what this layer replaces).
-      const judge = (item) => {
+      // density alone, which is exactly what this layer replaces). Asked but with no valid
+      // answer (garbled): no verdict, so the rubric's standing holds — a rubric item stays, a
+      // widened item (never the rubric's) stays out.
+      const judge = (item, widenedOnly) => {
         const p = admission.p.get(item.claimId);
-        if (p === undefined) return false;
+        if (p === undefined) return admission.askedIds.has(item.claimId) && !widenedOnly;
         if (p < 0.5) {
           dropped++;
           return false;
@@ -424,8 +426,8 @@ export function assemble(
         admitted++;
         return true;
       };
-      const kept = items.filter((i) => !i.claimId || i.covers.length > 0 || judge(i));
-      for (const w of widened) if (judge(w)) kept.push(w);
+      const kept = items.filter((i) => !i.claimId || i.covers.length > 0 || judge(i, false));
+      for (const w of widened) if (judge(w, true)) kept.push(w);
       items.length = 0;
       items.push(...kept);
       jevAdmission = {

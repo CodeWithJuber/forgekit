@@ -6,7 +6,7 @@ export const JEV_MEMORY_TOOLS = [
   {
     name: "forge_memory_decide",
     description:
-      "Ask a Jev memory layer what it would decide, as a dry run with probabilities — working (which memory to admit for a task, with full vs admitted tokens), episodic (which prior session to replay), semantic (is a fact durable, duplicate or contradicting), procedural (which repeated verified work becomes a skill) or forgetting (what to archive). Nothing is stored or changed; with Jev off each layer reports its rubric.",
+      "Ask a Jev memory layer what it would decide, as a dry run with probabilities — working (which memory to admit for a task, with full vs admitted tokens), episodic (which prior session to replay), semantic (is a fact durable, duplicate or contradicting), procedural (which repeated verified work becomes a skill) or forgetting (what to archive). Nothing in memory is changed (the decision is journaled); with Jev off each layer reports its rubric.",
     inputSchema: {
       type: "object",
       properties: {

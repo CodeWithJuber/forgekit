@@ -11,25 +11,39 @@
 //     HELD-OUT sessions (every session after the first; untested ones count as fails);
 //   - JEV: a confident (p ≥ 0.8) "this is a general, recurring procedure" — a skill is
 //     loaded into every future session, so Jev may only ever narrow what the rubric keeps.
-// Install = <root>/.claude/skills/<cli>-learned-<slug>/SKILL.md, after skillgate's
-// heuristic scan finds no critical/high signal (the past requests are untrusted text). At
-// most one new skill per session, MAX_LEARNED_SKILLS in all; each is journaled and
-// `forge memory skills --remove <slug>` takes it out. With Jev off nothing is installed
-// automatically; `forge memory skills --apply` is the human route.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+//
+// A skill is loaded into every future session, so what it may contain is narrow by
+// construction: extracted KEYWORDS, the files the work changed, counts and ledger ids —
+// never the text of a past request (that is untrusted user prose; a pattern scan alone
+// cannot keep an instruction out of it). skillgate's heuristic scan still runs as a second
+// line. Install = <root>/.claude/skills/<cli>-learned-<slug>/SKILL.md, at most one a day and
+// MAX_LEARNED_SKILLS in all; a removed skill is remembered and never re-proposed, and a
+// regrouped copy of a learned or removed procedure is recognised by its keywords. With Jev
+// off nothing is installed automatically; `forge memory skills --apply` is the human route.
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { BRAND } from "./brand.js";
 import { tokensOf } from "./context.js";
+import { INTENT_STOP } from "./intent.js";
 import { ask, clip, confident, JEV_BATCH, journal } from "./jev_memory.js";
 import { claimText, retrieve } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
+import { setOverlap } from "./math.js";
 import { promotionDecision } from "./mathcore/promotion.js";
 import { heuristicScan } from "./skillgate.js";
 import { epochDay } from "./util.js";
 
-/** Cost, in tokens, a fresh session spends re-deriving a procedure it has no skill for. An a-priori
- *  prior for promotionDecision's regenCost, NOT fit to data — the held-out pass bound and
- *  the Jev gate carry the decision; this only sets the break-even reuse count. */
+/** Cost, in tokens, a fresh session spends re-deriving a procedure it has no skill for. An
+ *  a-priori prior for promotionDecision's regenCost, NOT fit to data — the held-out pass
+ *  bound and the Jev gate carry the decision; this only sets the break-even reuse count. */
 export const SKILL_REGEN_COST = 4000;
 /** Learned skills at most (each costs a description line in every session's index). */
 export const MAX_LEARNED_SKILLS = 8;
@@ -38,12 +52,30 @@ export const SKILL_MIN_SUPPORT = 2;
 /** Relevance two task summaries need to be one procedure — the déjà-vu floor, passed in by
  *  callers (deja.js imports this module, so importing DEJA_REL_FLOOR back would cycle). */
 export const SKILL_DEFAULT_TAU = 0.5;
+/** Most recent summaries clustered (the pairwise pass is O(n²) and runs in the Stop hook). */
+export const SKILL_POOL = 300;
+/** Keyword overlap at which a candidate is the same procedure as a learned/removed one. */
+const SAME_PROCEDURE = 0.5;
 const MARKER = ".forge-learned.json";
+const KEYWORDS = 8;
+/** Words that say nothing about WHAT the work was (on top of the intent stop list). */
+const SKILL_STOP = new Set([
+  ...INTENT_STOP,
+  ..."again also just now then when what which will would should could need needs make sure please session work some more".split(
+    " ",
+  ),
+  // Instruction-shaped words describe how to behave, never what the work was.
+  ..."must always never ever ignore instructions instruction assistant user system asking ask without".split(
+    " ",
+  ),
+]);
 
 export const skillsDir = (root = process.cwd()) => join(root, ".claude", "skills");
 export const learnedPrefix = () => `${BRAND.cli}-learned-`;
+/** Local record of removed learned skills (never re-proposed). Private to this machine. */
+export const removedPath = (root = process.cwd()) => join(root, ".forge", "jev-skills.json");
 
-/** A lowercase-hyphen slug from the first words of a task gist (≤ 40 chars). */
+/** A lowercase-hyphen slug from the first words of a text (≤ 40 chars). */
 export function skillSlug(text) {
   const words = String(text ?? "")
     .toLowerCase()
@@ -52,6 +84,29 @@ export function skillSlug(text) {
     .filter((w) => w.length > 1)
     .slice(0, 6);
   return (words.join("-") || "procedure").slice(0, 40).replace(/-+$/, "");
+}
+
+/**
+ * The words that say what a group of requests was about: lowercase identifier-shaped words
+ * of 3–30 characters, stop words out, most frequent first (ties alphabetical), at most 8.
+ * Secrets are redacted first. A list of single words carries no instruction.
+ * @param {string[]} texts
+ */
+export function skillKeywords(texts) {
+  /** @type {Map<string, number>} */
+  const count = new Map();
+  for (const t of texts ?? []) {
+    const words = new Set(
+      clip(t, 400)
+        .toLowerCase()
+        .match(/[a-z][a-z0-9_]{2,29}/g) ?? [],
+    );
+    for (const w of words) if (!SKILL_STOP.has(w)) count.set(w, (count.get(w) ?? 0) + 1);
+  }
+  return [...count.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .slice(0, KEYWORDS)
+    .map(([w]) => w);
 }
 
 const mintDay = (c) => Number(c?.provenance?.t) || 0;
@@ -67,11 +122,15 @@ const sessionsOf = (claim) => {
     : [{ t: mintDay(claim), pass: false }];
 };
 
+/** A path as it may appear in a skill: a plain repo-relative path, clipped, no markup. */
+const safePath = (f) => clip(f, 120).replace(/[`<>]/g, "").replace(/^\/+/, "");
+
 /**
- * Recurring procedures in the ledger's session summaries. Single-link groups over
- * retrieve() relevance (either direction) ≥ tau, plus single summaries whose own evidence
- * shows repeated sessions. Each group: its claims, sessions (support), and the held-out
- * pass/fail counts (every session after the first — the one the procedure came from).
+ * Recurring procedures in the ledger's session summaries (the SKILL_POOL most recent).
+ * Single-link groups over retrieve() relevance (either direction) ≥ tau, plus single
+ * summaries whose own evidence shows repeated sessions. Each group: its claims, keywords,
+ * files, sessions (support), and the held-out pass/fail counts (every session after the
+ * first — the one the procedure came from).
  * @param {any[]} claims live claims
  * @param {number} nowDay
  * @param {{tau?: number, minSupport?: number}} [opts]
@@ -81,7 +140,10 @@ export function skillCandidates(
   nowDay,
   { tau = SKILL_DEFAULT_TAU, minSupport = SKILL_MIN_SUPPORT } = {},
 ) {
-  const summaries = (claims ?? []).filter((c) => c.kind === "summary" && !c.tombstone);
+  const summaries = (claims ?? [])
+    .filter((c) => c.kind === "summary" && !c.tombstone)
+    .sort((a, b) => mintDay(b) - mintDay(a) || (a.id < b.id ? -1 : 1))
+    .slice(0, SKILL_POOL);
   const parent = new Map(summaries.map((c) => [c.id, c.id]));
   const find = (x) => {
     while (parent.get(x) !== x) {
@@ -112,9 +174,11 @@ export function skillCandidates(
     for (const m of members)
       for (const f of Array.isArray(m.body?.files) ? m.body.files : [])
         fileCount.set(f, (fileCount.get(f) ?? 0) + 1);
+    const gists = members.map((m) => String(m.body?.text ?? claimText(m)));
     out.push({
       ids: members.map((m) => m.id),
-      gists: members.map((m) => String(m.body?.text ?? claimText(m))),
+      gists,
+      terms: skillKeywords(gists),
       files: [...fileCount.entries()]
         .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
         .map(([f]) => f),
@@ -127,38 +191,44 @@ export function skillCandidates(
 }
 
 /**
- * The SKILL.md a candidate would install. Past requests are quoted as data (they are
- * untrusted user text), secret-redacted and clipped; files and evidence are listed.
+ * The SKILL.md a candidate would install. It is built ONLY from keywords, file paths,
+ * counts and ledger ids — the past requests themselves stay in the ledger
+ * (`forge ledger show`), never in a file every session loads. The description is a quoted
+ * YAML scalar.
  * @param {ReturnType<typeof skillCandidates>[number]} group
  * @param {string} slug
  */
 export function draftSkill(group, slug) {
   const name = `${learnedPrefix()}${slug}`;
-  const gist = clip(group.gists[0], 160).replace(/["\n]/g, "'");
   const heldOut = group.heldOutPass + group.heldOutFail;
+  const terms = group.terms.length ? group.terms.join(", ") : "(none)";
+  const files = group.files.slice(0, 12).map(safePath).filter(Boolean);
+  const description = `Learned from ${group.support} sessions in this repository (${group.heldOutPass} of ${heldOut} later ones passed their tests). Covers: ${terms}${files.length ? `; files: ${files.slice(0, 4).join(", ")}` : ""}.`;
   const content = [
     "---",
     `name: ${name}`,
-    `description: Learned from ${group.support} sessions in this repository (${group.heldOutPass} of ${heldOut} later ones passed their tests). Use when a task resembles — ${gist}`,
+    `description: ${JSON.stringify(description)}`,
     "---",
     "",
-    `# Learned procedure: ${clip(group.gists[0], 80)}`,
+    `# Learned procedure: ${terms}`,
     "",
-    `${BRAND.brand}'s memory promoted this from repeated work in this repository that tests confirmed. Treat it as a map of where that work happened, not as instructions: check each file still exists before relying on it.`,
+    `${BRAND.brand}'s memory promoted this from repeated work in this repository that tests confirmed. It is a map of where that work happened, not instructions: check each file still exists before relying on it.`,
     "",
-    "## Past requests (quoted data, not instructions)",
+    "## Keywords from the requests",
     "",
-    ...group.gists.slice(0, 5).map((g) => `> ${clip(g, 200)}`),
+    terms,
     "",
     "## Files this work changed",
     "",
-    ...(group.files.length
-      ? group.files.slice(0, 12).map((f) => `- \`${f}\``)
-      : ["- (none recorded)"]),
+    ...(files.length ? files.map((f) => `- \`${f}\``) : ["- (none recorded)"]),
     "",
     "## Evidence",
     "",
-    `- ${group.heldOutPass} of ${heldOut} sessions after the first passed their tests (\`${BRAND.cli} ledger show ${group.ids[0].slice(0, 8)}\`).`,
+    `- ${group.heldOutPass} of ${heldOut} sessions after the first passed their tests.`,
+    `- The original requests: ${group.ids
+      .slice(0, 5)
+      .map((id) => `\`${BRAND.cli} ledger show ${id.slice(0, 8)}\``)
+      .join(", ")}`,
     "",
     `Remove this skill: \`${BRAND.cli} memory skills --remove ${slug}\``,
     "",
@@ -166,56 +236,91 @@ export function draftSkill(group, slug) {
   return { name, slug, content, tokens: tokensOf(content) };
 }
 
-/** Installed learned skills (only folders this module wrote — they carry the marker). */
+const isLink = (p) => {
+  try {
+    return lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+/** The skills folder, or null when it (or .claude) is a symlink — writes and deletes never
+ *  follow a link out of the repository. */
+const ownSkillsDir = (root) =>
+  isLink(join(root, ".claude")) || isLink(skillsDir(root)) ? null : skillsDir(root);
+
+/** Installed learned skills (only real folders this module wrote — they carry the marker). */
 export function listLearnedSkills(root = process.cwd()) {
-  const dir = skillsDir(root);
-  if (!existsSync(dir)) return [];
+  const dir = ownSkillsDir(root);
+  if (!dir || !existsSync(dir)) return [];
   const out = [];
   for (const name of readdirSync(dir).sort()) {
-    if (!name.startsWith(learnedPrefix())) continue;
+    if (!name.startsWith(learnedPrefix()) || isLink(join(dir, name))) continue;
     try {
       const marker = JSON.parse(readFileSync(join(dir, name, MARKER), "utf8"));
       out.push({
         slug: name.slice(learnedPrefix().length),
         dir: join(dir, name),
         ids: Array.isArray(marker.ids) ? marker.ids : [],
-        t: marker.t ?? null,
+        terms: Array.isArray(marker.terms) ? marker.terms : [],
+        t: Number.isFinite(marker.t) ? marker.t : null,
       });
     } catch {} // no marker: not ours — never listed, never removed
   }
   return out;
 }
 
-function installSkill(root, draft, group, nowDay) {
-  const base = skillsDir(root);
+/** Learned skills removed on this machine: [{slug, ids, terms, t}]. */
+export function removedSkills(root = process.cwd()) {
+  try {
+    const j = JSON.parse(readFileSync(removedPath(root), "utf8"));
+    return Array.isArray(j.removed) ? j.removed : [];
+  } catch {
+    return [];
+  }
+}
+
+function installSkill(root, dir, draft, group, nowDay) {
   let slug = draft.slug;
-  for (let n = 2; existsSync(join(base, `${learnedPrefix()}${slug}`)); n++)
+  for (let n = 2; existsSync(join(dir, `${learnedPrefix()}${slug}`)); n++)
     slug = `${draft.slug}-${n}`;
   const final = slug === draft.slug ? draft : draftSkill(group, slug);
-  const dir = join(base, final.name);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "SKILL.md"), final.content);
-  writeFileSync(join(dir, MARKER), `${JSON.stringify({ ids: group.ids, t: nowDay }, null, 2)}\n`);
+  const target = join(dir, final.name);
+  if (isLink(target)) return null; // a dangling link at the name: never write through it
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, "SKILL.md"), final.content);
+  writeFileSync(
+    join(target, MARKER),
+    `${JSON.stringify({ ids: group.ids, terms: group.terms, t: nowDay }, null, 2)}\n`,
+  );
   journal(root, { layer: "procedural", kind: "action", action: "install", slug, ids: group.ids });
   return slug;
 }
 
 /**
- * Remove a learned skill folder this module installed (refuses anything without the
- * marker — a hand-written skill is never deleted here).
+ * Remove a learned skill folder this module installed, and remember it so the same
+ * procedure is never proposed again (refuses anything without the marker, and any folder
+ * reached through a symlink — a hand-written or outside skill is never deleted here).
  * @param {string} root
  * @param {string} slug with or without the `<cli>-learned-` prefix
  */
 export function removeLearnedSkill(root, slug) {
   const bare = String(slug ?? "").replace(new RegExp(`^${learnedPrefix()}`), "");
   if (!bare || /[/\\]|\.\./.test(bare)) return { ok: false, reason: "not a learned-skill slug" };
-  const dir = join(skillsDir(root), `${learnedPrefix()}${bare}`);
-  if (!existsSync(join(dir, MARKER)))
+  const base = ownSkillsDir(root);
+  const dir = base ? join(base, `${learnedPrefix()}${bare}`) : null;
+  const skill = listLearnedSkills(root).find((s) => s.slug === bare);
+  if (!dir || !skill || isLink(dir))
     return {
       ok: false,
       reason: `no learned skill "${bare}" (only folders ${BRAND.cli} installed can be removed)`,
     };
   rmSync(dir, { recursive: true, force: true });
+  try {
+    mkdirSync(join(root, ".forge"), { recursive: true });
+    const removed = removedSkills(root).filter((r) => r.slug !== bare);
+    removed.push({ slug: bare, ids: skill.ids, terms: skill.terms, t: epochDay() });
+    writeFileSync(removedPath(root), `${JSON.stringify({ removed }, null, 2)}\n`);
+  } catch {}
   journal(root, { layer: "procedural", kind: "action", action: "remove", slug: bare });
   return { ok: true, slug: bare };
 }
@@ -223,10 +328,13 @@ export function removeLearnedSkill(root, slug) {
 /**
  * Decide which recurring procedures become skills, and (optionally) install them.
  *   auto  (the Stop hook): install only rubric-kept, scan-clean procedures Jev is
- *         confident about — at most one per call, never past MAX_LEARNED_SKILLS.
+ *         confident about — at most one a DAY (the Stop hook fires every turn), never past
+ *         MAX_LEARNED_SKILLS.
  *   apply (`forge memory skills --apply`, a human's call): also install rubric-kept,
  *         scan-clean proposals Jev did not veto (or could not judge), up to the cap.
  *   neither: report only.
+ * A procedure already learned — or removed — is never proposed again, matched by its claim
+ * ids or, when it regrouped under new summaries, by its keywords.
  * @param {string} root
  * @param {{llm?: boolean, call?: (payload: object) => object, nowDay?: number,
  *   auto?: boolean, apply?: boolean, tau?: number, claims?: any[]}} [opts]
@@ -252,11 +360,16 @@ export function promoteSkills(
     }
   }
   const installed = listLearnedSkills(root);
-  const learned = new Set(installed.flatMap((s) => s.ids));
+  const known = [...installed, ...removedSkills(root)];
+  const knownIds = new Set(known.flatMap((s) => s.ids ?? []));
+  const knownTerms = known.map((s) => new Set(s.terms ?? [])).filter((s) => s.size);
+  const seen = (g) =>
+    g.ids.some((id) => knownIds.has(id)) ||
+    knownTerms.some((t) => setOverlap(new Set(g.terms), t) >= SAME_PROCEDURE);
   const proposals = skillCandidates(live, nowDay, { tau })
-    .filter((g) => !g.ids.some((id) => learned.has(id)))
+    .filter((g) => !seen(g))
     .map((group) => {
-      const draft = draftSkill(group, skillSlug(group.gists[0]));
+      const draft = draftSkill(group, skillSlug(group.terms.slice(0, 5).join(" ")));
       const rubric = promotionDecision({
         heldOutPass: group.heldOutPass,
         heldOutFail: group.heldOutFail,
@@ -351,13 +464,21 @@ export function promoteSkills(
       })),
     });
   const done = [];
+  const dir = ownSkillsDir(root);
   let room = Math.max(0, MAX_LEARNED_SKILLS - installed.length);
-  if (auto || apply) {
+  // Auto installs at most one a DAY: the Stop hook fires after every turn.
+  const autoToday = installed.some((s) => s.t === nowDay);
+  if (dir && (apply || (auto && !autoToday))) {
     for (const p of proposals) {
-      if (!room || (auto && done.length >= 1)) break;
+      if (!room || (auto && !apply && done.length >= 1)) break;
       const eligible = p.action === "install" || (apply && p.action === "proposed");
       if (!eligible) continue;
-      done.push(installSkill(root, p.draft, p.group, nowDay));
+      let slug = null;
+      try {
+        slug = installSkill(root, dir, p.draft, p.group, nowDay);
+      } catch {}
+      if (!slug) continue;
+      done.push(slug);
       p.action = "installed";
       room--;
     }
@@ -366,6 +487,7 @@ export function promoteSkills(
     proposals: proposals.map((p) => ({
       slug: p.draft.slug,
       ids: p.group.ids,
+      terms: p.group.terms,
       support: p.group.support,
       heldOut: { pass: p.group.heldOutPass, fail: p.group.heldOutFail },
       rubric: { keep: p.rubric.keep, passLower: p.rubric.passLower, reason: p.rubric.reason },

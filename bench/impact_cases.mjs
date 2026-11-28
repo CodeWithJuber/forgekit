@@ -50,7 +50,7 @@
 //   - test/ledger.test.js imports { mergeStates } (:14) and calls it
 //   (src/ledger_sync.js:3 also names it in the module header — same file, already labeled.)
 //
-// claimText (src/ledger.js) — 11 files
+// claimText (src/ledger.js) — 13 files
 //   - src/ledger.js       defines it (:610); sketchOf() (:636), termsOf() (:637) and :880 call it
 //   - src/context.js      imports { claimText } (:13) and calls it (:185)
 //   - src/dash.js         imports { claimText } (:16) and calls it (:58, :389, :400)
@@ -63,6 +63,8 @@
 //   - test/ledger.test.js imports { claimText } (:8) and calls it
 //   - src/learn_consolidate.js imports { claimText } (:32) and calls it (:110)
 //   - src/ledger_retention.js  imports { claimText } (:29) and calls it (:184)
+//   - src/jev_memory.js  imports { claimText } (:41) and calls it (:188)
+//   - src/jev_skills.js  imports { claimText } (:37) and calls it (:156)
 //   (test/dash.test.js:69 mentions the name only inside an assertion message — a string,
 //    not a reference — so it is NOT labeled as a dependent.)
 //
@@ -134,6 +136,8 @@ export const IMPACT_CASES = [
       "src/learn_consolidate.js",
       "src/ledger_retention.js",
       "src/ledger_store.js",
+      "src/jev_memory.js",
+      "src/jev_skills.js",
       "src/cli.js",
       "src/cli/memory.js",
       "src/cortex_mcp.js",

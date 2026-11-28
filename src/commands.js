@@ -499,7 +499,7 @@ export const COMMANDS = {
     ],
     env: [
       "TYPESAFE_API_KEY   the Jev (TypeSafe System One) key; unset, every layer uses its deterministic rubric",
-      "FORGE_JEV_MEMORY   which layers Jev decides: unset = all five, 0 = none, or a list such as working,episodic",
+      "FORGE_JEV_MEMORY   which layers Jev decides: unset = working,episodic,semantic; all = all five (adds the autonomous procedural and forgetting); 0 = none; or a list",
     ],
     exit: [
       "0  the report printed, or the skill/archive change was made",

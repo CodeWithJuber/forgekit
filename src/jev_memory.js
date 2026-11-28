@@ -23,7 +23,14 @@
 //     evidence.
 //   - Every autonomous action is reversible (the attic, a removable skill folder) and
 //     journaled in .forge/jev-memory.jsonl — the audit trail and the undo source.
-import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { brainStore, buildIndex, remember } from "./brain.js";
@@ -31,11 +38,11 @@ import { BRAND } from "./brand.js";
 import { askDecision } from "./decisions.js";
 import { advisorSettings } from "./discovery_config.js";
 import { choice, jevKey, noul } from "./jev.js";
-import { claimText, isDormant, retrieve } from "./ledger.js";
+import { claimText, isDormant, retrieve, val } from "./ledger.js";
 import { activityDays } from "./ledger_retention.js";
-import { loadClaims, pruneToAttic, recordUse, repoLedger } from "./ledger_store.js";
+import { loadClaims, pruneToAttic, readUses, recordUse, repoLedger } from "./ledger_store.js";
 import { redactSecrets } from "./secrets.js";
-import { epochDay } from "./util.js";
+import { epochDay, slug } from "./util.js";
 
 /** The five layers, in the order a memory moves through them. */
 export const JEV_MEMORY_LAYERS = Object.freeze([
@@ -54,11 +61,27 @@ export const JEV_MEMORY_MIN_CONFIDENCE = 0.8;
 export const JEV_BATCH = 48;
 export const JEV_ITEM_CHARS = 400;
 export const JEV_TASK_CHARS = 1200;
-/** Hook paths call this synchronously; past this the layer falls back to its rubric. */
+/** Explicit and Stop-hook paths call this synchronously; past it a layer falls back to its
+ *  rubric. */
 export const JEV_MEMORY_TIMEOUT_MS = 2500;
+/** The per-prompt path (episodic replay in UserPromptSubmit) uses the hooks' 800 ms budget
+ *  (development.js) — measured Jev round trips are 200–340 ms. */
+export const JEV_HOOK_TIMEOUT_MS = 800;
 /** Claim kinds that are MEMORY (as opposed to caches like `artifact`/`fingerprint`, which
- *  have their own revalidation). Only these are ever judged by the forgetting layer. */
+ *  have their own revalidation) — what the working layer may admit. */
 export const MEMORY_KINDS = Object.freeze(["fact", "lesson", "summary", "decision", "diagnosis"]);
+/** What the forgetting layer may judge: memory kinds WITHOUT `decision` — decisions include
+ *  human ratifications and pending retraction proposals, which no proposer archives. */
+export const FORGETTABLE_KINDS = Object.freeze(["fact", "lesson", "summary", "diagnosis"]);
+/** A live claim the forgetting layer may archive on its own must have been idle this long.
+ *  An a-priori floor, not fit to data: it keeps a busy week's memory out of its reach. */
+export const JEV_FORGET_MIN_IDLE_DAYS = 30;
+/** Layers on when FORGE_JEV_MEMORY is unset: the ones that only choose what is READ, plus the
+ *  write-time fact check a person sees as it happens. The two that change memory on their
+ *  own from the Stop hook (procedural installs skills, forgetting archives claims) need an
+ *  explicit FORGE_JEV_MEMORY=all (or naming them): turning on Jev for routing must not
+ *  silently grant them. */
+export const JEV_MEMORY_DEFAULT_LAYERS = Object.freeze(["working", "episodic", "semantic"]);
 const JOURNAL_MAX_BYTES = 1_048_576;
 const JOURNAL_KEEP_LINES = 1000;
 
@@ -68,20 +91,23 @@ const UNTRUSTED =
 export const journalPath = (root = process.cwd()) => join(root, ".forge", "jev-memory.jsonl");
 
 /**
- * Which layers FORGE_JEV_MEMORY enables: unset (or "1") → all five, "0" → none, otherwise
- * a comma list of layer names (unknown names are ignored).
+ * Which layers FORGE_JEV_MEMORY enables: unset → the default three (working, episodic,
+ * semantic); "all" / "1" / "true" / "on" → all five; "0" / "false" / "off" / "none" → none;
+ * otherwise a comma list of layer names (unknown names are ignored).
  * @param {Record<string, string|undefined>} [env]
  * @returns {Set<string>}
  */
 export function jevMemoryLayers(env = process.env) {
-  const raw = env.FORGE_JEV_MEMORY;
-  if (raw === undefined || raw.trim() === "" || raw.trim() === "1")
-    return new Set(JEV_MEMORY_LAYERS);
-  if (raw.trim() === "0") return new Set();
+  const raw = String(env.FORGE_JEV_MEMORY ?? "")
+    .trim()
+    .toLowerCase();
+  if (!raw) return new Set(JEV_MEMORY_DEFAULT_LAYERS);
+  if (["all", "1", "true", "on", "yes"].includes(raw)) return new Set(JEV_MEMORY_LAYERS);
+  if (["0", "false", "off", "no", "none"].includes(raw)) return new Set();
   return new Set(
     raw
       .split(",")
-      .map((s) => s.trim().toLowerCase())
+      .map((x) => x.trim())
       .filter((l) => JEV_MEMORY_LAYERS.includes(l)),
   );
 }
@@ -112,7 +138,7 @@ export function jevMemoryStatus(root = process.cwd(), { llm, env = process.env }
     : !decisions
       ? `decisions are off — turn them on with \`${BRAND.cli} discover setup --decisions on\`, FORGE_LLM=1, or --llm`
       : wanted.size === 0
-        ? "FORGE_JEV_MEMORY=0 — every layer uses its deterministic rubric"
+        ? `FORGE_JEV_MEMORY=${env.FORGE_JEV_MEMORY} turns every layer off — each uses its deterministic rubric`
         : "on";
   return {
     enabled: enabled && wanted.size > 0,
@@ -282,7 +308,9 @@ const callRecord = (layer, r, n, decisions) => ({
  * @param {string} task
  * @param {{id: string, text: string}[]} items candidates, most relevant first
  * @param {{root?: string, llm?: boolean, call?: (payload: object) => object}} [opts]
- * @returns {{p: Map<string, number>, ms: number, model: string|null, asked: number}|null}
+ * @returns {{p: Map<string, number>, ms: number, model: string|null, asked: number,
+ *   askedIds: Set<string>}|null} askedIds: every item put to Jev (an asked item absent from
+ *   `p` had a missing or garbled answer — the caller's rubric decides it)
  */
 export function admitWorking(task, items, { root = process.cwd(), llm, call } = {}) {
   const batch = (items ?? []).slice(0, JEV_BATCH);
@@ -333,7 +361,15 @@ export function admitWorking(task, items, { root = process.cwd(), llm, call } = 
         })),
     ),
   );
-  return r.answers && p.size ? { p, ms: r.ms, model: r.model, asked: batch.length } : null;
+  return r.answers && p.size
+    ? {
+        p,
+        ms: r.ms,
+        model: r.model,
+        asked: batch.length,
+        askedIds: new Set(batch.map((it) => it.id)),
+      }
+    : null;
 }
 
 // ── Layer 2 — episodic: which prior session is replayed ──────────────────────────────
@@ -361,6 +397,7 @@ export function chooseReplay(task, hits, { root = process.cwd(), llm, call, floo
     root,
     llm,
     call,
+    timeoutMs: JEV_HOOK_TIMEOUT_MS,
     state: {
       task: clip(task, JEV_TASK_CHARS),
       prior: Object.fromEntries(pool.map(({ h }, i) => [keys[i], clip(memoryText(h.claim))])),
@@ -383,19 +420,18 @@ export function chooseReplay(task, hits, { root = process.cwd(), llm, call, floo
     journal(root, callRecord("episodic", r, pool.length, []));
     return null;
   }
-  let best = -1;
-  let bestP = -1;
-  pool.forEach((_, i) => {
-    const v = r.answers?.[keys[i]]?.noul;
-    if (typeof v === "number" && v > bestP) {
-      bestP = v;
-      best = i;
-    }
-  });
-  if (best < 0) {
+  // A pick needs a verdict on EVERY hit: with one answer missing or garbled, Jev never
+  // judged that hit (possibly the rubric's own pick), so the rubric decides.
+  const ps = pool.map((_, i) => r.answers?.[keys[i]]?.noul);
+  if (!ps.every((v) => typeof v === "number")) {
     journal(root, callRecord("episodic", { ...r, answers: null }, pool.length, []));
     return null;
   }
+  let best = 0;
+  ps.forEach((v, i) => {
+    if (v > ps[best]) best = i;
+  });
+  const bestP = ps[best];
   const replay = bestP >= 0.5 ? best : -1;
   journal(
     root,
@@ -521,16 +557,30 @@ export function verifyFact(
   journal(
     root,
     callRecord("semantic", r, 1, [
-      { id: near?.id ?? `new:${name}`, p: round3(p), rubric: "write", action: verdict },
+      // The new fact has no id yet; its name is clipped (secret-redacted) — the store has
+      // not run its own secret refusal at this point.
+      { id: near?.id ?? `new:${clip(name, 60)}`, p: round3(p), rubric: "write", action: verdict },
     ]),
   );
-  return {
-    verdict,
-    source: "jev",
-    p: round3(p),
-    nearest: near ? { id: near.id, name: near.body?.name ?? null, text: claimText(near) } : null,
-    reason,
-  };
+  let matched = null;
+  if (near) {
+    let lastUse = 0;
+    try {
+      const days = readUses(repoLedger(root)).get(near.id) ?? [];
+      lastUse = days.length ? Math.max(...days) : 0;
+    } catch {}
+    const factName = String(near.body?.name ?? "");
+    matched = {
+      id: near.id,
+      name: near.body?.name ?? null,
+      text: claimText(near),
+      val: round3(val(near, nowDay)),
+      lastActive: Math.max(Number(near.provenance?.t) || 0, lastUse),
+      fileBacked:
+        Boolean(factName) && existsSync(join(brainStore(root), "facts", `${slug(factName)}.md`)),
+    };
+  }
+  return { verdict, source: "jev", p: round3(p), nearest: matched, reason };
 }
 
 /**
@@ -545,7 +595,7 @@ export function verifyFact(
  * @param {{force?: boolean, llm?: boolean, call?: (payload: object) => object,
  *   nowDay?: number}} [opts]
  * @returns {{ok: boolean, refused?: boolean, duplicate?: boolean, slug?: string,
- *   reason?: string, superseded?: {id: string, name: string|null, text: string}|null,
+ *   reason?: string, superseded?: any, contradicts?: any, kept?: string,
  *   check: ReturnType<typeof verifyFact>|null}}
  */
 export function rememberVerified(
@@ -556,13 +606,10 @@ export function rememberVerified(
 ) {
   const check = force ? null : verifyFact(root, { name, text: body }, { llm, call, nowDay });
   const pText = check?.p == null ? "" : ` (p=${check.p.toFixed(2)})`;
+  // `refused` is the one refusal a caller may override (`force`); the reason carries no
+  // CLI-only hint, so each surface says how in its own terms.
   if (check?.verdict === "transient")
-    return {
-      ok: false,
-      refused: true,
-      reason: `not remembered — ${check.reason}${pText}; pass --force to store it anyway`,
-      check,
-    };
+    return { ok: false, refused: true, reason: `${check.reason}${pText}`, check };
   if (check?.verdict === "duplicate" && check.nearest) {
     recordUse(repoLedger(root), [check.nearest.id], { via: "jev-memory", t: nowDay });
     return {
@@ -575,39 +622,53 @@ export function rememberVerified(
   }
   const store = brainStore(root);
   const res = remember(store, name, body);
-  if (res.ok && supersede(root, check, name, nowDay)) {
+  if (!res.ok) return { ...res, check };
+  const sup = supersede(root, check, name, nowDay);
+  if (sup.archived) {
     buildIndex(store);
     return { ...res, superseded: check?.nearest, check };
   }
+  if (sup.kept) return { ...res, contradicts: check?.nearest, kept: sup.kept, check };
   return { ...res, check };
 }
 
 /**
  * Act on a "supersede" verdict once the new fact is stored: move the contradicted fact to
  * the attic (cause "superseded" — reversible, new evidence restores it) and journal it.
- * Any other verdict is a no-op. Returns whether a fact was archived.
+ * The same floors as forgetting hold, so the contradiction is only REPORTED (`kept`) when
+ * the old fact is confirmed by evidence (val > 0.5 — a proposer never outranks an oracle),
+ * was written or used today, or lives in a fact file (which only a person edits). Any other
+ * verdict is a no-op.
  * @param {string} root
  * @param {ReturnType<typeof verifyFact>|null} check
  * @param {string} byName the new fact's name (recorded as the reason)
  * @param {number} [nowDay]
+ * @returns {{archived: boolean, kept?: string}}
  */
 export function supersede(root, check, byName, nowDay = epochDay()) {
-  if (check?.verdict !== "supersede" || !check.nearest) return false;
+  const near = check?.nearest;
+  if (check?.verdict !== "supersede" || !near) return { archived: false };
+  if ((near.val ?? 0) > 0.5)
+    return { archived: false, kept: "it is confirmed by test, CI or human evidence" };
+  if ((near.lastActive ?? 0) >= nowDay)
+    return { archived: false, kept: "it was written or used today" };
+  if (near.fileBacked)
+    return { archived: false, kept: "it lives in a fact file, which only a person edits" };
   const pText = check.p == null ? "" : ` (p=${check.p.toFixed(2)})`;
-  const moved = pruneToAttic(repoLedger(root), check.nearest.id, {
+  const moved = pruneToAttic(repoLedger(root), near.id, {
     cause: "superseded",
-    reason: `jev: contradicted by "${byName}"${pText}`,
+    reason: `jev: contradicted by "${clip(byName, 60)}"${pText}`,
     t: nowDay,
   });
-  if (!moved.ok) return false;
+  if (!moved.ok) return { archived: false };
   journal(root, {
     layer: "semantic",
     kind: "action",
     action: "superseded",
-    id: check.nearest.id,
-    by: byName,
+    id: near.id,
+    by: clip(byName, 60),
   });
-  return true;
+  return { archived: true };
 }
 
 // ── Layer 5 — forgetting: what is archived ───────────────────────────────────────────
@@ -617,17 +678,21 @@ export function supersede(root, check, byName, nowDay = epochDay()) {
  *   - tombstoned and evidence-dormant archives are HARD FLOORS — always archived;
  *   - an idle or duplicate archive is vetoed when Jev is confident the memory is still
  *     useful (p ≥ 0.8);
- *   - any other live MEMORY claim (fact/lesson/summary/decision/diagnosis; least recently
- *     active first) is archived when Jev is confident it no longer is (p ≤ 0.2), with cause
- *     "judged";
- *   - nothing minted or served today is ever touched.
+ *   - any other live claim of a FORGETTABLE kind (fact/lesson/summary/diagnosis — never a
+ *     decision, which holds human ratifications and retraction proposals), idle at least
+ *     JEV_FORGET_MIN_IDLE_DAYS (least recently active first), is archived when Jev is
+ *     confident it no longer is useful (p ≤ 0.2), with cause "judged";
+ *   - only forgettable kinds are ever sent to Jev (cached code never leaves the machine);
+ *   - nothing minted or served today is ever touched;
+ *   - `once` (the Stop hook, which fires every turn): Jev judges at most once a day.
  * Archiving is the attic (reversible); nothing here tombstones. Off or failed → the plan,
  * unchanged.
  * @param {any[]} claims live claims (the same set the plan was made from)
  * @param {{archive: {id: string, reason: string, cause: string, survivor?: string}[]}} plan
  * @param {Map<string, number[]>} uses claim id → served days
  * @param {number} nowDay
- * @param {{root?: string, llm?: boolean, call?: (payload: object) => object}} [opts]
+ * @param {{root?: string, llm?: boolean, call?: (payload: object) => object,
+ *   once?: boolean}} [opts]
  * @returns {{archive: {id: string, reason: string, cause: string, survivor?: string}[],
  *   judged?: {vetoed: string[], added: string[], ms: number}}}
  */
@@ -636,9 +701,11 @@ export function judgeForgetting(
   plan,
   uses,
   nowDay,
-  { root = process.cwd(), llm, call } = {},
+  { root = process.cwd(), llm, call, once = false } = {},
 ) {
   if (!jevMemoryOn("forgetting", { root, llm })) return plan;
+  if (once && readJournal(root).some((j) => j.layer === "forgetting" && j.day === nowDay && j.ok))
+    return plan;
   const byId = new Map((claims ?? []).map((c) => [c.id, c]));
   const lastActive = (c) => {
     const days = activityDays(c, uses.get(c.id) ?? []);
@@ -646,18 +713,19 @@ export function judgeForgetting(
   };
   const touchedToday = (c) => lastActive(c) >= nowDay;
   const planned = new Set(plan.archive.map((a) => a.id));
+  const forgettable = (c) => Boolean(c) && FORGETTABLE_KINDS.includes(c.kind);
   const vetoable = plan.archive
-    .filter((a) => (a.cause === "idle" || a.cause === "duplicate") && byId.has(a.id))
+    .filter((a) => (a.cause === "idle" || a.cause === "duplicate") && forgettable(byId.get(a.id)))
     .filter((a) => !touchedToday(byId.get(a.id)))
     .slice(0, JEV_BATCH);
   const extra = (claims ?? [])
     .filter(
       (c) =>
-        MEMORY_KINDS.includes(c.kind) &&
+        forgettable(c) &&
         !c.tombstone &&
         !planned.has(c.id) &&
         !isDormant(c, nowDay) &&
-        !touchedToday(c),
+        nowDay - lastActive(c) >= JEV_FORGET_MIN_IDLE_DAYS,
     )
     .sort((a, b) => lastActive(a) - lastActive(b) || (a.id < b.id ? -1 : 1))
     .slice(0, Math.max(0, JEV_BATCH - vetoable.length));
@@ -726,7 +794,7 @@ export function judgeForgetting(
       });
     }
   });
-  journal(root, callRecord("forgetting", r, cands.length, decisions));
+  journal(root, { ...callRecord("forgetting", r, cands.length, decisions), day: nowDay });
   return {
     ...plan,
     archive: [...plan.archive.filter((a) => !vetoed.has(a.id)), ...added],

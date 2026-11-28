@@ -1227,7 +1227,8 @@ HANDLERS.remember = async (argv) => {
   }
   // Jev's semantic layer (opt-in) verifies the fact first: a confident one-off is refused
   // (--force stores it anyway), a duplicate is not stored twice, and a fact this one
-  // contradicts is archived. Off, this is exactly brain.remember.
+  // contradicts is archived — unless evidence, today's use or a fact file keeps it, which
+  // is then only reported. Off, this is exactly brain.remember.
   const res = rememberVerified(process.cwd(), name, body, { force });
   if (res.duplicate) {
     console.log(`  ${res.reason}`);
@@ -1247,11 +1248,18 @@ HANDLERS.remember = async (argv) => {
   console.log(
     res.ok
       ? `  remembered: ${res.slug} — run \`forge sync\` to inline it into every tool`
-      : `  ${res.reason}`,
+      : res.refused
+        ? `  not remembered — ${res.reason}; pass --force to store it anyway`
+        : `  ${res.reason}`,
   );
+  const other = res.superseded ?? res.contradicts;
   if (res.superseded)
     console.log(
-      `  archived "${res.superseded.name ?? res.superseded.id.slice(0, 8)}" — Jev judged the new fact contradicts it (attic; \`forge ledger show ${res.superseded.id.slice(0, 8)}\`)`,
+      `  archived "${other.name ?? other.id.slice(0, 8)}" — Jev judged the new fact contradicts it (attic; \`forge ledger show ${other.id.slice(0, 8)}\`)`,
+    );
+  else if (res.contradicts)
+    console.log(
+      `  contradicts "${other.name ?? other.id.slice(0, 8)}" — kept, because ${res.kept}; settle it with \`forge ledger retract ${other.id}\` if it is wrong`,
     );
   if (!res.ok) process.exitCode = 1;
   return;

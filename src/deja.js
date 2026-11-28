@@ -155,7 +155,8 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay(), { l
     // Nothing is deleted; new evidence un-archives a claim. With Jev's forgetting layer on,
     // Jev re-judges that plan (keeps what is still useful, archives what no longer is).
     const judge = jevMemoryOn("forgetting", { root, llm })
-      ? (claims, plan, uses, day) => judgeForgetting(claims, plan, uses, day, { root, llm, call })
+      ? (claims, plan, uses, day) =>
+          judgeForgetting(claims, plan, uses, day, { root, llm, call, once: true })
       : undefined;
     pruneLedger(dir, nowDay, { judge });
     reindex(dir, nowDay);

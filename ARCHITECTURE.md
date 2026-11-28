@@ -314,6 +314,8 @@ decision into each memory layer, over stores that already existed:
   `mathcore/promotion.promotionDecision` AND Jev;
 - *forgetting*: `pruneLedger` takes an optional judge that re-decides `retentionPlan`.
 
+Procedural and forgetting change memory on their own, so they are opt-in
+(`FORGE_JEV_MEMORY=all`); a skill holds keywords, files and ledger ids only, never request text.
 Each layer is one batched call. Stored changes need p ≥ 0.8. Evidence floors (tombstoned or
 dormant claims, today's claims) are never crossed, and Jev never moves `val`. Archives go to
 the attic and every action is journaled in `.forge/jev-memory.jsonl`. With Jev off, or on a

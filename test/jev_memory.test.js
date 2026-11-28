@@ -3,12 +3,14 @@
 // API key is set in-file (per the hermetic convention — each test file is its own process,
 // so this assignment runs after _setup's scrub).
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
 process.env.TYPESAFE_API_KEY = "tsk-test-only";
+// Every layer on, including the two the default leaves off (tested below with explicit env).
+process.env.FORGE_JEV_MEMORY = "all";
 
 import { assemble } from "../src/context.js";
 import { dejaAdvisory, recordSessionSummary } from "../src/deja.js";
@@ -91,14 +93,25 @@ function put(root, kind, body, { t = 100, confirm = 0 } = {}) {
 
 // ── shared pieces ─────────────────────────────────────────────────────────────────────
 
-test("FORGE_JEV_MEMORY: unset or 1 → all five layers, 0 → none, a list → those only", () => {
-  assert.deepEqual([...jevMemoryLayers({})], [...JEV_MEMORY_LAYERS]);
-  assert.deepEqual([...jevMemoryLayers({ FORGE_JEV_MEMORY: "1" })], [...JEV_MEMORY_LAYERS]);
-  assert.equal(jevMemoryLayers({ FORGE_JEV_MEMORY: "0" }).size, 0);
+test("FORGE_JEV_MEMORY: unset → the read-side three; all/1/true/on → five; 0/off → none; a list", () => {
+  assert.deepEqual([...jevMemoryLayers({})], ["working", "episodic", "semantic"]);
+  for (const v of ["all", "1", "true", "ON"])
+    assert.deepEqual([...jevMemoryLayers({ FORGE_JEV_MEMORY: v })], [...JEV_MEMORY_LAYERS], v);
+  for (const v of ["0", "false", "off", "none"])
+    assert.equal(jevMemoryLayers({ FORGE_JEV_MEMORY: v }).size, 0, v);
   assert.deepEqual(
     [...jevMemoryLayers({ FORGE_JEV_MEMORY: "working, Forgetting,bogus" })],
     ["working", "forgetting"],
   );
+});
+
+test("the autonomous write layers (procedural, forgetting) need an explicit opt-in", () => {
+  const st = jevMemoryStatus(fixture(), { llm: true, env: {} });
+  assert.equal(st.layers.working, true);
+  assert.equal(st.layers.procedural, false);
+  assert.equal(st.layers.forgetting, false);
+  const off = jevMemoryStatus(fixture(), { llm: true, env: { FORGE_JEV_MEMORY: "off" } });
+  assert.match(off.reason, /FORGE_JEV_MEMORY=off/);
 });
 
 test("jevMemoryStatus: needs the key AND the decisions opt-in, and says which is missing", () => {
@@ -393,7 +406,8 @@ test("rememberVerified: transient refused (force stores), duplicate skipped, sup
     call: transient,
   });
   assert.equal(refused.ok, false);
-  assert.match(refused.reason, /--force/);
+  assert.equal(refused.refused, true, "the one refusal a caller may override");
+  assert.match(refused.reason, /one-off/);
   assert.equal(loadClaims(repoLedger(root)).length, 0, "nothing stored");
   const forced = rememberVerified(root, "wip", "I am halfway through the refactor", {
     force: true,
@@ -413,18 +427,21 @@ test("rememberVerified: transient refused (force stores), duplicate skipped, sup
   assert.equal(loadClaims(repoLedger(root)).filter((c) => c.body?.name === "deploys").length, 0);
   assert.ok(readUses(repoLedger(root)).has(old.id), "the existing fact's use is recorded");
 
+  // (A fresh repo: the duplicate step above used `old` today, and today's memory is a floor.)
+  const root2 = fixture();
+  const stale = put(root2, "fact", { name: "deploy-day", text: "we deploy on Tuesdays" });
   const conflict = fakeJev((k) => (k === "durable" ? noulOf(0.9) : choiceOf("conflicts_f0", 0.9)));
-  const r = rememberVerified(root, "release-day", "we deploy on Thursdays", {
+  const r = rememberVerified(root2, "release-day", "we deploy on Thursdays", {
     llm: true,
     call: conflict,
   });
   assert.equal(r.ok, true);
-  assert.equal(r.superseded?.id, old.id);
-  const live = loadClaims(repoLedger(root)).map((c) => c.id);
-  assert.ok(!live.includes(old.id), "the contradicted fact left the live ledger");
-  assert.ok(existsSync(join(repoLedger(root), "attic", `${old.id}.json`)), "…for the attic");
-  assert.equal(archiveRecord(repoLedger(root), old.id)?.cause, "superseded");
-  assert.ok(readJournal(root).some((j) => j.kind === "action" && j.action === "superseded"));
+  assert.equal(r.superseded?.id, stale.id);
+  const live = loadClaims(repoLedger(root2)).map((c) => c.id);
+  assert.ok(!live.includes(stale.id), "the contradicted fact left the live ledger");
+  assert.ok(existsSync(join(repoLedger(root2), "attic", `${stale.id}.json`)), "…for the attic");
+  assert.equal(archiveRecord(repoLedger(root2), stale.id)?.cause, "superseded");
+  assert.ok(readJournal(root2).some((j) => j.kind === "action" && j.action === "superseded"));
 });
 
 test("storeFact: the semantic layer gates ledger facts; decisions are never checked", () => {
@@ -600,4 +617,161 @@ test("the journal is plain JSONL under .forge and survives a corrupt line", () =
   const text = readFileSync(path, "utf8");
   assert.equal(text.trim().split("\n").length, 1);
   assert.equal(readJournal(root).length, 1);
+});
+
+// ── regressions from the independent review (one per confirmed defect) ──────────────
+
+test("working: an asked item whose answer is garbled keeps its rubric standing", () => {
+  const root = fixture();
+  const a = put(root, "fact", { name: "login-a", text: "login uses the session cookie" });
+  const b = put(root, "fact", { name: "login-b", text: "login retries twice on 503" });
+  const base = assemble(root, "fix the login flow", { nowDay: 120 });
+  // One answer validates, the other is garbled (wrong type) — systemOne drops only that one.
+  const firstOnly = fakeJev((k) => (k === "m0" ? noulOf(0.9) : { type: "choice", choice: "x" }));
+  const r = assemble(root, "fix the login flow", { nowDay: 120, llm: true, jevCall: firstOnly });
+  const ids = (x) =>
+    x.selection
+      .filter((s) => s.source === "fact")
+      .map((s) => s.id)
+      .sort();
+  assert.deepEqual(ids(r), ids(base), "a garbled verdict is no verdict: the rubric's facts stay");
+  assert.ok([a, b].every((c) => ids(r).includes(`fact:${c.id.slice(0, 8)}`)));
+  assert.equal(firstOnly.calls.length, 1);
+});
+
+test("episodic: one garbled answer → the rubric decides (never a silent override)", () => {
+  const root = fixture();
+  const hits = [hit("a", 0.9, "fix flaky login test"), hit("b", 0.4, "restyle login page")];
+  const garbledFirst = fakeJev((k) =>
+    k === "s0" ? { type: "choice", choice: "x" } : noulOf(0.55),
+  );
+  assert.equal(
+    chooseReplay("fix the flaky login test", hits, { root, llm: true, call: garbledFirst }),
+    null,
+  );
+  const garbledLow = fakeJev((k) => (k === "s0" ? { type: "choice", choice: "x" } : noulOf(0.2)));
+  assert.equal(
+    chooseReplay("fix the flaky login test", hits, { root, llm: true, call: garbledLow }),
+    null,
+  );
+});
+
+test("semantic: supersede keeps a fact that evidence confirmed, that is today's, or file-backed", () => {
+  const conflict = () =>
+    fakeJev((k) => (k === "durable" ? noulOf(0.9) : choiceOf("conflicts_f0", 0.95)));
+  // confirmed by a test.run outcome → val > 0.5
+  const r1 = fixture();
+  const confirmed = put(
+    r1,
+    "fact",
+    { name: "deploy-day", text: "we deploy on Tuesdays" },
+    { confirm: 3 },
+  );
+  // judged near the evidence (confirmations decay back to the 0.5 prior over weeks)
+  const a = rememberVerified(r1, "release-day", "we deploy on Thursdays", {
+    llm: true,
+    call: conflict(),
+    nowDay: 105,
+  });
+  assert.equal(a.superseded, undefined);
+  assert.equal(a.contradicts?.id, confirmed.id);
+  assert.match(a.kept, /evidence/);
+  assert.ok(loadClaims(repoLedger(r1)).some((c) => c.id === confirmed.id));
+  // minted today
+  const r2 = fixture();
+  const today = put(r2, "fact", { name: "deploy-day", text: "we deploy on Tuesdays" }, { t: 500 });
+  const b = rememberVerified(r2, "release-day", "we deploy on Thursdays", {
+    llm: true,
+    call: conflict(),
+    nowDay: 500,
+  });
+  assert.match(b.kept ?? "", /today/);
+  assert.ok(loadClaims(repoLedger(r2)).some((c) => c.id === today.id));
+  // backed by a fact file (portable brain / FORGE_LEDGER_ONLY=0)
+  const r3 = fixture();
+  put(r3, "fact", { name: "deploy-day", text: "we deploy on Tuesdays" });
+  mkdirSync(join(r3, ".forge", "brain", "facts"), { recursive: true });
+  writeFileSync(join(r3, ".forge", "brain", "facts", "deploy-day.md"), "we deploy on Tuesdays\n");
+  const c = rememberVerified(r3, "release-day", "we deploy on Thursdays", {
+    llm: true,
+    call: conflict(),
+  });
+  assert.match(c.kept ?? "", /fact file/);
+});
+
+test("semantic: a secret-shaped name never reaches the journal", () => {
+  const root = fixture();
+  verifyFact(
+    root,
+    { name: fakeGithubPat(), text: "the mirror token lives in the vault" },
+    {
+      llm: true,
+      call: fakeJev(() => noulOf(0.9)),
+    },
+  );
+  assert.equal(hasSecret(readFileSync(join(root, ".forge", "jev-memory.jsonl"), "utf8")), false);
+});
+
+test("semantic: storeFact never checks a personal recall note against this repo's ledger", () => {
+  const call = fakeJev(() => noulOf(0.01));
+  const r = storeFact(fixture(), "I prefer tabs over spaces everywhere", {
+    route: { home: "recall", confidence: 1, provenance: "test", neighbors: [], write: "auto" },
+    llm: true,
+    call,
+  });
+  assert.equal(r.stored, true);
+  assert.equal(call.calls.length, 0);
+});
+
+test("semantic: storeFact with archive:false (the autonomous path) never archives a fact", () => {
+  const root = fixture();
+  const old = put(root, "fact", { name: "deploy-day", text: "we deploy on Tuesdays" });
+  const conflict = fakeJev((k) => (k === "durable" ? noulOf(0.9) : choiceOf("conflicts_f0", 0.95)));
+  const r = storeFact(root, "we deploy on Thursdays", {
+    route: { home: "ledger-fact", confidence: 1, provenance: "test", neighbors: [], write: "auto" },
+    llm: true,
+    call: conflict,
+    archive: false,
+  });
+  assert.equal(r.stored, true);
+  assert.equal(r.superseded, undefined);
+  assert.ok(loadClaims(repoLedger(root)).some((c) => c.id === old.id));
+});
+
+test("forgetting: cached code and decisions are never judged; recent memory is out of reach", () => {
+  const nowDay = 200;
+  const artifact = mem("artifact", "cached parser code", 5);
+  const decision = mem("decision", "ratified: keep argon2", 5);
+  const recent = mem("summary", "touched last week", nowDay - 7);
+  const old = mem("summary", "an old one-off", 10);
+  const plan = { archive: [{ id: artifact.id, reason: "i", cause: "idle" }] };
+  const call = fakeJev(() => noulOf(0.95));
+  const out = judgeForgetting([artifact, decision, recent, old], plan, new Map(), nowDay, {
+    root: fixture(),
+    llm: true,
+    call,
+  });
+  const sent = Object.values(call.calls[0].state.memory).join(" | ");
+  assert.ok(!sent.includes("cached parser code"), "an artifact is never sent off the machine");
+  assert.ok(!sent.includes("argon2"), "a decision is never judged");
+  assert.ok(!sent.includes("touched last week"), "idle < 30 days is out of reach");
+  assert.ok(sent.includes("an old one-off"));
+  assert.ok(
+    out.archive.some((a) => a.id === artifact.id),
+    "the rubric's artifact archive stands",
+  );
+});
+
+test("forgetting: the Stop path (once) judges at most once a day", () => {
+  const root = fixture();
+  const claims = [mem("summary", "an old one-off", 10)];
+  const call = fakeJev(() => noulOf(0.5));
+  const opts = { root, llm: true, call, once: true };
+  judgeForgetting(claims, { archive: [] }, new Map(), 200, opts);
+  judgeForgetting(claims, { archive: [] }, new Map(), 200, opts);
+  assert.equal(call.calls.length, 1, "the second Stop the same day does not ask");
+  judgeForgetting(claims, { archive: [] }, new Map(), 201, opts);
+  assert.equal(call.calls.length, 2, "the next day asks again");
+  judgeForgetting(claims, { archive: [] }, new Map(), 201, { root, llm: true, call });
+  assert.equal(call.calls.length, 3, "an explicit dry run is never rate-limited");
 });
