@@ -107,6 +107,11 @@ function atN(f, n) {
   return lo === hi ? f(lo) : f(lo) + (x - lo) * (f(hi) - f(lo));
 }
 
+/** pass@n at a token budget n (non-integer → interpolated, as the ladder does); n ≤ m. */
+export function passAtBudget(m, k, n) {
+  return atN((x) => passAtN(m, k, x), n);
+}
+
 /**
  * One-sided paired t-test of H1: mean(d) > 0, clustered by question (one d per question).
  * @param {number[]} d

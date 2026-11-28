@@ -317,6 +317,20 @@ beats pass@n_B T(n_B), the without-replacement product. Each level is a one-side
 - **`forward` shape:** each worker gets a private `facts` slice, and the result is one
   deduplicated packet. Every other shape reports an `information` advisory, because it hands
   workers the same pack.
+- **Generations (`src/team_generations.js`):** a versioned team playbook per task class:
+  - It holds `{roles: [{id, budget}], hubOrder, parent, derivedFrom}`, content-addressed over
+    canonical JSON so a sorted-key store keeps the hash.
+  - `distillPlaybook` derives it from verified forward records. It drops fact-less roles and
+    trims budgets to ⌈1.25 × max used⌉, never above the parent's.
+  - `releaseDecision` is the paper's §4.4 gate. Release iff mean d ≥ 1.645·SE. With pools, d is
+    the paired equal-budget margin gain, (Y_c − T(n_c)) − (Y_p − T(n_p)). Health gates are
+    anchored at the parent.
+  - Candidates are stored as `trial` rows under `gen-candidate:<class>`. Rounds go under
+    `gen:<class>`, keyed by the confirmation suite's hash, so a suite judges one round.
+  - The lineage records each judged team's structural hash, so no team is judged twice.
+  - `delegationPlan` applies a playbook only when `spec.playbook` names one, and only for the
+    forward shape. The record keeps the hash, which is how `releaseGeneration` checks that each
+    arm ran its playbook.
 
 **Jev memory decisions (`src/jev_memory.js`, `src/jev_skills.js`).** The same contract carries a
 decision into each memory layer, over stores that already existed:
@@ -714,7 +728,7 @@ from the tree it describes.
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
-  src["src<br/>250+ files"]
+  src["src<br/>260+ files"]
   test["test<br/>230+ files"]
   landing["landing<br/>60+ files"]
   research["research<br/>30+ files"]

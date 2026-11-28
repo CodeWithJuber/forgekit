@@ -310,6 +310,7 @@ export const COMMANDS = {
       "forge harness supervise off",
       'forge harness run "Fix the retry bug" --accept "Retry tests pass"',
       "forge harness jobs tick",
+      "forge harness council generation status default",
     ],
   },
   develop: {
