@@ -550,6 +550,8 @@ an **MCP server** for Roo Code and VS Code.
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`                   | Emit a rules file plus the Forge MCP server config                                                     |
 | **OpenClaw**       | execution-folder `AGENTS.md` as project context; MCP registry is global | Rely on root `AGENTS.md`; write an OpenClaw-shaped `.openclaw/mcp.json` the operator applies with one `openclaw mcp add` |
 | **Kimi Code** | Shared `AGENTS.md`, trusted workspace `.kimi-code/mcp.json`, per-user `kimi.plugin.json` | The native prompt hook runs the bundled Node CLI and returns evidence in Kimi's `message` field; PreToolUse can block an action. [Setup and verification](docs/INTEGRATIONS.md) |
+| **Hermes Agent** | one project context kind, first found: `.hermes.md`/`HERMES.md`, the `AGENTS.md` chain, `CLAUDE.md`; MCP registry is the profile's `config.yaml` | Rely on root `AGENTS.md` and warn while a file that outranks it exists; report the one `hermes mcp add` command, write no MCP file |
+| **Pi** | first of `AGENTS.override.md`/`AGENTS.md`/`CLAUDE.md` per directory, cwd upward; `.pi/mcp.json` after project trust | Rely on root `AGENTS.md` (warn on a root `AGENTS.override.md`); write `.pi/mcp.json` `mcpServers` |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init`
 (`.roo/mcp.json`, `.vscode/mcp.json`) rather than a rules file — like every per-tool file,
@@ -607,7 +609,7 @@ forgekit/
     cli.js                # init | sync | doctor | substrate | ledger | reuse | … (`forge --help` for all)
     sync.js               # emitter (source → per-tool targets); hash + DO-NOT-EDIT
     doctor.js             # health checks
-    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue, openclaw, kimi) + claude_settings + mcp + hooks (`forge hooks`)
+    emit/                 # one module per tool (claude, codex, cursor, gemini, aider, copilot, windsurf, zed, continue, openclaw, kimi, opencode, hermes, pi) + claude_settings + mcp + hooks (`forge hooks`)
     orchestration.js      # orchestration rule pack + routing policy config: defaults < user-level < repo config, on/off per rule
     advisor.js            # Claude Code advisor tool: pairing table (data) + check, config resolution over Claude settings, the Advisor section, hook nudges
     route_policy.js       # unattended routing policy (pure): vote raise, writes-code floor, risk floor, top-tier gate

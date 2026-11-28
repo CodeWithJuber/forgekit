@@ -15,11 +15,13 @@ import continueTool from "./emit/continue.js";
 import copilot from "./emit/copilot.js";
 import cursor from "./emit/cursor.js";
 import gemini from "./emit/gemini.js";
+import hermes from "./emit/hermes.js";
 import { emitProjectHooks } from "./emit/hooks.js";
 import kimi from "./emit/kimi.js";
 import { emitMcp } from "./emit/mcp.js";
 import openclaw from "./emit/openclaw.js";
 import opencode from "./emit/opencode.js";
+import pi from "./emit/pi.js";
 import windsurf from "./emit/windsurf.js";
 import zed from "./emit/zed.js";
 import { managedMcpState } from "./integrations.js";
@@ -48,6 +50,8 @@ const MODULES = [
   openclaw,
   kimi,
   opencode,
+  hermes,
+  pi,
 ];
 
 /** The tools that get a native config file, one name each (Claude Code has two emitters). */
@@ -354,7 +358,8 @@ export function sync({ targetRoot = process.cwd(), tools } = {}) {
   const selection = resolveTools(tools, cfg);
   const emits = (key) => selection.tools === null || selection.tools.includes(key);
 
-  // The shared AGENTS.md — read directly by Codex, Cursor, Copilot, Windsurf, Zed, OpenClaw.
+  // The shared AGENTS.md — read directly by Codex, Cursor, Copilot, Windsurf, Zed, OpenClaw,
+  // Kimi Code, OpenCode, Hermes Agent and Pi.
   // Forge owns only its marked block in it: a hand-written file keeps every line (the old
   // behaviour replaced the whole file and parked the original in AGENTS.md.forge-bak).
   const agentsPath = join(targetRoot, "AGENTS.md");

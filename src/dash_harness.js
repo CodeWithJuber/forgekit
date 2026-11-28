@@ -17,6 +17,8 @@ const extraLabels = {
   continue: "Continue",
   roo: "Roo Code",
   openclaw: "OpenClaw",
+  hermes: "Hermes Agent",
+  pi: "Pi",
   [GENERIC_HOST]: "Other MCP client",
 };
 const hostIds = [...KNOWN_TOOLS, GENERIC_HOST];

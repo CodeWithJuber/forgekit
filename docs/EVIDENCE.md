@@ -23,7 +23,7 @@ status lives in [status/README.md](status/README.md). The short version is in th
 | ------------------------------------------------------------ | ----- |
 | CLI commands (`forge --help --all`)                          | 65    |
 | Lifecycle hook commands across 6 events (`hooks/hooks.json`) | 18    |
-| Config emitters (`src/emit/`, excluding the shared helper)   | 15    |
+| Config emitters (`src/emit/`, excluding the shared helper)   | 17    |
 | Installable skill packs (`skills/`)                          | 3     |
 | Explicit per-event hook byte budgets (`hooks/budget.json`)   | 5     |
 | MCP tools in an ordinary project (`tools/list`)              | 37    |

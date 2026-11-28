@@ -37,6 +37,8 @@ The matrix covers emitted files and adapter behavior. The native checks below id
 | **OpenClaw** | the execution folder's `AGENTS.md` as project context — tested (emission) | `.openclaw/mcp.json` fragment, **not auto-registered**: one `openclaw mcp add` command applies it — tested (emission and command); or install the package as a Codex bundle — declared | not supported (forge installs nothing into OpenClaw's hook system) | not supported in the agent |
 | **Kimi Code** | Shared root `AGENTS.md` | Trusted workspace `.kimi-code/mcp.json` | Per-user ForgeKit plugin runs SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure and Stop. A real Kimi 2.6.2 prompt delivered indexed source evidence. | PreToolUse can deny; Stop and UserPromptSubmit can block. Kimi observes post-tool events asynchronously. |
 | **OpenCode** | Shared root `AGENTS.md` | Project MCP entry — tested (emission) | `.opencode/plugins/forgekit.js` after `forge hooks on`: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop. Requires a CLI containing this adapter; 1.17.0 returns no verdict for OpenCode events and the plugin fails open — tested (emission and execution) | the plugin throws to deny or ask before a tool and blocks a prompt — tested (adapter execution). Stop observes `session.idle` and queues advisory context; it cannot block completion. Prompt context is attempted through `experimental.chat.system.transform`; OpenCode 1.18.31 invoked the hook but did not deliver the addition to the model, so durable rules reach it through `AGENTS.md` |
+| **Hermes Agent** | Shared root `AGENTS.md`. Hermes loads one kind of project context, the first it finds: `.hermes.md`/`HERMES.md`, then the `AGENTS.md` chain from the git root, then `CLAUDE.md`. `forge sync` warns while a `.hermes.md`, `HERMES.md` or root `AGENTS.override.md` would hide `AGENTS.md` — tested (emission) | not written: Hermes reads MCP servers only from its profile's `config.yaml`, which forge never edits. The sync row prints the one `hermes mcp add` command that registers `forge-cortex` — tested (command) | not supported (Hermes hooks and plugins are profile-level; a repository cannot carry them) | not supported in the agent |
+| **Pi** | Shared root `AGENTS.md`. Pi loads the first of `AGENTS.override.md`, `AGENTS.md` and `CLAUDE.md` in each directory from the working directory up, so the thin `CLAUDE.md` never loads beside it; `forge sync` warns while a root `AGENTS.override.md` hides it — tested (emission) | `.pi/mcp.json` `mcpServers`, read once the person grants project trust — tested (emission) | not supported (Pi intercepts tool calls only through TypeScript extensions in `.pi/extensions/`, and forge installs none) | not supported in the agent |
 | **Roo Code** | no rules file | `.roo/mcp.json` — tested (emission) | not supported | not supported |
 | **VS Code** | no rules file | `.vscode/mcp.json` — tested (emission) | not supported | not supported |
 
@@ -58,6 +60,30 @@ shared `AGENTS.md` or export the instructions with `forge prompts show master --
 Automatic context on every prompt requires a lifecycle callback that can deliver context
 in that host. For projects using other hosts, the CLI also supports explicit retrieval
 with `forge evidence "your task"`.
+
+### Hermes Agent and Pi
+
+Both read the shared `AGENTS.md` themselves, so `forge init --tools hermes,pi` adds no
+instruction file for either.
+
+For **Hermes Agent**, register the MCP server once in your Hermes profile:
+`hermes mcp add forge-cortex --command forge --args cortex-mcp`. Hermes keeps MCP servers
+in `mcp_servers` in `~/.hermes/config.yaml` and reads no project file, so the registration
+serves every project. Hermes starts the server in the session's working directory when one is
+set, otherwise in its own process directory; add `env: { FORGE_ROOT: /absolute/project/path }`
+to the entry to pin one project. Sources: [Context files](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files) ·
+[MCP](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) ·
+[Event hooks](https://hermes-agent.nousresearch.com/docs/user-guide/features/hooks).
+
+For **Pi**, `forge sync` writes `.pi/mcp.json`. Pi loads it, like every protected file under
+`.pi/`, only after you grant project trust at startup or with `/trust`; `/mcp` in the session
+then shows whether `forge-cortex` connected. Sources:
+[Configuration](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/configuration.md) ·
+[MCP servers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/mcp.md) ·
+[Project trust](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/security.md).
+
+Neither host gets lifecycle hooks from ForgeKit, so evidence arrives when the agent calls the
+MCP tools, not before every prompt.
 
 ### Supervise a coding run
 

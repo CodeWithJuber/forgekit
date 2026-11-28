@@ -8,7 +8,7 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { BRAND } from "./brand.js";
 import { HOOK_TIMEOUT_S, planHooks } from "./emit/hooks.js";
-import { emitMcp } from "./emit/mcp.js";
+import { emitMcp, hermesEnableHint } from "./emit/mcp.js";
 import { planPlugin } from "./emit/opencode.js";
 import { GENERIC_HOST, genericHarnessServer, parseHarnessHosts } from "./harness_hosts.js";
 import { installedHarnessPython } from "./harness_python.js";
@@ -203,6 +203,13 @@ export function checkHarnessDrift(root, hosts) {
           "global registry",
           "manual",
           "Register the generated OpenClaw fragment in the client",
+        );
+      if (tool === "hermes")
+        note(
+          host,
+          "global registry",
+          "manual",
+          `Register the server in the Hermes profile: ${hermesEnableHint(state.servers)}`,
         );
     }
   } finally {

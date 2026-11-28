@@ -150,7 +150,16 @@ test("sync emits the pack into every target: text in AGENTS.md + Continue, point
   const gemini = JSON.parse(readFileSync(join(root, ".gemini", "settings.json"), "utf8"));
   assert.ok(gemini.context.fileName.includes("AGENTS.md"));
   assert.match(readFileSync(join(root, ".aider.conf.yml"), "utf8"), /- AGENTS\.md/);
-  for (const tool of ["Codex", "Cursor", "Copilot", "Zed", "OpenClaw", "Kimi Code"]) {
+  for (const tool of [
+    "Codex",
+    "Cursor",
+    "Copilot",
+    "Zed",
+    "OpenClaw",
+    "Kimi Code",
+    "Hermes Agent",
+    "Pi",
+  ]) {
     const row = res.report.find((r) => r.tool === tool);
     assert.ok(row, `${tool} row`);
     assert.equal(row.target, "AGENTS.md", `${tool} reads AGENTS.md`);
