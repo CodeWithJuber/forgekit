@@ -1359,9 +1359,10 @@ and leaves the recorded `tools` set alone).
 - `forge tools` — show the detected/primary tool (`primaryTool` in `.forge/forge.config.json`, else
   auto-detected from which agent folder exists — `CLAUDE.md`, `.cursor/`, `.gemini/`,
   `.codex/`, `.zed/`, `.vscode/`, `.aider.conf.yml`, `.continue/`, `.windsurf/`, `.roo/`,
-  `.openclaw/`, `.kimi/`) and which targets are currently gitignored.
+  `.openclaw/`, `.kimi/`, `.hermes/`, `.pi/`) and which targets are currently gitignored.
 - `forge tools <name>` — record `<name>` (`claude` · `cursor` · `gemini` · `codex` ·
-  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo` · `openclaw` · `kimi`) as this repo's primary tool in
+  `zed` · `vscode` · `aider` · `continue` · `windsurf` · `roo` · `openclaw` · `kimi` ·
+  `opencode` · `hermes` · `pi`) as this repo's primary tool in
   `.forge/forge.config.json`, then write a **marked, reversible** block into `.gitignore`
   (`# forge:gitignore:begin … # forge:gitignore:end`) that ignores every OTHER tool's
   emitted artifacts. Your own `.gitignore` lines are never touched, and the shared

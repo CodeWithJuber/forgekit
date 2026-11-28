@@ -4,7 +4,7 @@
 // (see integrations.js) or a region carrying a forge marker. Anything else is user-owned
 // and is reported, never rewritten. JSON tools differ only by their top-level key; Codex
 // is TOML (forge-marked blocks) and Continue gets one forge-marked YAML file per managed
-// server. (Windsurf is global-only — nothing to emit.)
+// server. (Windsurf and Hermes Agent are global-only — nothing to emit.)
 //
 // Ownership is decided PER TARGET (ME-08): the caller supplies `owns(target, name)`, so a
 // same-name entry adopted for one tool's config never authorises overwriting another
@@ -27,6 +27,11 @@ import { hashContent, isManaged, readIfExists, writeManaged, yamlHeader } from "
  *  row says so rather than implying the server is already live. */
 export const OPENCLAW_TARGET = ".openclaw/mcp.json";
 
+/** The relative path of Pi's project MCP file. Pi reads `mcpServers` (the Claude/Cursor shape)
+ *  from `.pi/mcp.json` once the person grants project trust; before that the file is ignored,
+ *  so the emitted row says so (Pi docs, docs/mcp.md and docs/security.md). */
+export const PI_TARGET = ".pi/mcp.json";
+
 // `key` is a DOTTED PATH into the document, not a single top-level key: OpenClaw nests its
 // registry under `mcp.servers`, every other tool uses one flat key. `bucketAt` resolves both.
 // `id` is the tool's canonical key (repo_config KNOWN_TOOLS), used to honour a tool selection.
@@ -40,6 +45,7 @@ const JSON_TARGETS = [
   { id: "kimi", tool: "Kimi CLI", file: ".kimi-code/mcp.json", key: "mcpServers" },
   { id: "opencode", tool: "OpenCode", file: "opencode.json", key: "mcp" },
   { id: "openclaw", tool: "OpenClaw", file: OPENCLAW_TARGET, key: "mcp.servers" },
+  { id: "pi", tool: "Pi", file: PI_TARGET, key: "mcpServers" },
 ];
 
 const CONTINUE_DIR = join(".continue", "mcpServers");
@@ -163,6 +169,36 @@ export function openclawAddCommand(name, def) {
   return ["openclaw mcp add", shellWord(name), `--command ${shellWord(def.command)}`, ...args].join(
     " ",
   );
+}
+
+/**
+ * The current-docs `hermes mcp add` invocation that registers one server in Hermes Agent's
+ * profile registry (`mcp_servers` in `~/.hermes/config.yaml`). Hermes reads no project MCP
+ * file and forge never writes a person's profile, so this command is the whole MCP step.
+ * `--args` takes the rest of the argv, so it comes last.
+ * @param {string} name
+ * @param {{command?:string, args?:string[], url?:string}} def
+ * @returns {string}
+ */
+export function hermesAddCommand(name, def) {
+  if (def.url) return `hermes mcp add ${shellWord(name)} --url ${shellWord(def.url)}`;
+  const args = (def.args || []).map(shellWord);
+  return [
+    "hermes mcp add",
+    shellWord(name),
+    `--command ${shellWord(def.command ?? BRAND.cli)}`,
+    ...(args.length ? ["--args", ...args] : []),
+  ].join(" ");
+}
+
+/** One line naming the `hermes mcp add` command for the managed set: the first `forge-*`
+ *  server (else the first), plus a count of the rest. */
+export function hermesEnableHint(servers) {
+  const names = Object.keys(servers);
+  if (!names.length) return "no managed MCP server";
+  const first = names.find((n) => n.startsWith(`${BRAND.cli}-`)) ?? names[0];
+  const rest = names.length - 1;
+  return `\`${hermesAddCommand(first, servers[first])}\`${rest ? ` (+${rest} more)` : ""}`;
 }
 
 /** Per-server Continue file name. Servers already namespaced `forge-*` keep their name.

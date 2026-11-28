@@ -116,6 +116,8 @@ These are what `forge --help` shows first. The other commands are still there:
 | OpenCode | ✅ | Project MCP | Generated JavaScript plugin |
 | Aider | ✅ | — | — |
 | OpenClaw | ✅ | Operator registration or bundle | — |
+| Hermes Agent | ✅ | Profile registration (`hermes mcp add`) | — |
+| Pi | ✅ | Project MCP (after project trust) | — |
 | Roo Code, VS Code | — | ✅ | — |
 
 Claude Code has the deepest real-world testing. What each integration does, and how it is
