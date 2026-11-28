@@ -35,6 +35,7 @@
 import { spawnSync } from "node:child_process";
 import { BRAND } from "./brand.js";
 import { CLASSES, classifyPath } from "./gate.js";
+import { checkRules, loadRules } from "./rule_compile.js";
 import { hasSecret, redactSecrets } from "./secrets.js";
 import { IGNORE_DIRS } from "./util.js";
 
@@ -301,7 +302,8 @@ export function gateMode(v = process.env.FORGE_COMMIT_GATE) {
 /**
  * PURE decision table over already-gathered facts — the testable core, no git.
  * `unscanned` = staged files the secret scan could not read: refused like a secret.
- * @param {{staged?: string[], secretFiles?: string[], unscanned?: string[], execBitFiles?: string[], mode?: "warn"|"block"|"off"}} [opts]
+ * `ruleViolations` = staged lines that break a rule compiled by `forge know --enforce`.
+ * @param {{staged?: string[], secretFiles?: string[], unscanned?: string[], execBitFiles?: string[], ruleViolations?: {rule: import("./rule_compile.js").Rule, file: string, text?: string}[], mode?: "warn"|"block"|"off"}} [opts]
  * @returns {{allow: boolean, row: string, findings: {kind: string, severity: string, detail: string, files: string[]}[], classes?: Record<string, string[]>}}
  */
 export function commitGateDecision({
@@ -309,6 +311,7 @@ export function commitGateDecision({
   secretFiles = [],
   unscanned = [],
   execBitFiles = [],
+  ruleViolations = [],
   mode = "warn",
 } = {}) {
   if (mode === "off") return { allow: true, row: "kill-switch", findings: [] };
@@ -339,6 +342,16 @@ export function commitGateDecision({
         .slice(0, 10)
         .join(", ")}${classes.code.length > 10 ? ` (+${classes.code.length - 10} more)` : ""}`,
       files: classes.code,
+    });
+  }
+  for (const v of ruleViolations) {
+    // A rule the team asked to enforce blocks in warn mode too, like a secret: that is what
+    // compiling it meant. A rule stored with --warn only warns.
+    findings.push({
+      kind: "rule",
+      severity: v.rule.severity === "warn" ? "warn" : "block",
+      detail: `${v.file} breaks rule ${v.rule.id} ("${v.rule.text}")${v.text ? `: ${v.text}` : ""}`,
+      files: [v.file],
     });
   }
   if (execBitFiles.length) {
@@ -403,8 +416,16 @@ export function commitGate(root, { env = process.env } = {}) {
     } catch {
       execBitFiles = []; // fail-open: the audit is advisory
     }
+    // Rules compiled from memory (`forge know --enforce`): checked on the staged added lines.
+    let ruleViolations = [];
+    try {
+      const rules = loadRules(root);
+      if (rules.length) ruleViolations = checkRules(rules, byFile, staged);
+    } catch {
+      ruleViolations = []; // fail-open like the rest of the gate
+    }
     return {
-      ...commitGateDecision({ staged, secretFiles, unscanned, execBitFiles, mode }),
+      ...commitGateDecision({ staged, secretFiles, unscanned, execBitFiles, ruleViolations, mode }),
       mode,
       staged,
     };
@@ -446,6 +467,11 @@ export function renderCommitGate(r) {
     if (f.kind === "secret-scan") {
       lines.push(
         "      fix: make `git diff --cached --text -- <file>` work (or unstage the file); if it is intentionally huge, commit it with FORGE_COMMIT_GATE=0.",
+      );
+    }
+    if (f.kind === "rule") {
+      lines.push(
+        `      fix: change the line — or, if the rule no longer holds, \`${BRAND.cli} know --remove <id>\` (\`${BRAND.cli} know --rules\` lists them).`,
       );
     }
     if (f.kind === "exec-bit") {

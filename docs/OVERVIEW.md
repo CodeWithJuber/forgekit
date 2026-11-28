@@ -476,7 +476,9 @@ the project policy and verifier to tool calls made inside that run.
   endpoint and enforces run and project budgets using the operator's prices. The Python routing
   study's 62.1% saving failed to reproduce on held-out tasks. [Evaluation](EVIDENCE.md#measured-evidence)
 - **Memory is external state, not model training.** Claims live in files and are retrieved into
-  context; Forgekit does not update model weights. It supplies persistence and external checks
+  context; Forgekit does not update model weights. A policy that a program can test can be
+  compiled into a commit check (`forge know --enforce`) instead, so it holds whether or not a
+  model retrieved or followed it; a sentence that fits no checkable shape stays memory. It supplies persistence and external checks
   that a model does not guarantee on its own — one tested way to do that, not the only one.
 - **Embeddings are an adapter, not an included model or vector store.** A user supplies the
   external command or HTTP service. MinHash remains the default and fallback.
