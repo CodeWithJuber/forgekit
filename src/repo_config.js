@@ -44,6 +44,9 @@ const DETECT = [
   { tool: "openclaw", marker: ".openclaw" },
   { tool: "kimi", marker: ".kimi-code" },
   { tool: "kimi", marker: ".kimi" },
+  { tool: "hermes", marker: ".hermes" },
+  { tool: "hermes", marker: ".hermes.md" },
+  { tool: "pi", marker: ".pi" },
 ];
 
 /** Tool names accepted by `forge tools <name>`. Kept in lockstep with the emit targets
@@ -62,6 +65,8 @@ export const KNOWN_TOOLS = [
   "openclaw",
   "kimi",
   "opencode",
+  "hermes",
+  "pi",
 ];
 
 // Every on-disk sign that a repo already uses a tool — the evidence `forge init` needs to
@@ -82,6 +87,8 @@ const TOOL_MARKERS = {
   openclaw: [".openclaw"],
   kimi: [".kimi-code", ".kimi"],
   opencode: [".opencode", "opencode.json", "opencode.jsonc"],
+  hermes: [".hermes", ".hermes.md", "HERMES.md"],
+  pi: [".pi"],
 };
 
 // Names people type for a tool whose canonical key differs.
@@ -93,6 +100,9 @@ const TOOL_ALIASES = {
   "kimi-cli": "kimi",
   "kimi-code": "kimi",
   "open-code": "opencode",
+  "hermes-agent": "hermes",
+  "pi-agent": "pi",
+  "pi-coding-agent": "pi",
 };
 
 /**
@@ -154,6 +164,8 @@ const TOOL_KEYS = [
   ["openclaw", /^OpenClaw/],
   ["kimi", /^Kimi/],
   ["opencode", /^OpenCode/],
+  ["hermes", /^Hermes/],
+  ["pi", /^Pi\b/],
 ];
 
 const forgeConfigPath = (root) => join(root, FORGE_CONFIG_REL);

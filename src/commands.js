@@ -207,7 +207,7 @@ export const COMMANDS = {
     flags: [
       {
         flag: "--tools <list|all>",
-        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
+        desc: "agent tools to emit config for, comma-separated (claude, cursor, gemini, codex, zed, vscode, aider, continue, windsurf, roo, openclaw, kimi, opencode, hermes, pi) or all. Defaults to the recorded selection or the tools detected in this repo. A repo with no tool markers starts with Claude Code. Recorded in .forge/forge.config.json so later syncs emit the same set.",
       },
       {
         flag: "--profile <minimal|standard>",

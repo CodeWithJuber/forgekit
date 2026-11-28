@@ -74,7 +74,7 @@ rules do:
 
 | Tool | How it gets the rules |
 | --- | --- |
-| Codex, Cursor, Copilot, Windsurf/Devin, Zed, OpenClaw | read `AGENTS.md` natively |
+| Codex, Cursor, Copilot, Windsurf/Devin, Zed, OpenClaw, Hermes Agent, Pi | read `AGENTS.md` natively |
 | **Kimi Code** | reads `AGENTS.md` natively (see below) |
 | Claude Code | `CLAUDE.md` imports `@AGENTS.md` |
 | Gemini CLI | `.gemini/settings.json` lists `AGENTS.md` in `context.fileName` |

@@ -1,7 +1,8 @@
 // forge init emits config for tools with a sign of life on disk (Claude on an empty repo),
 // or an explicit --tools list, along with AGENTS.md. It records the
 // choice so later syncs emit the same set. It used to create .aider.conf.yml, .codex/,
-// .continue/, .cursor/, .gemini/, .openclaw/, .roo/, .vscode/ and .zed/ in every repo.
+// .continue/, .cursor/, .gemini/, .openclaw/, .roo/, .vscode/ and .zed/ in every repo (and
+// Pi's .pi/ is held to the same rule).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -46,6 +47,7 @@ const OTHER_TOOL_PATHS = [
   ".cursor",
   ".gemini",
   ".openclaw",
+  ".pi",
   ".roo",
   ".vscode",
   ".zed",
