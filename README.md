@@ -158,8 +158,9 @@ Refutations, boundaries and the research prototypes are in [docs/EVIDENCE.md](do
 - **Beta.** Releases follow Semantic Versioning, and support is best effort with no SLA.
 - **Impact is heuristic.** A regex-derived code graph, not a sound call graph: it can miss
   files and over-warn.
-- **Guardrails are defence in depth, not a sandbox.** A creative shell command can still get
-  past a regex guard.
+- **Guardrails are defence in depth, not a sandbox.** Commands are normalized the way the shell
+  reads them (quotes, variables, substitutions, inline programs) before they are judged. It is
+  static analysis: a program the guard cannot evaluate can still get past it.
 - **Memory is external state.** Facts live in files and are retrieved into context; no model is
   retrained. A policy a program can test can instead be compiled into a commit check
   (`forge know --enforce`), which holds whether or not a model read it.
