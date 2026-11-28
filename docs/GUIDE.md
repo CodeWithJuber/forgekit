@@ -804,8 +804,8 @@ generated from the same registries the check reads, into marker-managed blocks
 - the repo map in `ARCHITECTURE.md` — drawn from the live import graph, so it cannot
   drift from the tree it describes;
 - the docs site's changelog page (`mintlify/changelog/overview.mdx`) — from `CHANGELOG.md`:
-  every release, and the `[Unreleased]` work, as one Mintlify `<Update>` entry listing each
-  change's headline with a link to its full notes. An MDX page cannot hold HTML comments,
+  every release, and any `[Unreleased]` work written there, as one Mintlify `<Update>` entry
+  listing each change's headline with a link to its full notes. An MDX page cannot hold HTML comments,
   so its markers are JSX comments (`{/* forge:render:changelog:begin … */}`). A release
   (`scripts/bump.mjs`) regenerates it in the release commit;
 - the diagram facts — labels in the Archify diagram sources (`docs/diagrams/src`) that state
@@ -827,7 +827,18 @@ reconciler in CI: a stale registry-derived block is an **error** whose message i
 fix (`run forge docs render`), while tree-derived output (the repo map, diagram theme)
 is a warning — moving a file never fails an unrelated PR, but a new command with a
 stale table always does. The changelog page is an error too: edit `CHANGELOG.md`, then
-run `forge docs render` in the same change. A stale diagram fact is a warning: re-rendering
+run `forge docs render` in the same change. The repo map rounds counts of 20 or more down to
+tens ("240+ files"), so a pull request that adds a file rarely changes a line of it.
+
+**Conflict-free changelog (`changelog.d/`).** When every pull request adds its line under
+`[Unreleased]`, the first one merged puts every other open one in conflict on the same lines,
+and GitHub ignores `merge=union` for pull requests. A repository that creates a `changelog.d/`
+directory keeps its unreleased entries there instead, one file per change, each holding Keep a
+Changelog sections (`### Added`, `### Fixed`, …). `docs check` then validates every file (a
+missing or unknown section is an error) and refuses entries written straight under
+`[Unreleased]`, so nobody reintroduces the shared lines. A release folds the files into the
+new version's section and deletes them (`scripts/bump.mjs` does this here). The changelog page
+is rendered from `CHANGELOG.md` alone, so pending fragments never change it either. A stale diagram fact is a warning: re-rendering
 needs a browser. After a push to `master`, the documentation workflow runs the doc renderer, stale diagram build and media checks. Changes to CLI demos, social cards or the dashboard can regenerate checked-in images. Use `node scripts/docs-media.mjs plan` to inspect media drift locally. [Generated content and prose review](diagrams/README.md#automatic-updates)
 
 ### `forge docs sync` — which prose did this diff make stale?

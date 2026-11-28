@@ -200,6 +200,16 @@ export function renderMcpToolsTable() {
 }
 
 /**
+ * A count as the map shows it: exact below 20, else rounded down to ten with a "+". A pull
+ * request that adds a file or an import then rarely changes a line of the committed map, so
+ * two open pull requests no longer conflict on it.
+ * @param {number} n
+ */
+export function roughCount(n) {
+  return n < 20 ? String(n) : `${Math.floor(n / 10) * 10}+`;
+}
+
+/**
  * The repo map: top-level directories sized by file count, edges = import counts between
  * them, from the live import graph (scope.directedImportGraph). Deterministic ordering.
  * @param {string} root
@@ -227,15 +237,15 @@ export function renderRepoMap(root, { maxDirs = 9 } = {}) {
   }
   const id = (dir) => dir.replace(/[^A-Za-z0-9]/g, "_");
   const lines = [mermaidInit(), "flowchart LR"];
-  for (const dir of kept)
-    lines.push(
-      `  ${id(dir)}["${dir}<br/>${files.get(dir)} file${files.get(dir) === 1 ? "" : "s"}"]`,
-    );
+  for (const dir of kept) {
+    const n = /** @type {number} */ (files.get(dir));
+    lines.push(`  ${id(dir)}["${dir}<br/>${roughCount(n)} file${n === 1 ? "" : "s"}"]`);
+  }
   for (const [key, n] of [...edges.entries()].sort(
     (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
   )) {
     const [a, b] = key.split("→");
-    lines.push(`  ${id(a)} ${n > 1 ? `-- ${n} --> ` : "--> "}${id(b)}`);
+    lines.push(`  ${id(a)} ${n > 1 ? `-- ${roughCount(n)} --> ` : "--> "}${id(b)}`);
   }
   return `\`\`\`mermaid\n${lines.join("\n")}\n\`\`\``;
 }
