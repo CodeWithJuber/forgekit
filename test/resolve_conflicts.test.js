@@ -71,6 +71,7 @@ test("end to end: two branches each add a table row at the same spot", (t) => {
       encoding: "utf8",
     });
   git("init", "-q", "-b", "master");
+  git("config", "core.autocrlf", "false"); // byte-exact on Windows runners too
   writeFileSync(join(root, "EVIDENCE.md"), "| A | 1 |\n| Z | 9 |\n");
   git("add", ".");
   git("commit", "-q", "-m", "base");
@@ -98,4 +99,11 @@ test("end to end: two branches each add a table row at the same spot", (t) => {
     "| A | 1 |\n| Theirs | 3 |\n| Mine | 2 |\n| Z | 9 |\n",
   );
   assert.equal(git("status", "--porcelain"), "", "merge committed, tree clean");
+});
+
+test("a CRLF checkout (Windows) resolves the same and keeps CRLF", () => {
+  const text = ["| a |", hunk(["| mine |"], [], ["| theirs |"]), "| z |", ""].join("\r\n");
+  const r = resolveText(text);
+  assert.equal(r.unresolved, 0);
+  assert.equal(r.text, "| a |\r\n| theirs |\r\n| mine |\r\n| z |\r\n");
 });

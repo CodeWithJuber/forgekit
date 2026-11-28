@@ -283,3 +283,26 @@ test("missing local paths discard pending research without hiding failed edits",
   );
   assert.equal(toolEvidenceQuery({ exitCode: 0 }, "pending"), "pending");
 });
+
+test("takeQuery: a held claim makes a parallel take return nothing; one process gets the prompt", (t) => {
+  const state = mkdtempSync(join(tmpdir(), "forge-claim-state-"));
+  const root = mkdtempSync(join(tmpdir(), "forge-claim-root-"));
+  const saved = process.env.FORGE_HOME;
+  process.env.FORGE_HOME = state;
+  t.after(() => {
+    if (saved === undefined) delete process.env.FORGE_HOME;
+    else process.env.FORGE_HOME = saved;
+    rmSync(state, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+  queueQuery("cursor", root, "claim", "why does the parser fail");
+  const dir = join(state, "hook-queries");
+  const [queued] = readdirSync(dir);
+  // Another process is mid-claim: this one must not read the prompt too.
+  writeFileSync(join(dir, `${queued}.claim`), "");
+  assert.equal(takeQuery("cursor", root, "claim"), "");
+  rmSync(join(dir, `${queued}.claim`));
+  assert.equal(takeQuery("cursor", root, "claim"), "why does the parser fail");
+  assert.equal(takeQuery("cursor", root, "claim"), "", "consumed once");
+  assert.deepEqual(readdirSync(dir), [], "no query or claim left behind");
+});

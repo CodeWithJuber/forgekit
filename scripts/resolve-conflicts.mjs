@@ -36,7 +36,9 @@ const git = (args) => execFileSync("git", args, { encoding: "utf8" });
  * @returns {{text: string, resolved: number, unresolved: number, rendered: number}}
  */
 export function resolveText(text) {
-  const lines = text.split("\n");
+  // A Windows checkout writes conflict markers with CRLF; keep the file's own line ending.
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
   /** @type {string[]} */
   const out = [];
   let inRender = false;
@@ -79,7 +81,7 @@ export function resolveText(text) {
     }
     i = j;
   }
-  return { text: out.join("\n"), resolved, unresolved, rendered };
+  return { text: out.join(eol), resolved, unresolved, rendered };
 }
 
 function main() {
