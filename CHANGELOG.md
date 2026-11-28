@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-11-28
+
+### Added
+
+- `scripts/resolve-conflicts.mjs` resolves the merge conflicts that have one right answer and leaves the rest: lines that both branches only inserted at the same spot (two new rows in one table, two bullets in one list) are both kept, the base branch's first, and hunks inside a `forge:render` block are rebuilt by `forge docs render`; a spot where both sides edited the same existing lines stays for a person. `npm run sync:master` merges master and runs it. The PR sync workflow does the same for every open same-repo pull request when master moves, and comments once on a pull request whose conflicts need a person. A push made with the default token does not start CI, so the workflow uses `FORGE_DOCS_TOKEN` when it is set.
+- **`forge know --enforce "<rule>"`** compiles a policy into a check `forge precommit` runs on every commit, so the rule holds whether or not a model retrieved it: a banned import (`never import moment`, JS and Python), a known construct (`no console.log in src`, `avoid default exports`, `no @ts-ignore`), a quoted literal, or another package manager's lockfile (`use pnpm, not npm`). A sentence that fits none of these, or that says "use X" about something that is not a known package, is refused with the reason and stays memory. A violating commit is refused (`--warn` only warns). `--rules`, `--check` and `--remove <id>` manage `.forge/rules.json`, which the team commits.
+- docs/STABILITY.md states what is stable today (Semantic Versioning, the 14 of 64 commands with a versioned contract, text output for people only), a proposed deprecation policy, the support terms, and proposed evidence criteria for dropping the beta label, each with where it stands. The README and OVERVIEW limits link to it.
+
+### Fixed
+
+- A prompt queued for evidence lookup could be injected twice when two tools of one turn finished together on Windows: the claim was a rename, which Windows does not make exclusive when the other process already holds the file open. The claim is now an exclusive create, which one process wins on every platform.
+
 ## [1.24.0] - 2026-11-28
 
 ### Added
@@ -4018,7 +4030,8 @@ consolidate` reconciles deletions into tombstones. `putClaim` repairs corrupt/tr
   check; coverage + type-checking (`tsc --checkJs`); 2026 production-standard rules;
   OWASP-LLM / NIST SSDF / SLSA control mapping.
 
-[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.24.0...HEAD
+[Unreleased]: https://github.com/CodeWithJuber/forgekit/compare/v1.25.0...HEAD
+[1.25.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.24.0...v1.25.0
 [1.24.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.23.0...v1.24.0
 [1.23.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.22.0...v1.23.0
 [1.22.0]: https://github.com/CodeWithJuber/forgekit/compare/v1.21.0...v1.22.0
