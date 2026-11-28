@@ -1,0 +1,3 @@
+### Changed
+
+- Unreleased changelog entries now live in `changelog.d/`, one file per change, so open pull requests no longer conflict on `CHANGELOG.md`'s `[Unreleased]` lines (GitHub ignores `merge=union` for pull requests). `scripts/bump.mjs` folds the files into the release section and deletes them; `forge docs check` validates each file's sections and refuses entries written straight under `[Unreleased]` while the directory exists. Any repository opts in by creating `changelog.d/`. The generated repo map in ARCHITECTURE.md now rounds file and import counts of 20 or more down to tens ("240+ files"), so adding a file rarely changes a committed line there either.

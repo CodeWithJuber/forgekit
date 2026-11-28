@@ -33,9 +33,12 @@ npm run check     # Biome lint + format check
 3. Run `npm test`, `npm run typecheck`, and `npm run check:fix` before committing.
 4. Use [Conventional Commits](https://www.conventionalcommits.org/):
    `feat(scope): description`, `fix: …`, `docs: …`.
-5. Add a line to `CHANGELOG.md` under `## [Unreleased]`. This is your release note —
-   when your PR merges, the auto-release uses it verbatim. (Skip it and the release
-   still cuts, synthesizing notes from your commit subjects — but your wording is better.)
+5. Add a release note as a new file `changelog.d/<your-branch>.md`, under a Keep a Changelog
+   heading (`### Added`, `### Fixed`, …) — not in `CHANGELOG.md`, which `forge docs check`
+   refuses, because every PR editing the same `[Unreleased]` lines is what made open PRs
+   conflict. The release folds every file into `CHANGELOG.md` verbatim; see
+   [changelog.d/README.md](./changelog.d/README.md). (Skip it and the release still cuts,
+   synthesizing notes from your commit subjects — but your wording is better.)
 6. Open a PR. CI (tests on Node 20/22, Biome, typecheck, shellcheck) must pass.
 
 ## Project shape
@@ -62,8 +65,8 @@ diffs with no tests) will be closed. To get merged:
   one they can't.
 - **Substrate changes need docs.** If you change `forge substrate`, `forge impact`,
   router/gate rubrics, or MCP substrate tools, update
-  [docs/cognitive-substrate/README.md](./docs/cognitive-substrate/README.md) and
-  `CHANGELOG.md`.
+  [docs/cognitive-substrate/README.md](./docs/cognitive-substrate/README.md) and add a
+  `changelog.d/` entry.
 
 We'd rather give a clear "not now" than merge something that adds maintenance burden — see
 [GOVERNANCE.md](./GOVERNANCE.md).
