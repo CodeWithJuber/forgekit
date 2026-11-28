@@ -92,6 +92,7 @@
 //   - src/source_local.js hashes file chunk identities
 //   - src/source_remote.js hashes remote connection scope
 //   - src/sources.js hashes the workspace and local source scope
+//   - src/team_generations.js hashes team playbooks and their structure
 //   (src/ledger_store.js:586 also names it in a doc comment — same file, already labeled.)
 //   The harness components below hash stable identities, approvals, edits and verifier output.
 //   test/harness_jobs.test.js locates the private queue namespace to test isolation.
@@ -172,6 +173,7 @@ export const IMPACT_CASES = [
       "test/harness_jobs.test.js",
       "src/source_remote.js",
       "src/sources.js",
+      "src/team_generations.js",
     ],
     editedFile: "src/util.js",
   },

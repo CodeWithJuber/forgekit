@@ -77,8 +77,19 @@ export async function handleHarnessJobs(root, group, argv, { config, run }) {
       return recordShapeTrial(root, args[0], json(args[1]), json(args[2]), {
         taskClass: args[3] ?? "default",
       });
+    // Recursive generations (src/team_generations.js): a class's team playbook, learned from its
+    // own verified forward runs and released only through the paired gate on fresh tasks.
+    if (action === "generation") {
+      const [sub, taskClass, ...rest] = args;
+      const g = await import("./team_generations.js");
+      if (sub === "status" && taskClass && !rest.length) return g.generationStatus(root, taskClass);
+      if (sub === "propose" && taskClass && !rest.length)
+        return g.proposeGeneration(root, taskClass);
+      if (sub === "release" && taskClass && rest.length === 2)
+        return g.releaseGeneration(root, taskClass, json(rest[0]), json(rest[1]));
+    }
     throw new Error(
-      "council: plan|run|convene|synthesize <spec.json>, get <id>, status <shape> [class], trial <shape> <frozen.json> <observations.json> [class]",
+      "council: plan|run|convene|synthesize <spec.json>, get <id>, status <shape> [class], trial <shape> <frozen.json> <observations.json> [class], generation status|propose <class>, generation release <class> <frozen.json> <observations.json>",
     );
   }
   if (group !== "jobs") throw new Error("Expected jobs or council");

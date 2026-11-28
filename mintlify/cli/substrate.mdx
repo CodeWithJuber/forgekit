@@ -63,6 +63,21 @@ forge team ladder records.jsonl [--alpha 0.025] [--json]   # {"arm":"group"|"poo
 forge team evaluate <frozen-suite>                         # paired rollout worksheet
 ```
 
+A team can also improve its next generation from its own verified work. A **playbook** for a
+task class is distilled from the class's verified `forward` runs:
+- it keeps the roles that forwarded a fact;
+- it trims each budget to 1.25 × the most that role used;
+- it orders the hub by facts per token.
+
+A candidate is released only on a fresh confirmation suite, and only if its paired gain clears
+1.645·SE under the health gates. With an independent pool, that gain is in the equal-budget
+margin. Otherwise the round is flat and the parent stays. Each team is judged once.
+
+```bash
+forge harness council generation status|propose <class>
+forge harness council generation release <class> <frozen.json> <observations.json>
+```
+
 ## `forge orchestration`
 
 View and switch the agent-orchestration rule pack and the routing policy, per repo or

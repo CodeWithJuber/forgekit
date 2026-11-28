@@ -90,7 +90,7 @@ function checkMeasurement(m) {
   };
 }
 
-function checkFrozen(frozen) {
+export function checkFrozen(frozen) {
   const result = freezeSuite(frozen?.spec);
   if (result.hash !== frozen.hash)
     throw new Error("The frozen suite hash does not match its contents");

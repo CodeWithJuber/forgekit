@@ -352,8 +352,57 @@ count as one bloc, which can understate the vote, and the output says so.
   - fact forwarding reaches level 3 (n_B 5.7, margin +0.33);
   - a debate that exchanges answers stays at level 0 while spending more tokens.
 - Measure your own team with real runs before trusting it.
-- The paper's third finding, a team improving its next generation from its own verified work, is
-  planned as a follow-up.
+
+**A team improves its next generation from its own verified work.** This is the paper's
+recursive finding (§3, §4.3–4.4). forgekit trains no weights. What evolves is the team's
+organization, written down as a **playbook** for one task class. A playbook is derived only from
+the class's verified `forward` runs:
+- **Roles:** a role stays only if it forwarded a fact in a verified run. Tokens that bought no
+  information are pure cost.
+- **Budgets:** each role gets 1.25 × the most it used in a verified run, never more than its
+  parent's budget.
+- **Hub order:** roles by facts forwarded per token.
+
+A playbook is structure only, never model-written prose, and it is deterministic. The same
+verified runs always give the same playbook, so a candidate can be recomputed and checked, but
+never hand-edited.
+
+```console
+$ forge harness council generation status default    # current playbook, pending candidate, lineage
+$ forge harness council generation propose default   # distil the next candidate; never releases it
+$ forge harness council generation release default frozen.json observations.json
+```
+
+**Release** follows the paper's gate.
+- **Fresh confirmation suite.** The suite must never have informed or judged this lineage.
+- **Paired arms.** Each task has a `parent` arm and a `candidate` arm. Each arm is a lead
+  `run:` receipt plus the `group:` forward delegation that ran that arm's playbook. Delegate with
+  `"playbook": "<hash>"` or `"playbook": "current"`.
+- **The gain.** The candidate is released only if the paired gain d ≥ 1.645·SE. Otherwise the
+  round is **flat** and the parent stays.
+  - With a `pool` of independent runs per task, d is the gain in the equal-budget margin
+    Y − T(n_B), so a cheaper team at equal accuracy counts.
+  - Without a pool, d is the accuracy gain.
+- **Health gates**, anchored at the parent:
+  - tokens at most 1.10 × the parent's;
+  - no significant accuracy drop;
+  - no wrong packages.
+- **One judgment per team.** A team is judged once. Retrying a flat team on suite after suite
+  until one passes would spend the gate's 5% false-release chance again on every try.
+
+`recursive` turns true at generation 2, after two releases. Distillation is deterministic, so the
+paper's non-recursive control (the recipe applied once to the base runs) is exactly generation
+1. G2 beating G1 is therefore G2 beating that control.
+
+`test/team_generations.test.js` adds a seeded simulation of the loop. It assumes, and does not
+measure, that an agent spends its need plus 30% of any slack its budget leaves. Under that
+assumption:
+- G1 always drops the idle role and releases.
+- Later gains shrink.
+- Four of five seeds reach a second generation; the fifth stops at G1 because its small G2 gain
+  fails the gate once.
+
+This checks the loop's logic, not any model.
 
 ### `forge orchestration` — rules for a lead running many agents
 

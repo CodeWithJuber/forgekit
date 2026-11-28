@@ -47,7 +47,7 @@ function shapeKey(shape, taskClass) {
 }
 // A worksheet is a comparison aid. Only a local harness run can attest a
 // measured arm. Match the frozen task, its acceptance, and immutable event chain.
-function trialArm(root, arm, task, used) {
+export function trialArm(root, arm, task, used) {
   const match = /^run:([a-zA-Z0-9_.:-]{1,120})$/.exec(arm?.evidence ?? "");
   if (!match || used.has(match[1]))
     throw new Error("Each trial arm requires its own local run:<id> receipt");
@@ -86,7 +86,7 @@ function trialArm(root, arm, task, used) {
 }
 
 /** Add a delegation's recorded worker usage to a lead run's arm: a team's true cost. */
-function withGroup(root, arm, task) {
+export function withGroup(root, arm, task) {
   if (arm.group === undefined) return arm;
   const record = getCouncil(root, id(arm.group));
   if (!record?.usage || record.task !== task.task)
@@ -258,7 +258,7 @@ export function delegationPlan(root, spec) {
           ? 2
           : 4;
   const min = shape === "council" ? 3 : 2;
-  const workers = list(spec.workers, "worker", min, limit).map((w) => ({
+  const given = list(spec.workers, "worker", min, limit).map((w) => ({
     id: id(w.id),
     profile: id(w.profile),
     route: id(w.route),
@@ -274,9 +274,20 @@ export function delegationPlan(root, spec) {
     readOnly: true,
   }));
   unique(
-    workers.map((w) => w.id),
+    given.map((w) => w.id),
     "worker",
   );
+  // A team playbook (src/team_generations.js) is opt-in: `playbook: "current"` or a playbook
+  // hash. It narrows the team to the roles the class's verified runs earned, caps budgets and
+  // orders the hub's reading. It can only remove workers or lower budgets, never add.
+  let playbook = null;
+  if (spec.playbook !== undefined) {
+    if (shape !== "forward") throw new Error("A team playbook applies to the forward shape");
+    playbook = resolvePlaybook(root, spec.taskClass ?? "default", spec.playbook);
+  }
+  const workers = applyPlaybook(given, playbook);
+  if (workers.length < min)
+    throw new Error("The playbook leaves fewer than two workers: run a single agent instead");
   for (const cap of caps)
     if (
       workers.reduce((s, w) => s + w.budget[cap], 0) >
@@ -304,7 +315,40 @@ export function delegationPlan(root, spec) {
     budget: parent,
     integrator: "lead",
     information: informationOf(shape, workers),
+    playbook: playbook?.hash ?? null,
   };
+}
+
+/** The playbook a delegation names: "current" (the class's released playbook, or none while
+ *  the class is still at its base team) or the hash of the current playbook or the pending
+ *  candidate (a release round runs the candidate before it is released). */
+function resolvePlaybook(root, taskClass, ref) {
+  const cls = id(taskClass);
+  const current = queueStore(root, "decision", { shape: `gen:${cls}` });
+  if (ref === "current") return current?.playbook ?? null;
+  const candidate = queueStore(root, "decision", { shape: `gen-candidate:${cls}` });
+  for (const p of [current?.playbook, candidate]) if (p?.hash && p.hash === ref) return p;
+  throw new Error(
+    "Unknown playbook: name current, or the hash of the current playbook or the pending candidate",
+  );
+}
+
+/**
+ * Narrow a team to a playbook: keep only its roles (by worker id), cap each budget at the
+ * playbook's, order by the hub's reading order. No playbook → the workers unchanged.
+ * @param {any[]} workers @param {any} playbook
+ */
+export function applyPlaybook(workers, playbook) {
+  if (!playbook) return workers;
+  const roles = new Map(playbook.roles.map((r) => [r.id, r.budget]));
+  const order = new Map(playbook.hubOrder.map((r, i) => [r, i]));
+  return workers
+    .filter((w) => roles.has(w.id))
+    .map((w) => ({
+      ...w,
+      budget: Object.fromEntries(caps.map((c) => [c, Math.min(w.budget[c], roles.get(w.id)[c])])),
+    }))
+    .sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9) || (a.id < b.id ? -1 : 1));
 }
 
 /**
@@ -676,6 +720,7 @@ export async function runDelegation(root, spec, runWorker) {
       findings,
       verdict: text(body.verdict, "verdict"),
       blocker,
+      budget: w.budget,
       usage: {
         tokens: num(u.tokens),
         costUsd: num(u.costUsd),
@@ -717,6 +762,7 @@ export async function runDelegation(root, spec, runWorker) {
       task: plan.task,
       reports,
       ...(forwarded ? { forwarded } : {}),
+      playbook: plan.playbook ?? null,
       usage,
       information: plan.information,
       integrator: "lead",
