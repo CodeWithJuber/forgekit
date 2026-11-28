@@ -451,3 +451,32 @@ test("applyBump regenerates the docs site's changelog page in the release commit
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("applyBump folds changelog.d/ fragments into the release and deletes them", () => {
+  const dir = makeFixture();
+  try {
+    const w = (rel, text) => {
+      fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, rel), text);
+    };
+    w("changelog.d/README.md", "# How to add an entry\n");
+    w("changelog.d/b-fix.md", "### Fixed\n\n- the second change\n");
+    w(
+      "changelog.d/a-feature.md",
+      "### Added\n\n- the first change\n\n### Fixed\n\n- a fix in it\n",
+    );
+    const changed = applyBump(dir, "0.4.0", "0.5.0", "2026-07-07");
+    assert.ok(
+      changed.includes("changelog.d/a-feature.md") && changed.includes("changelog.d/b-fix.md"),
+    );
+    assert.ok(!fs.existsSync(path.join(dir, "changelog.d/a-feature.md")), "fragment deleted");
+    assert.ok(fs.existsSync(path.join(dir, "changelog.d/README.md")), "the README stays");
+    const log = fs.readFileSync(path.join(dir, "CHANGELOG.md"), "utf8");
+    const release = log.slice(log.indexOf("## [0.5.0]"), log.indexOf("## [0.4.0]"));
+    assert.match(release, /### Added[\s\S]*- the first change/);
+    assert.match(release, /### Fixed[\s\S]*- a fix in it\n- the second change/);
+    assert.equal(extractUnreleased(log).trim(), "", "[Unreleased] is empty again");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -24,8 +24,12 @@
 - Run `npm test && npx biome check && npm run typecheck && node src/cli.js docs check`
   before committing — the docs check fails CI when commands/env vars/MCP tools/CHANGELOG
   drift from the code, so update docs IN THE SAME CHANGE, not later.
-- After editing `CHANGELOG.md` (or commands/MCP tools), run `node src/cli.js docs render`:
-  it regenerates the machine-owned blocks, including the Mintlify changelog page
-  (`mintlify/changelog/overview.mdx`), which the docs check fails on when stale. Never edit
-  between `forge:render` markers by hand.
+- Changelog entries go in a NEW file `changelog.d/<branch>.md` (Keep a Changelog sections:
+  `### Added`, `### Fixed`, …), never under `[Unreleased]` in `CHANGELOG.md` — the docs check
+  refuses that, and one file per change is what keeps open PRs from conflicting. The release
+  script folds the files into `CHANGELOG.md`.
+- After editing commands/MCP tools (or a released `CHANGELOG.md` section), run
+  `node src/cli.js docs render`: it regenerates the machine-owned blocks, including the
+  Mintlify changelog page (`mintlify/changelog/overview.mdx`), which the docs check fails on
+  when stale. Never edit between `forge:render` markers by hand.
 - Version lives in `package.json` — `scripts/bump.mjs` keeps all manifests in sync.

@@ -75,7 +75,9 @@ What happens, in order:
    `.codex-plugin/plugin.json`, `CITATION.cff` (version + release date), the landing
    page footer, the `ROADMAP.md` "Now" marker, `docs/status/claims.json` (and its
    generated table), and moves the CHANGELOG `[Unreleased]` section under
-   `## [X.Y.Z] - <today>` (compare links included).
+   `## [X.Y.Z] - <today>` (compare links included). The entries waiting in `changelog.d/`
+   (one file per merged change) are folded into that section first and the files deleted,
+   so the release commit carries them.
 3. Commit `chore(release): vX.Y.Z` to branch `release/vX.Y.Z` and open (or update) the
    release PR — **no tag is created yet**. (The old flow committed + tagged directly
    to `master`; that is impossible under branch protection — GH006 rejects it.)
