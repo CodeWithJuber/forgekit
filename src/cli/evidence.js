@@ -223,9 +223,52 @@ async function sources(argv) {
   print(verb === "init" ? initSources(root) : sourcesStatus(root));
 }
 
+/** `forge team ladder <records> [--alpha a] [--json]`: grade a team on the equal-budget ladder. */
+async function teamLadder(argv) {
+  const { positionals, values } = parse(argv, { alpha: { type: "string" } });
+  const usage = "forge team ladder <records.json|records.jsonl> [--alpha 0.025] [--json]";
+  arity(positionals, 1, 1, usage);
+  const { readFileSync, statSync } = await import("node:fs");
+  const stat = statSync(positionals[0]);
+  if (!stat.isFile() || stat.size > 16 * 1024 * 1024)
+    throw new Error("Supply a records file under 16 MiB");
+  const { gradeLadder, parseLadderRecords } = await import("../ladder.js");
+  const r = gradeLadder({
+    ...parseLadderRecords(readFileSync(positionals[0], "utf8")),
+    ...(values.alpha === undefined ? {} : { alpha: Number(values.alpha) }),
+  });
+  if (values.json) return print(r);
+  const names = {
+    0: "below one agent",
+    1: "beats one agent",
+    2: "beats a compute-matched vote",
+    3: "beats compute-matched pass@n",
+  };
+  const fmt = (x, d = 3) => (x == null ? "—" : Number(x).toFixed(d));
+  const lines = [
+    `equal-budget ladder — level ${r.level} of 3 (${names[r.level]})`,
+    `  ${r.questions} questions · c₁ ${r.c1} tokens per independent agent · the group spends n_B = ${fmt(r.nB, 2)} agents`,
+    `  group accuracy ${fmt(r.y)} · vote: ${r.vote}`,
+  ];
+  const label = { 1: "L1 one agent      ", 2: "L2 vote of n_B    ", 3: "L3 pass@n_B       " };
+  for (const l of [1, 2, 3]) {
+    const t = r.tests[l];
+    lines.push(
+      t.indeterminate && t.reference == null
+        ? `  ${label[l]} —      indeterminate`
+        : `  ${label[l]} ${fmt(t.reference)}  diff ${t.meanDiff >= 0 ? "+" : ""}${fmt(t.meanDiff)}  p ${t.p == null ? "—" : t.p.toFixed(4)}  ${t.cleared ? "cleared" : "not cleared"}`,
+    );
+  }
+  if (r.margin != null)
+    lines.push(`  margin over pass@n: ${r.margin >= 0 ? "+" : ""}${fmt(r.margin)}`);
+  for (const w of r.warnings) lines.push(`  ! ${w}`);
+  console.log(lines.join("\n"));
+}
+
 async function team(argv) {
   if (argv[1] === "evaluate")
     return (await import("../rollout_eval.js")).rolloutCommand(argv.slice(2));
+  if (argv[1] === "ladder") return teamLadder(argv.slice(2));
   const { positionals, values } = parse(argv.slice(1), {
     run: { type: "string" },
     handoff: { type: "string" },

@@ -46,6 +46,23 @@ for what its numbers mean and what they do not. `--mode unattended` adds the vot
 writes-code and risk floors and the top-tier gate for agents nobody watches; see
 [Agent orchestration](/guides/agent-orchestration).
 
+## `forge team`
+
+Plan read-only specialists for complex work. Each starts from its own slice of the evidence
+and forwards facts, not opinions, to the lead (the hub). The plan's `information` block shows
+how many hold a fact the others do not. Then judge the team on the **equal-budget ladder**
+(He et al., arXiv 2611.32606), which measures it against independent agents that spend the
+same tokens:
+- **Level 1:** beat one agent.
+- **Level 2:** beat a majority vote.
+- **Level 3:** beat pass@n. For code, with tests as the oracle, this is the bar that matters.
+
+```bash
+forge team "<task>" [--max-workers N] [--run claude --budget-usd N]
+forge team ladder records.jsonl [--alpha 0.025] [--json]   # {"arm":"group"|"pool","id","correct","tokens"}
+forge team evaluate <frozen-suite>                         # paired rollout worksheet
+```
+
 ## `forge orchestration`
 
 View and switch the agent-orchestration rule pack and the routing policy, per repo or

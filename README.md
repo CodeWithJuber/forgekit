@@ -59,6 +59,10 @@ On Claude Code you can install the plugin instead:
 - **The bug the agent fixed last month and brought back.** `forge remember` and the ledger keep
   lessons in the repository, with references to their evidence, and teammates get them by
   pulling.
+- **A team of agents that costs more than it is worth.** `forge team ladder` grades a team
+  against independent agents spending the same tokens. It has to beat one agent, then a
+  majority vote, then best-of-n. Team plans give each agent different facts to forward to the
+  lead, because a team of agents that know the same things is not smarter.
 - **The same memory paid for every session, relevant or not.** `forge memory` puts a decision
   in each memory layer: what enters the context window, which past session is replayed, whether
   a fact is worth storing, which repeated verified work becomes a skill, and what is archived.
