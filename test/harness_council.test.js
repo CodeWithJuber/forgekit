@@ -299,3 +299,163 @@ test("read-only author and reviewer use distinct routes, budgeted calls and stab
     /immutable delegation/,
   );
 });
+
+// ── fact forwarding and the equal-budget ladder (He et al., arXiv 2611.32606) ──────────
+
+const forwardWorkers = (extra = {}) =>
+  members.slice(0, 3).map((m) => ({ ...m, facts: [`fact-${m.id}`], ...(extra[m.id] ?? {}) }));
+
+test("forward: each worker sees only its private facts; one deduplicated packet; team usage recorded", async (t) => {
+  const root = workspace(t);
+  const spec = { ...input(), shape: "forward", id: "fwd", workers: forwardWorkers() };
+  const seen = new Map();
+  const run = async (req) => {
+    seen.set(req.actor, req.task);
+    return {
+      status: "done",
+      evidence: { ok: true },
+      usage: { tokens: 100, costUsd: 0.01, toolCalls: 1, milliseconds: 1000 + seen.size * 10 },
+      answer: JSON.stringify({
+        findings: [
+          { finding: `${req.actor} holds its fact`, source: `fact-${req.actor}` },
+          { finding: "everyone noticed this", source: "shared" },
+        ],
+        verdict: "forwarded",
+        blocker: null,
+      }),
+    };
+  };
+  const rec = await runDelegation(root, spec, run);
+  for (const m of members) {
+    const task = seen.get(m.id);
+    assert.match(task, /PRIVATE slice/);
+    assert.ok(task.includes(`fact-${m.id}`));
+    assert.ok(!task.includes("logs/system"), "no shared evidence pack");
+    for (const o of members.filter((o) => o.id !== m.id)) assert.ok(!task.includes(`fact-${o.id}`));
+  }
+  assert.equal(rec.forwarded.filter((f) => f.finding === "everyone noticed this").length, 1);
+  assert.equal(rec.forwarded.length, 4);
+  assert.deepEqual(rec.usage, {
+    tokens: 300,
+    costUsd: 0.03,
+    toolCalls: 3,
+    milliseconds: 3060,
+    wallMilliseconds: 1030,
+  });
+  assert.equal(rec.task, spec.task);
+  assert.equal(rec.information.private, 3);
+  assert.equal(rec.verifiedCombinedChange, false, "the hub integrates and verifies");
+});
+
+test("the information advisory: shared packs, debate, and forward teams without private facts", (t) => {
+  const root = workspace(t);
+  const parallel = delegationPlan(root, { ...input(), shape: "parallel" });
+  assert.equal(parallel.information.private, 0);
+  assert.match(parallel.information.advisory, /same evidence pack/);
+  const council = delegationPlan(root, { ...input(), shape: "council" });
+  assert.match(council.information.advisory, /Debate over a shared evidence pack/);
+  const sameFacts = delegationPlan(root, {
+    ...input(),
+    shape: "forward",
+    workers: forwardWorkers({
+      code: { facts: ["same"] },
+      ops: { facts: ["same"] },
+      audit: { facts: ["same"] },
+    }),
+  });
+  assert.equal(sameFacts.information.private, 0);
+  assert.match(sameFacts.information.advisory, /Fewer than two workers hold a private fact/);
+  assert.throws(
+    () => delegationPlan(root, { ...input(), shape: "forward", workers: members.slice(0, 2) }),
+    /private facts/,
+  );
+});
+
+/** A 20-task trial whose candidate arm is a lead run plus a forward delegation (`group`), and
+ *  whose pool holds independent single-agent runs. `poolPasses(i)` = passing pool runs on task i. */
+async function ladderTrial(root, { leadPasses, poolPasses, poolSize = 2 }) {
+  const { frozen, measurements } = trial();
+  for (const [i, t] of frozen.spec.tasks.entries()) {
+    const row = measurements.runs.find((r) => r.id === t.id);
+    const base = `base-${t.id}`;
+    const lead = `lead-${t.id}`;
+    await actualReceipt(root, base, t.task, t.acceptance, false, "requirement missing");
+    await actualReceipt(
+      root,
+      lead,
+      t.task,
+      t.acceptance,
+      leadPasses,
+      leadPasses ? "all passed" : "failed",
+    );
+    const group = `grp-${t.id}`;
+    await runDelegation(
+      root,
+      { ...input(), id: group, shape: "forward", task: t.task, workers: forwardWorkers() },
+      async (req) => ({
+        status: "done",
+        evidence: { ok: true },
+        // 3 workers × 2 tokens on top of a 4-token lead run: the team spends n_B = 2.5 agents.
+        usage: { tokens: 2, costUsd: 0, toolCalls: 0, milliseconds: 5 },
+        answer: JSON.stringify({
+          findings: [{ finding: `${req.actor} fact`, source: `fact-${req.actor}` }],
+          verdict: "forwarded",
+          blocker: null,
+        }),
+      }),
+    );
+    row.baseline.evidence = `run:${base}`;
+    row.candidate = { ...row.candidate, evidence: `run:${lead}`, group };
+    row.pool = [];
+    for (let j = 0; j < poolSize; j++) {
+      const id = `pool-${t.id}-${j}`;
+      const ok = j < poolPasses(i);
+      await actualReceipt(root, id, t.task, t.acceptance, ok, ok ? "all passed" : "failed");
+      row.pool.push({ evidence: `run:${id}` });
+    }
+  }
+  return { frozen, measurements };
+}
+
+test("ladder trial: a team that beats the compute-matched best-of-n is kept", async (t) => {
+  const root = workspace(t);
+  const { frozen, measurements } = await ladderTrial(root, {
+    leadPasses: true,
+    poolPasses: () => 0,
+  });
+  const rec = recordShapeTrial(root, "forward", frozen, measurements);
+  assert.equal(rec.evaluation.ladder.level, 3);
+  assert.equal(rec.decision, "keep");
+  assert.ok(rec.pairedEvidence.every((p) => p.pool.length === 2));
+  assert.ok(
+    rec.pairedEvidence.every((p) => p.candidate.tokens > p.baseline.tokens),
+    "the candidate arm pays for its workers",
+  );
+});
+
+test("ladder trial: a team the old threshold rule would keep, but that does not beat pass@n, is reverted", async (t) => {
+  const root = workspace(t);
+  // Baseline always fails (old rule: +100 quality → keep); but 2 of 3 independent runs pass, so
+  // pass@n at the team's budget (n_B = 2.5 → between pass@2 and pass@3, both 1) is already 1.
+  const { frozen, measurements } = await ladderTrial(root, {
+    leadPasses: true,
+    poolPasses: () => 2,
+  });
+  const rec = recordShapeTrial(root, "forward", frozen, measurements);
+  assert.equal(rec.evaluation.qualityDelta, 100, "the fixed-threshold view sees a win");
+  assert.ok(rec.evaluation.ladder.level < 3);
+  assert.equal(rec.decision, "revert");
+});
+
+test("ladder trial: pools on some tasks but not all are refused", async (t) => {
+  const root = workspace(t);
+  const { frozen, measurements } = await ladderTrial(root, {
+    leadPasses: true,
+    poolPasses: () => 0,
+  });
+  measurements.runs[0].pool = [];
+  assert.throws(
+    () => recordShapeTrial(root, "forward", frozen, measurements),
+    /every frozen task an independent pool/,
+  );
+});

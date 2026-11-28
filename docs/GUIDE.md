@@ -296,6 +296,65 @@ On an MCP host use `forge_harness_run` and `forge_harness_status`. Worker jobs a
 loop. An operator can select a pinned container verifier for code edits or use a signed suite
 receipt for a known tree. [First run, approval and recovery examples](HARNESS.md)
 
+### `forge team` — a team only when it beats best-of-n at the same tokens
+
+A team of agents spends many times the tokens of one agent, and a plain vote over independent
+answers already explains most reported team gains (He et al., *Recursive Collective
+Intelligence*, arXiv 2611.32606). forgekit applies the paper's two findings.
+
+**Teams are built to share different facts.** `forge team "<task>"` plans read-only
+specialists:
+- Each specialist starts from its **own slice** of the evidence. Items are dealt by role, the
+  most constrained role first, and no fact goes to two workers.
+- Every brief carries a forwarding protocol: report facts with sources, not opinions, to the
+  lead.
+- The lead is the hub that reads every report.
+- The plan's `information` block says how many specialists hold a fact the others do not.
+
+In the supervised harness, the `forward` delegation shape gives each worker a private `facts`
+slice and no shared pack, and returns one deduplicated packet for the lead.
+- `parallel`, `map-reduce` and `council` still hand every worker the same pack.
+- Their plan carries an advisory, because the paper's debates on shared information stayed at or
+  below a compute-matched vote.
+
+**A team is judged on the equal-budget ladder.** The team's budget is
+n_B = team completion tokens / one independent agent's tokens. Three rising bars:
+- **Level 1:** beat one agent.
+- **Level 2:** beat a majority vote of n_B independent agents.
+- **Level 3:** beat pass@n_B, where n_B independent agents solve it if any one is right.
+
+Each level must hold under a one-sided paired t-test at α = 0.025, clustered by question, and so
+must every level below it.
+
+```console
+$ forge team ladder records.jsonl          # {"arm":"group"|"pool","id","correct","tokens"} per run
+equal-budget ladder — level 3 of 3 (beats compute-matched pass@n)
+  30 questions · c₁ 100 tokens per independent agent · the group spends n_B = 4.00 agents
+  L1 one agent        0.250  diff +0.650  p 0.0000  cleared
+  L2 vote of n_B      0.107  diff +0.793  p 0.0000  cleared
+  L3 pass@n_B         0.786  diff +0.114  p 0.0247  cleared
+```
+
+For coding work, **level 3 is the bar that matters**. A test suite is the "any of them is right"
+oracle, so running n_B agents and keeping a passing patch is a real alternative.
+- **Shape trials** (`forge harness council trial`): give every frozen task a `pool` of independent
+  single-agent run receipts, and the ladder decides. A team shape is kept only at level 3.
+- **Team cost:** a candidate arm's `group: "<delegation-id>"` adds the workers' recorded usage
+  to the lead's run, so the team pays for every worker.
+- **Without pools**, the earlier fixed-threshold rule applies, unchanged.
+
+Supply each pool row's `answer` so the vote is a true plurality vote. Otherwise wrong answers
+count as one bloc, which can understate the vote, and the output says so.
+
+**What this is and is not.**
+- `test/collective.test.js` is a seeded simulation of the paper's split-facts benchmark. It
+  checks the grader and the protocol logic, not any model's behavior:
+  - fact forwarding reaches level 3 (n_B 5.7, margin +0.33);
+  - a debate that exchanges answers stays at level 0 while spending more tokens.
+- Measure your own team with real runs before trusting it.
+- The paper's third finding, a team improving its next generation from its own verified work, is
+  planned as a follow-up.
+
 ### `forge orchestration` — rules for a lead running many agents
 
 `forge sync` emits an **Agent orchestration** section into `AGENTS.md` (and so into every tool):

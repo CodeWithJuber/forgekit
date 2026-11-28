@@ -128,3 +128,74 @@ test("scoped decomposition uses worker estimates, disjoint paths and an explicit
   assert.equal(get().mode, "single");
   assert.match(get().reason, /overlap/);
 });
+
+// ── split facts and the hub protocol (He et al., arXiv 2611.32606) ─────────────────────
+
+test("splitEvidence deals each fact to one specialist, by role affinity, at most three each", async () => {
+  const { splitEvidence } = await import("../src/evidence_team.js");
+  const evidence = {
+    symbols: [
+      { file: "src/pay.js", line: 4, name: "submit" },
+      { file: "test/pay.test.js", line: 9, name: "submitTest" },
+      { file: "src/retry.js", line: 2, name: "retry" },
+    ],
+    hits: [{ sourceId: "jira", path: "PAY-12", locator: "comment 3" }],
+    manifests: ["package.json axios@1.7.0"],
+  };
+  const s = splitEvidence(evidence, ["adoption", "requirements", "verification", "reuse"]);
+  const all = Object.values(s).flat();
+  assert.equal(new Set(all).size, all.length, "no fact is given twice");
+  assert.ok(Object.values(s).every((x) => x.length <= 3));
+  assert.match(s.adoption[0], /package\.json/, "adoption takes the manifest first");
+  assert.match(s.requirements[0], /jira PAY-12/, "requirements takes the tracker hit");
+  assert.ok(
+    s.requirements.every((x) => !/\.js:\d/.test(x)),
+    "requirements never takes code symbols",
+  );
+  assert.match(s.verification[0], /test\/pay\.test\.js/, "verification takes the test first");
+  assert.match(s.reuse[0], /src\/(pay|retry)\.js/);
+});
+
+test("teamPlan reports what each worker brings and briefs the lead as the hub", (t) => {
+  const root = fixture(t);
+  const plan = teamPlan(task, {
+    root,
+    evidence: {
+      symbols: [
+        { file: "a.js", line: 4, name: "submit" },
+        { file: "b.js", line: 7, name: "timeout" },
+      ],
+      hits: [{ sourceId: "jira", path: "PAY-1" }],
+    },
+  });
+  const seen = plan.assignments.flatMap((a) => a.evidence);
+  assert.equal(new Set(seen).size, seen.length, "slices are disjoint");
+  assert.ok(plan.assignments.every((a) => a.information.private === a.evidence.length));
+  assert.ok(plan.information.holders >= 2);
+  assert.match(plan.information.advisory, /forwards facts, not opinions/);
+  assert.match(plan.lead.brief, /You are the hub/);
+  assert.match(plan.text, /forwards facts with sources, not opinions/);
+  const bare = teamPlan(task, { root });
+  assert.match(bare.information.advisory, /No starting evidence/);
+  assert.equal(bare.mode, "parallel", "distinct roles still divide the reading — never downgraded");
+});
+
+test("every worker prompt carries the forwarding protocol (Claude and portable hosts)", async (t) => {
+  const root = fixture(t);
+  const { FORWARD_PROTOCOL } = await import("../src/evidence_team.js");
+  const { portableBriefs } = await import("../src/portable_team.js");
+  const prompts = [];
+  await runTeam(root, task, {
+    host: "claude",
+    budgetUsd: 0.2,
+    invoke: async (args, _root, input) => {
+      if (args[0] === "--help")
+        return "--bare --restricted --tools --strict-mcp-config --max-budget-usd --no-session-persistence";
+      prompts.push(input);
+      return JSON.stringify({ result: "source: a.js:4" });
+    },
+  });
+  assert.ok(prompts.length >= 2 && prompts.every((p) => p.includes(FORWARD_PROTOCOL)));
+  const briefs = portableBriefs(teamPlan(task, { root }), task, "codex");
+  assert.ok(briefs.every((b) => b.brief.includes(FORWARD_PROTOCOL)));
+});

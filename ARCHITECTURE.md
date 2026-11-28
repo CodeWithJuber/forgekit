@@ -304,6 +304,20 @@ System One model judges but does not author prose.
 Provenance records which proposer answered
 (`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
 
+**Teams on the equal-budget ladder (`src/ladder.js`; He et al., arXiv 2611.32606).** A team is
+graded against independent agents at the same completion-token budget
+n_B = team tokens / c₁. Level 1 beats one agent, level 2 beats a majority vote V(n_B), level 3
+beats pass@n_B T(n_B), the without-replacement product. Each level is a one-sided paired t-test
+(α 0.025, clustered by question, p from `mathcore/stats.betaInc`) and needs every level below it.
+- **Shape trials:** with a `pool` of independent run receipts per frozen task,
+  `recordShapeTrial` keeps a team shape only at level 3. A `group:` arm adds the delegation's
+  recorded worker usage, so the team pays for its workers.
+- **Information:** `teamPlan` deals evidence into disjoint per-role slices, most-constrained role
+  first, and every brief carries a forward-facts-not-opinions protocol to the lead hub.
+- **`forward` shape:** each worker gets a private `facts` slice, and the result is one
+  deduplicated packet. Every other shape reports an `information` advisory, because it hands
+  workers the same pack.
+
 **Jev memory decisions (`src/jev_memory.js`, `src/jev_skills.js`).** The same contract carries a
 decision into each memory layer, over stores that already existed:
 - *working*: `context.assemble` admits optional memory by a per-item noul;
@@ -709,7 +723,7 @@ flowchart LR
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 530+ --> src
+  test -- 540+ --> src
   scripts -- 17 --> src
   bench -- 14 --> src
   test -- 9 --> global

@@ -336,9 +336,10 @@ export const COMMANDS = {
     summary:
       "plan independent read-only agents for complex work and optionally run them with a shared budget",
     usage:
-      'forge team "<task>" [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N]',
+      'forge team "<task>" [--max-workers N] [--handoff <host> | --run kimi|codex --host-billing | --run claude --budget-usd N] | forge team ladder <records.json|jsonl> [--alpha 0.025] [--json] | forge team evaluate <frozen-suite>',
     examples: [
       'forge team "Investigate a GitLab regression and compare retry libraries" --max-workers 2',
+      "forge team ladder records.jsonl",
     ],
   },
   evidence: {
