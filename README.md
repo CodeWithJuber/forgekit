@@ -59,6 +59,12 @@ On Claude Code you can install the plugin instead:
 - **The bug the agent fixed last month and brought back.** `forge remember` and the ledger keep
   lessons in the repository, with references to their evidence, and teammates get them by
   pulling.
+- **The same memory paid for every session, relevant or not.** `forge memory` puts a decision
+  in each memory layer: what enters the context window, which past session is replayed, whether
+  a fact is worth storing, which repeated verified work becomes a skill, and what is archived.
+  Each is asked of Jev (TypeSafe System One) with a probability; without a key the existing
+  rule decides, unchanged. `forge memory admit "<task>"` measures full memory against what was
+  admitted.
 - **The rename that broke files nobody opened.** `forge impact <symbol>` lists the files an edit
   will probably touch, including coupled ones you did not name. It is a heuristic, so an empty
   answer means "unknown", not "safe".
@@ -220,6 +226,7 @@ workspace evidence through a receiver you run, which stores only ciphertext.
 |               | `forge collide`       | parallel-session conflict radar — who else recently touched the files (or their import neighbors) you are editing                                                                                                                                                                                                                                                         |
 | **Memory**    | `forge hikmah`        | bind a local Hikmah kernel ledger and recall its verified public lessons                                                                                                                                                                                                                                                                                                  |
 |               | `forge cortex`        | self-correcting project memory — status / why <symbol>                                                                                                                                                                                                                                                                                                                    |
+|               | `forge memory`        | Jev agent memory — the decision in each memory layer (working, episodic, semantic, procedural, forgetting) asked of Jev with a probability and reconciled with the rubric: status, measured token savings, dry runs                                                                                                                                                       |
 |               | `forge recall`        | manage cross-session memory (list / add / consolidate)                                                                                                                                                                                                                                                                                                                    |
 |               | `forge remember`      | add a durable fact to this repo's portable memory (forge brain)                                                                                                                                                                                                                                                                                                           |
 |               | `forge brain`         | show / rebuild the portable project memory index                                                                                                                                                                                                                                                                                                                          |

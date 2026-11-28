@@ -12,7 +12,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { has as atlasHas, query as atlasQuery, impact, indexedText } from "./atlas.js";
-import { claimText, jaccard, sketch, val } from "./ledger.js";
+import { admitWorking, JEV_BATCH, jevMemoryOn, MEMORY_KINDS, memoryText } from "./jev_memory.js";
+import { claimText, isDormant, jaccard, retrieve, sketch, val } from "./ledger.js";
 import { loadClaims, repoLedger } from "./ledger_store.js";
 import { dropRivals } from "./mathcore/rivals.js";
 import { referencedEntities } from "./preflight.js";
@@ -242,14 +243,20 @@ function fileItem(root, rel, { needs, source, score }, atlas = null) {
  *   - Optional items are chosen greedily by value density (score per token) with per-source
  *     diminishing returns — a heuristic, with no knapsack or set-cover guarantee (the
  *     per-source discount breaks the preconditions those guarantees need).
+ *   - Jev working memory (opt-in, src/jev_memory.js): with the layer on, Jev judges each
+ *     optional memory item (never a required pin) and the result carries a `memory` block —
+ *     `fullTokens` (required items in full + every live memory claim: what packing without
+ *     a working-memory decision would cost) against the tokens actually admitted. `measure`
+ *     adds that block with the layer off too.
  * @param {string} root
  * @param {string} task
- * @param {{budget?:number, atlas?:any, claims?:any[], nowDay?:number}} [opts]
+ * @param {{budget?:number, atlas?:any, claims?:any[], nowDay?:number, llm?:boolean,
+ *   jevCall?:(payload:object)=>object, measure?:boolean}} [opts]
  */
 export function assemble(
   root,
   task,
-  { budget = DEFAULT_BUDGET, atlas = null, claims, nowDay = 0 } = {},
+  { budget = DEFAULT_BUDGET, atlas = null, claims, nowDay = 0, llm, jevCall, measure = false } = {},
 ) {
   const ledgerDir = repoLedger(root);
   const allClaims = claims ?? (existsSync(join(ledgerDir, "claims")) ? loadClaims(ledgerDir) : []);
@@ -358,10 +365,77 @@ export function assemble(
     items.push({
       id: `fact:${c.id.slice(0, 8)}`,
       source: "fact",
+      claimId: c.id,
       covers: [],
       score: 0.3 + 0.4 * v,
       variants: [variant("full", text, [])],
     });
+  }
+
+  // Jev working memory — layer 1 of src/jev_memory.js (opt-in). The optional pool widens
+  // from facts to every trusted memory kind (lessons not already required, session
+  // summaries, decisions, diagnoses); the 48 most relevant are put to Jev in one call, and
+  // its probability decides: p < 0.5 leaves an item out, a kept item's score lifts to
+  // max(score, p), and memory past the batch stays out. When the call fails nothing here
+  // applies and the selection is exactly the rubric's. Required pins never reach this pool.
+  const pinnedLessons = new Set(required.filter((r) => r.kind === "lesson").map((r) => r.name));
+  const liveMemory = allClaims.filter(
+    (c) => MEMORY_KINDS.includes(c.kind) && !c.tombstone && !isDormant(c, nowDay),
+  );
+  /** @type {{ms:number, model:string|null, asked:number, admitted:number, dropped:number}|null} */
+  let jevAdmission = null;
+  if (jevMemoryOn("working", { root, llm })) {
+    const widened = liveMemory
+      .filter((c) => c.kind !== "fact" && !pinnedLessons.has(c.id) && val(c, nowDay) >= 0.5)
+      .map((c) => ({
+        id: `${c.kind}:${c.id.slice(0, 8)}`,
+        source: c.kind,
+        claimId: c.id,
+        covers: [],
+        score: 0.3 + 0.4 * val(c, nowDay),
+        variants: [variant("full", memoryText(c), [])],
+      }));
+    const byClaim = new Map(allClaims.map((c) => [c.id, c]));
+    const pool = [...items.filter((i) => i.claimId && !i.covers.length), ...widened];
+    const ranked = retrieve(
+      task,
+      pool.map((i) => byClaim.get(i.claimId)),
+      { nowDay, budget: JEV_BATCH },
+    );
+    const admission = admitWorking(
+      task,
+      ranked.map((h) => ({ id: h.claim.id, text: memoryText(h.claim) })),
+      { root, llm, call: jevCall },
+    );
+    if (admission) {
+      let admitted = 0;
+      let dropped = 0;
+      // Not asked: the batch is the most RELEVANT memory, so an item past it ranks below
+      // every item Jev judged — it stays out (left in, a short off-topic fact won on value
+      // density alone, which is exactly what this layer replaces).
+      const judge = (item) => {
+        const p = admission.p.get(item.claimId);
+        if (p === undefined) return false;
+        if (p < 0.5) {
+          dropped++;
+          return false;
+        }
+        item.score = Math.max(item.score, p);
+        admitted++;
+        return true;
+      };
+      const kept = items.filter((i) => !i.claimId || i.covers.length > 0 || judge(i));
+      for (const w of widened) if (judge(w)) kept.push(w);
+      items.length = 0;
+      items.push(...kept);
+      jevAdmission = {
+        ms: admission.ms,
+        model: admission.model,
+        asked: admission.asked,
+        admitted,
+        dropped,
+      };
+    }
   }
 
   // --- selection: pin required coverage, downgrade before dropping -------------------
@@ -498,7 +572,30 @@ export function assemble(
       tokens: c.item.variants[c.v].tokens,
       covers: c.item.variants[c.v].covers,
     })),
+    ...(measure || jevAdmission
+      ? { memory: memoryMeasure(items, liveMemory, pinnedLessons, block, jevAdmission) }
+      : {}),
     block,
+  };
+}
+
+/** The working-memory measurement: what packing EVERYTHING would cost — every required item
+ *  at its fullest variant plus every live memory claim (pinned lessons counted once) — against
+ *  the block actually admitted. Same chars/3.6 estimate on both sides, so the ratio is fair
+ *  even though neither number is a model tokenizer's. */
+function memoryMeasure(items, liveMemory, pinnedLessons, block, jev) {
+  const full = [
+    ...items.filter((i) => i.covers.length).map((i) => i.variants[0].text),
+    ...liveMemory.filter((c) => !pinnedLessons.has(c.id)).map(memoryText),
+  ].join(SEP);
+  const fullTokens = tokensOf(full);
+  const admittedTokens = tokensOf(block);
+  return {
+    fullTokens,
+    admittedTokens,
+    reduction: fullTokens ? Math.round((1 - admittedTokens / fullTokens) * 1000) / 1000 : 0,
+    memoryClaims: liveMemory.length,
+    jev,
   };
 }
 

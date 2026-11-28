@@ -154,6 +154,30 @@ in `recall`, `remember`/`brain`, a decision, or a cortex lesson, and files it th
 forge know "<fact>"
 ```
 
+## `forge memory`
+
+Jev agent memory. Each memory layer gets one decision, asked of Jev (TypeSafe System One) with
+a probability and reconciled with the rule already there:
+
+- **working**: what enters the context window
+- **episodic**: which past session is replayed
+- **semantic**: is a fact durable, a duplicate, or a contradiction
+- **procedural**: which repeated, test-confirmed work becomes a skill
+- **forgetting**: what is archived to the attic
+
+Jev is off by default. It needs `TYPESAFE_API_KEY` plus the decisions opt-in (or `--llm`);
+without it every layer behaves exactly as before. Stored changes need p ≥ 0.8, stay
+reversible, and are logged in `.forge/jev-memory.jsonl`. `FORGE_JEV_MEMORY=0` turns every layer
+off.
+
+```bash
+forge memory                       # layers, measured calls, latency, overrides
+forge memory admit "<task>"        # full vs admitted tokens for a task
+forge memory verify "<fact>"       # would this fact be stored? (dry run)
+forge memory skills [--apply]      # recurring verified work → skills
+forge memory forget [--apply]      # the judged archive plan
+```
+
 ## `forge deja`
 
 Similar-past-work lookup — surfaces prior work in the ledger that resembles what you're

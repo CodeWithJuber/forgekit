@@ -59,6 +59,7 @@ export const MCP_TOOL_GUIDE = [
       "forge_remember",
       "forge_brain",
       "forge_hikmah_recall",
+      "forge_memory_decide",
     ],
     "auto",
   ],

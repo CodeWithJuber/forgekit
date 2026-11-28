@@ -45,7 +45,7 @@ The four layers, brand-named and emitted cross-tool:
   (scout / verifier / frontend-verifier / independent-reviewer / doc-sync).
 - **guards** (`~/.forge/guards/` → `settings.json` hooks) — deterministic checks at lifecycle events supported by a trusted host. The supervised executor also checks its own tool calls.
 - **mcp** — the protocol layer. Forge ships one stdio server (`src/cortex_mcp.js`)
-  exposing 36 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
+  exposing 37 MCP tools in ordinary mode and two entry points in supervised mode. The ordinary registry includes substrate checks (`substrate_check` / `predict_impact` /
   `assumption_gate` / `rank_code` / …), memory reads AND writes (`forge_remember`,
   ledger ratify/retract), and operations and health checks. [Tool reference](docs/GUIDE.md#mcp-tools)
 
@@ -303,6 +303,22 @@ blended; and clarifying free-text questions stay with the deterministic rubric, 
 System One model judges but does not author prose.
 Provenance records which proposer answered
 (`llm.provider: "jev"` in `forge route --json`, `assumption.provenance.provider` in preflight).
+
+**Jev memory decisions (`src/jev_memory.js`, `src/jev_skills.js`).** The same contract carries a
+decision into each memory layer, over stores that already existed:
+- *working*: `context.assemble` admits optional memory by a per-item noul;
+- *episodic*: `deja.dejaAdvisory` replays the hit Jev picks;
+- *semantic*: `forge remember`/`storeFact` refuse a one-off, skip a duplicate, or archive a
+  contradicted fact;
+- *procedural*: the Stop hook turns recurring test-confirmed summaries into a skill, gated by
+  `mathcore/promotion.promotionDecision` AND Jev;
+- *forgetting*: `pruneLedger` takes an optional judge that re-decides `retentionPlan`.
+
+Each layer is one batched call. Stored changes need p ≥ 0.8. Evidence floors (tombstoned or
+dormant claims, today's claims) are never crossed, and Jev never moves `val`. Archives go to
+the attic and every action is journaled in `.forge/jev-memory.jsonl`. With Jev off, or on a
+failed call, every layer is its rubric unchanged. `forge memory` and `forge_memory_decide`
+expose the same dry runs.
 
 **Routing policy and the orchestration pack (`src/route_policy.js`, `src/orchestration.js`).**
 `routeTask` keeps the conservative reconcile above as its default and only behaviour unless the
@@ -689,7 +705,7 @@ flowchart LR
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
-  test -- 510+ --> src
+  test -- 520+ --> src
   scripts -- 17 --> src
   bench -- 14 --> src
   test -- 9 --> global

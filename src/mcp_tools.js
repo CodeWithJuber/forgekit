@@ -7,10 +7,12 @@
 import { EVIDENCE_TOOLS } from "./evidence_tools.js";
 
 import { HARNESS_MCP_TOOLS } from "./harness_mcp.js";
+import { JEV_MEMORY_TOOLS } from "./jev_memory_tools.js";
 
 export const TOOLS = [
   ...HARNESS_MCP_TOOLS,
   ...EVIDENCE_TOOLS,
+  ...JEV_MEMORY_TOOLS,
   {
     name: "cortex_lessons",
     description:

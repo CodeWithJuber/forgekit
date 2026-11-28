@@ -53,6 +53,10 @@ async function callTool(name, args = {}, host = undefined) {
   if (nativeHarnessPolicy(root))
     throw new Error("Supervised project: use forge_harness_run or forge_harness_status");
   if (EVIDENCE_TOOLS.some((tool) => tool.name === name)) return evidenceTool(root, name, args);
+  if (name === "forge_memory_decide") {
+    const { jevMemoryTool } = await import("./jev_memory_tools.js");
+    return jevMemoryTool(root, name, args);
+  }
   if (name === "cortex_lessons") {
     const files = args.files ?? [];
     const symbols = args.symbols ?? [];
@@ -191,13 +195,19 @@ async function callTool(name, args = {}, host = undefined) {
     );
   }
   if (name === "forge_remember") {
-    const { brainStore, remember } = await import("./brain.js");
+    const { brainStore } = await import("./brain.js");
+    const { rememberVerified } = await import("./jev_memory.js");
     const store = brainStore(root);
     // Report what the store actually did: it REFUSES secret-shaped content, and saying
-    // "Remembered" over a refusal taught the caller a fact that was never stored.
-    const r = remember(store, String(args.name ?? ""), String(args.body ?? ""));
+    // "Remembered" over a refusal taught the caller a fact that was never stored. Jev's
+    // semantic layer (opt-in) may also refuse a one-off or skip a duplicate — say so too.
+    const r = rememberVerified(root, String(args.name ?? ""), String(args.body ?? ""));
     if (!r.ok) return `Not remembered — ${r.reason ?? "the store refused the write"}.`;
-    return `Remembered "${args.name}" in ${store}.`;
+    if (r.duplicate) return `Not stored again — ${r.reason}.`;
+    const archived = r.superseded
+      ? ` Archived the contradicted fact "${r.superseded.name ?? r.superseded.id.slice(0, 8)}".`
+      : "";
+    return `Remembered "${args.name}" in ${store}.${archived}`;
   }
   if (name === "collide_check") {
     const { collideReport } = await import("./collide.js");
