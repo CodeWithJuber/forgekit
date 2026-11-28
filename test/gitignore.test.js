@@ -127,6 +127,8 @@ test("ensureForgePrivateIgnored keeps .forge/sessions out of git (B5)", () => {
   for (const p of [
     ".forge/atlas.cache.json",
     ".forge/metrics.jsonl",
+    ".forge/jev-memory.jsonl",
+    ".forge/jev-skills.json",
     ".forge/trace/failures.jsonl",
     ".forge/provenance.json",
     ".forge/runtime-map.json",
@@ -141,6 +143,6 @@ test("ensureForgePrivateIgnored keeps .forge/sessions out of git (B5)", () => {
   ensureForgePrivateIgnored(other);
   assert.equal(
     readFileSync(join(other, ".forge", ".gitignore"), "utf8"),
-    "cache/\nsessions/\ntrace/\natlas.cache.json\nmetrics.jsonl\nprovenance.json\nruntime-map.json\n",
+    "cache/\nsessions/\ntrace/\natlas.cache.json\nmetrics.jsonl\njev-memory.jsonl\njev-skills.json\nprovenance.json\nruntime-map.json\n",
   );
 });

@@ -15,7 +15,14 @@
 //
 // Kill switch FORGE_DEJA=0 (read here and in the cortex hook). Best-effort everywhere:
 // a failure to summarize or look up must never break a Stop hook or a CLI command.
+//
+// Jev memory (src/jev_memory.js, opt-in) decides three things here: which retrieved hit is
+// replayed (episodic), what the Stop-time prune archives (forgetting), and whether repeated
+// verified work becomes a skill (procedural, src/jev_skills.js). Off, all three are the
+// rubric's, unchanged.
 import { BRAND } from "./brand.js";
+import { chooseReplay, jevMemoryOn, judgeForgetting } from "./jev_memory.js";
+import { promoteSkills } from "./jev_skills.js";
 import { claimText, mintClaim, outcomeRecord, retrieve, val } from "./ledger.js";
 import {
   appendEvidence,
@@ -109,9 +116,11 @@ export function buildSummary(events = []) {
  * @param {string} sid session id (used as the evidence ref)
  * @param {object[]} events the session's normalized events
  * @param {number} [nowDay] mint day (epoch days)
+ * @param {{llm?: boolean, call?: (payload: object) => object}} [opts] Jev opt-in and an
+ *   injectable transport (tests) for the forgetting and procedural layers
  * @returns {{ok:boolean, reason?:string, id?:string, tested?:boolean}}
  */
-export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
+export function recordSessionSummary(root, sid, events, nowDay = epochDay(), { llm, call } = {}) {
   try {
     const s = buildSummary(events);
     if (!s) return { ok: false, reason: "nothing to summarize" };
@@ -143,9 +152,20 @@ export function recordSessionSummary(root, sid, events, nowDay = epochDay()) {
     // Session-end housekeeping (the murāja'a job): archive what this ledger's own history
     // says will not be served again (ledger_retention.js — never-served claims, and live ones
     // idle past the longest comeback), so the ledger the next prompt reads stays bounded.
-    // Nothing is deleted; new evidence un-archives a claim.
-    pruneLedger(dir, nowDay);
+    // Nothing is deleted; new evidence un-archives a claim. With Jev's forgetting layer on,
+    // Jev re-judges that plan (keeps what is still useful, archives what no longer is).
+    const judge = jevMemoryOn("forgetting", { root, llm })
+      ? (claims, plan, uses, day) =>
+          judgeForgetting(claims, plan, uses, day, { root, llm, call, once: true })
+      : undefined;
+    pruneLedger(dir, nowDay, { judge });
     reindex(dir, nowDay);
+    // Procedural layer: repeated, test-confirmed work may become a skill (at most one per
+    // session; only when Jev is confident). Its own failure never fails the summary.
+    if (jevMemoryOn("procedural", { root, llm }))
+      try {
+        promoteSkills(root, { llm, call, nowDay, auto: true, tau: DEJA_REL_FLOOR });
+      } catch {}
     return { ok: true, id: minted.claim.id, tested: s.tested };
   } catch (err) {
     if (process.env.FORGE_DEBUG === "1")
@@ -188,8 +208,10 @@ export function dejaFromLedger(root, task, { nowDay = epochDay(), budget = 5 } =
  * @param {number} [nowDay]
  * @returns {string}
  */
-export function dejaLine(top, nowDay = 0) {
-  if (!top || (top.rel ?? 0) < DEJA_REL_FLOOR) return "";
+export function dejaLine(top, nowDay = 0, jevP = null) {
+  // With Jev's verdict the gate is its probability (≥ 0.5 — the caller only passes a hit Jev
+  // chose); without it, the rubric's relevance floor.
+  if (!top || (jevP == null && (top.rel ?? 0) < DEJA_REL_FLOOR)) return "";
   const { claim } = top;
   const verified = val(claim, nowDay) > 0.5;
   // provenance.t is an epoch day; a bare day number means nothing to a reader.
@@ -199,7 +221,8 @@ export function dejaLine(top, nowDay = 0) {
       ? ` on ${new Date(day * 86_400_000).toISOString().slice(0, 10)}`
       : "";
   const gist = claimText(claim).replace(/\s+/g, " ").trim().slice(0, 120);
-  return `${BRAND.brand} déjà vu — similar task seen${seen}${verified ? " (verified)" : ""}: ${gist}`;
+  const jev = jevP == null ? "" : ` (jev p=${Number(jevP).toFixed(2)})`;
+  return `${BRAND.brand} déjà vu — similar task seen${seen}${verified ? " (verified)" : ""}${jev}: ${gist}`;
 }
 
 /**
@@ -207,19 +230,24 @@ export function dejaLine(top, nowDay = 0) {
  * format. Returns "" for a disabled switch, an empty or host-injected query, no hits, or
  * any failure —
  * safe to call from a hook or a preflight path.
+ * With Jev's episodic layer on, Jev chooses which of the top hits (if any) to replay; a
+ * failed call leaves the relevance-floor rubric in charge.
  * @param {string} root
  * @param {string} task
  * @param {number} [nowDay]
+ * @param {{llm?: boolean, call?: (payload: object) => object}} [opts]
  * @returns {string}
  */
-export function dejaAdvisory(root, task, nowDay = epochDay()) {
+export function dejaAdvisory(root, task, nowDay = epochDay(), { llm, call } = {}) {
   if (process.env.FORGE_DEJA === "0") return "";
   if (!task || !String(task).trim() || isHarnessPrompt(task)) return "";
   try {
     const hits = dejaFromLedger(root, task, { nowDay, budget: 3 });
-    const line = dejaLine(hits[0], nowDay);
+    const pick = chooseReplay(task, hits, { root, llm, call, floor: DEJA_REL_FLOOR });
+    const top = pick ? hits[pick.index] : hits[0];
+    const line = pick ? (top ? dejaLine(top, nowDay, pick.p) : "") : dejaLine(top, nowDay);
     // Only a surfaced hit counts as use; a hit below the relevance floor was never shown.
-    if (line) recordUse(repoLedger(root), [hits[0].claim.id], { via: "deja", t: nowDay });
+    if (line) recordUse(repoLedger(root), [top.claim.id], { via: "deja", t: nowDay });
     return line;
   } catch {
     return "";

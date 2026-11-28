@@ -345,7 +345,9 @@ export function duplicateGroups(claims, nowDay) {
  * Every archive entry carries a machine-readable `cause` — "tombstoned", "dormant", "idle" or
  * "duplicate" (+ `survivor`) — because archiving is STORAGE lifecycle, not a truth verdict
  * (review F15): an idle or deduplicated claim is not a refuted one, and a reader must be able
- * to tell them apart after the fact.
+ * to tell them apart after the fact. Jev's memory layers (src/jev_memory.js) write two more
+ * causes to the attic log: "judged" (the forgetting layer archived a live claim) and
+ * "superseded" (the semantic layer archived a fact a newer one contradicted).
  * @returns {{archive: {id: string, reason: string, cause: "tombstoned"|"dormant"|"idle"|"duplicate",
  *   survivor?: string}[], retention: ReturnType<typeof learnIdleCutoff>,
  *   duplicates: ReturnType<typeof duplicateGroups> | null}}

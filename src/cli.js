@@ -109,6 +109,7 @@ const HANDLERS = {
   relay: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.relay(argv),
   cloud: async (argv) => (await import("./cli/cloud.js")).cloudHandlers.cloud(argv),
   harness: async (argv) => (await import("./cli/harness.js")).handleHarness(argv),
+  memory: async (argv) => (await import("./cli/jev_memory.js")).handleMemory(argv),
   ...evidenceHandlers,
   ...memoryHandlers,
   ...claimHandlers,
@@ -1214,14 +1215,25 @@ HANDLERS.hooks = async (argv) => {
 };
 HANDLERS.remember = async (argv) => {
   const b = await import("./brain.js");
-  const name = argv[1];
-  const body = argv.slice(2).join(" ");
+  const { rememberVerified } = await import("./jev_memory.js");
+  const force = argv.includes("--force");
+  const args = argv.filter((a) => a !== "--force");
+  const name = args[1];
+  const body = args.slice(2).join(" ");
   if (!name || !body) {
-    console.error('usage: forge remember "<name>" "<fact>"');
+    console.error('usage: forge remember "<name>" "<fact>" [--force]');
     process.exitCode = 1;
     return;
   }
-  const res = b.remember(b.brainStore(process.cwd()), name, body);
+  // Jev's semantic layer (opt-in) verifies the fact first: a confident one-off is refused
+  // (--force stores it anyway), a duplicate is not stored twice, and a fact this one
+  // contradicts is archived — unless evidence, today's use or a fact file keeps it, which
+  // is then only reported. Off, this is exactly brain.remember.
+  const res = rememberVerified(process.cwd(), name, body, { force });
+  if (res.duplicate) {
+    console.log(`  ${res.reason}`);
+    return;
+  }
   if (res.ok) {
     // Brain is repo-scoped and git-committable → shadow into the REPO ledger.
     try {
@@ -1236,8 +1248,19 @@ HANDLERS.remember = async (argv) => {
   console.log(
     res.ok
       ? `  remembered: ${res.slug} — run \`forge sync\` to inline it into every tool`
-      : `  ${res.reason}`,
+      : res.refused
+        ? `  not remembered — ${res.reason}; pass --force to store it anyway`
+        : `  ${res.reason}`,
   );
+  const other = res.superseded ?? res.contradicts;
+  if (res.superseded)
+    console.log(
+      `  archived "${other.name ?? other.id.slice(0, 8)}" — Jev judged the new fact contradicts it (attic; \`forge ledger show ${other.id.slice(0, 8)}\`)`,
+    );
+  else if (res.contradicts)
+    console.log(
+      `  contradicts "${other.name ?? other.id.slice(0, 8)}" — kept, because ${res.kept}; settle it with \`forge ledger retract ${other.id}\` if it is wrong`,
+    );
   if (!res.ok) process.exitCode = 1;
   return;
 };
@@ -1965,12 +1988,13 @@ HANDLERS.know = async (argv) => {
   const { HOMES, routeFact, storeFact } = await import("./knowledge_router.js");
   const json = argv.includes("--json");
   const dry = argv.includes("--dry-run");
+  const force = argv.includes("--force");
   const text = argv
     .slice(1)
-    .filter((a) => a !== "--json" && a !== "--dry-run")
+    .filter((a) => a !== "--json" && a !== "--dry-run" && a !== "--force")
     .join(" ");
   if (!text) {
-    console.error(`usage: ${BRAND.cli} know "<fact>" [--dry-run] [--json]`);
+    console.error(`usage: ${BRAND.cli} know "<fact>" [--dry-run] [--force] [--json]`);
     process.exitCode = 1;
     return;
   }
@@ -1978,6 +2002,7 @@ HANDLERS.know = async (argv) => {
   const r = storeFact(process.cwd(), text, {
     mode: dry ? "advise" : "auto",
     route,
+    force,
   });
   if (json) return console.log(JSON.stringify({ ...route, ...r, dryRun: dry }, null, 2));
   heading(`${BRAND.brand} know — knowledge routing (A7)\n`);
@@ -1994,7 +2019,9 @@ HANDLERS.know = async (argv) => {
     return;
   }
   if (r.stored) console.log(`  stored:   ${r.ref}`);
+  else if (r.duplicate) console.log(`  ${r.reason}`);
   else if (dry) console.log("  (dry-run — nothing written)");
+  if (r.superseded) console.log(`  archived: ${r.superseded.slice(0, 8)} (contradicted — Jev)`);
   if (r.advice) console.log(`  advice:   ${r.advice}`);
   return;
 };

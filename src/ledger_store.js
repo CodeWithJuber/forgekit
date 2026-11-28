@@ -923,11 +923,25 @@ export function verify(dir) {
  * pass is too slow for the Stop hook that calls this.
  * @param {string} dir
  * @param {number} [nowDay]
- * @param {{halfLife?:number}} [opts] only feeds isDormant
+ * @param {{halfLife?:number, judge?:(claims:any[], plan:any, uses:Map<string, number[]>,
+ *   nowDay:number) => any}} [opts] halfLife only feeds isDormant; judge re-decides the plan
+ *   (Jev's forgetting layer)
  * @returns {{pruned:string[], retention: ReturnType<typeof retentionPlan>["retention"]}}
  */
-export function pruneLedger(dir, nowDay = epochDay(), { halfLife = DEFAULT_HALF_LIFE_DAYS } = {}) {
-  const plan = retentionPlan(loadClaims(dir), readUses(dir), nowDay, { halfLife });
+export function pruneLedger(
+  dir,
+  nowDay = epochDay(),
+  { halfLife = DEFAULT_HALF_LIFE_DAYS, judge } = {},
+) {
+  const claims = loadClaims(dir);
+  const uses = readUses(dir);
+  let plan = retentionPlan(claims, uses, nowDay, { halfLife });
+  // An optional judge (Jev's forgetting layer, src/jev_memory.js) may re-decide the plan;
+  // a judge that throws or returns nothing leaves the rubric's plan as it was.
+  if (judge)
+    try {
+      plan = judge(claims, plan, uses, nowDay) ?? plan;
+    } catch {}
   const pruned = [];
   for (const a of plan.archive)
     if (pruneToAttic(dir, a.id, { ...archiveWhy(a), t: nowDay }).ok) pruned.push(a.id);

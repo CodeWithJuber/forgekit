@@ -447,7 +447,72 @@ export const COMMANDS = {
     ],
   },
   harden: "wire security controls — pre-commit gate (gitleaks + commit gate) + sandbox settings",
-  remember: "add a durable fact to this repo's portable memory (forge brain)",
+  remember: {
+    summary: "add a durable fact to this repo's portable memory (forge brain)",
+    usage: 'forge remember "<name>" "<fact>" [--force]',
+    flags: [
+      {
+        flag: "--force",
+        desc: "store it even when Jev's semantic layer (forge memory) judges it a one-off or a duplicate",
+      },
+    ],
+    examples: [
+      'forge remember "test-runner" "tests run with node --test, not jest"',
+      'forge remember "deploy-day" "we deploy on Tuesdays" --force',
+    ],
+  },
+  memory: {
+    summary:
+      "Jev agent memory — the decision in each memory layer (working, episodic, semantic, procedural, forgetting) asked of Jev with a probability and reconciled with the rubric: status, measured token savings, dry runs",
+    usage:
+      'forge memory [status] | admit "<task>" [--budget <tokens>] | replay "<task>" | verify "<fact>" [--name <name>] | skills [--apply] [--remove <slug>] | forget [--apply]   (every form: [--llm] [--json])',
+    strict: true,
+    subcommands: ["status", "admit", "replay", "verify", "skills", "forget"],
+    defaultSub: "status",
+    flags: [
+      {
+        flag: "--budget <tokens>",
+        for: ["admit"],
+        int: { min: 100, max: 200000 },
+        desc: "the context budget to admit into (chars/3.6 estimate; default 6000)",
+      },
+      {
+        flag: "--name <name>",
+        for: ["verify"],
+        desc: "the name the fact would be remembered under (a fact with the same name is superseded by `forge remember` already)",
+      },
+      {
+        flag: "--apply",
+        for: ["skills", "forget"],
+        desc: "install the procedures the rubric keeps and Jev did not veto (skills — a human's call, up to 8 learned), or archive the judged plan to the attic (forget — reversible)",
+      },
+      {
+        flag: "--remove <slug>",
+        for: ["skills"],
+        desc: "remove a learned skill this command installed (hand-written skills are never touched)",
+      },
+      {
+        flag: "--llm",
+        desc: "ask Jev for this run even when the saved decisions preference is off (still needs TYPESAFE_API_KEY)",
+      },
+      { flag: "--json", desc: "machine-readable result" },
+    ],
+    env: [
+      "TYPESAFE_API_KEY   the Jev (TypeSafe System One) key; unset, every layer uses its deterministic rubric",
+      "FORGE_JEV_MEMORY   which layers Jev decides: unset = working,episodic,semantic; all = all five (adds the autonomous procedural and forgetting); 0 = none; or a list",
+    ],
+    exit: [
+      "0  the report printed, or the skill/archive change was made",
+      '1  a usage error, a missing "<task>"/"<fact>", or --remove named no learned skill',
+    ],
+    examples: [
+      "forge memory",
+      'forge memory admit "fix the flaky login test" --llm',
+      'forge memory verify "we deploy on Tuesdays" --name deploy-day',
+      "forge memory skills --apply",
+      "forge memory forget",
+    ],
+  },
   brain: "show / rebuild the portable project memory index",
   cost: "real per-day spend via ccusage + measured stage factors (--stages)",
   budget: {
@@ -783,6 +848,10 @@ export const COMMANDS = {
     flags: [
       { flag: "--dry-run", desc: "show where the fact would go without writing it" },
       {
+        flag: "--force",
+        desc: "store it even when Jev's semantic layer (forge memory) judges it a one-off or a duplicate",
+      },
+      {
         flag: '--enforce "<rule>"',
         desc: 'compile a policy into a check `forge precommit` runs on every commit: a banned import ("never import moment"), a construct ("no console.log in src", "avoid default exports"), a quoted literal, or another package manager\'s lockfile ("use pnpm, not npm"); anything else is refused and stays memory',
       },
@@ -1113,6 +1182,7 @@ export const GROUPS = {
   Memory: [
     "hikmah",
     "cortex",
+    "memory",
     "recall",
     "remember",
     "brain",

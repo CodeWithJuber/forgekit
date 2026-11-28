@@ -94,6 +94,8 @@ export const FORGE_PRIVATE_DIRS = [
   "trace/",
   "atlas.cache.json",
   "metrics.jsonl",
+  "jev-memory.jsonl",
+  "jev-skills.json",
   "provenance.json",
   "runtime-map.json",
 ];
