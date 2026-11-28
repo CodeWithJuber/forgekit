@@ -89,6 +89,8 @@ row is confirmed against vendor docs.
 | **Continue**       | `.continue/rules/*.md` + `.continue/mcpServers/*.yaml`         | Emits a rules file plus the Forge MCP server config                   |
 | **OpenClaw**       | execution-folder `AGENTS.md`; MCP registry is global          | Relies on root `AGENTS.md`; writes `.openclaw/mcp.json` to apply once |
 | **Kimi Code**      | `AGENTS.md` merged from project root to working dir           | Project MCP in `.kimi-code/mcp.json`; the per-user ForgeKit plugin supplies lifecycle hooks               |
+| **Hermes Agent**   | first context kind found: `.hermes.md`, the `AGENTS.md` chain, `CLAUDE.md` | Relies on root `AGENTS.md`; MCP is one `hermes mcp add` in the Hermes profile (no project file) |
+| **Pi**             | first of `AGENTS.override.md`/`AGENTS.md`/`CLAUDE.md` per directory | Relies on root `AGENTS.md`; writes `.pi/mcp.json`, loaded after project trust |
 
 Roo Code and VS Code receive the Forge MCP server via `forge init` (`.roo/mcp.json`,
 `.vscode/mcp.json`) rather than a rules file.
