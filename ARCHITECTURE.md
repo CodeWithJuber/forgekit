@@ -685,13 +685,13 @@ flowchart LR
   landing["landing<br/>60+ files"]
   research["research<br/>30+ files"]
   scripts["scripts<br/>17 files"]
-  bench["bench<br/>6 files"]
+  bench["bench<br/>7 files"]
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
   examples["examples<br/>1 file"]
   test -- 510+ --> src
   scripts -- 17 --> src
-  bench -- 12 --> src
+  bench -- 14 --> src
   test -- 9 --> global
   src -- 6 --> global
   test -- 5 --> scripts

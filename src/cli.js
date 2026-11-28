@@ -1428,16 +1428,72 @@ HANDLERS.impact = async (argv) => {
   // Default is the focused reverse walk. --all-relations adds the paper's sibling/forward
   // rules: recall 1.00, but on this repo the median answer goes from 15 files to 78.
   const all = argv.includes("--all-relations");
-  const FLAGS = new Set(["--json", "--basic", "--all-relations", "--diff", "--staged"]);
+  const FLAGS = new Set(["--json", "--basic", "--all-relations", "--diff", "--staged", "--record"]);
   const rest = argv.slice(1);
+  // Options that take a value: the word after each is not part of the target.
+  const valued = new Set(["--since", "--command", "--jobs"]);
+  const valueAt = new Set();
+  rest.forEach((a, i) => {
+    if (valued.has(a)) valueAt.add(i).add(i + 1);
+  });
+  const flagValue = (/** @type {string} */ flag) => {
+    const i = rest.indexOf(flag);
+    return i >= 0 ? rest[i + 1] : undefined;
+  };
   const sinceAt = rest.indexOf("--since");
-  const since = sinceAt >= 0 ? rest[sinceAt + 1] : undefined;
-  const target = rest
-    .filter((a, i) => !FLAGS.has(a) && (sinceAt < 0 || (i !== sinceAt && i !== sinceAt + 1)))
-    .join(" ");
+  const since = flagValue("--since");
+  const target = rest.filter((a, i) => !FLAGS.has(a) && !valueAt.has(i)).join(" ");
   const usage =
     "usage: forge impact <symbol|file> [--json] [--basic] [--all-relations]\n" +
-    "       forge impact --diff | --staged | --since <ref> [--json] [--all-relations]";
+    "       forge impact --diff | --staged | --since <ref> [--json] [--all-relations]\n" +
+    '       forge impact --record [--command "<test command with {file}>"] [--jobs <n>]';
+  if (argv.includes("--record")) {
+    // Run each test file under V8 coverage and keep what it executes, for later queries.
+    const { recordRuntimeMap, saveRuntimeMap } = await import("./runtime_map.js");
+    const jobs = flagValue("--jobs");
+    if (target || (jobs !== undefined && !/^[1-9]\d*$/.test(jobs))) {
+      console.error(usage);
+      process.exitCode = 1;
+      return;
+    }
+    const t0 = Date.now();
+    const map = await recordRuntimeMap(process.cwd(), {
+      command: flagValue("--command"),
+      jobs: jobs ? Number(jobs) : undefined,
+      onProgress: json
+        ? undefined
+        : (n, total) => process.stderr.write(`\r  recording: ${n}/${total} test files`),
+    });
+    saveRuntimeMap(process.cwd(), map);
+    const summary = {
+      tests: map.tests,
+      sources: Object.keys(map.sources).length,
+      failedRuns: map.failedRuns,
+      command: map.command,
+      seconds: Math.round((Date.now() - t0) / 1000),
+    };
+    if (json) {
+      console.log(JSON.stringify(summary, null, 2));
+      return;
+    }
+    process.stderr.write("\n");
+    heading(`${BRAND.brand} impact — runtime map recorded\n`);
+    console.log(
+      `  ${summary.tests} test file(s), ${summary.sources} source file(s) executed, ${summary.seconds} s`,
+    );
+    console.log(`  command: ${summary.command}`);
+    if (summary.failedRuns.length)
+      console.log(
+        paint(
+          `  ! ${summary.failedRuns.length} test file(s) did not exit 0; what they ran is still recorded`,
+          "warn",
+        ),
+      );
+    console.log(
+      `  saved to .forge/runtime-map.json — \`${BRAND.cli} impact <symbol>\` now lists the tests that run it`,
+    );
+    return;
+  }
   const diffMode = argv.includes("--diff") || argv.includes("--staged") || sinceAt >= 0;
   if ((sinceAt >= 0 && (!since || since.startsWith("--"))) || (diffMode && target)) {
     console.error(usage);
@@ -1486,6 +1542,25 @@ HANDLERS.impact = async (argv) => {
     basic,
     ...(all ? { relations: IMPACT_RELATIONS } : {}),
   });
+  // Runtime evidence: the tests that actually executed the target, when a map was recorded.
+  const { loadRuntimeMap, runtimeTests } = await import("./runtime_map.js");
+  const runtimeMap = loadRuntimeMap(process.cwd());
+  if (runtimeMap && r.found) {
+    const home = r.definedIn ?? [];
+    const isFile = home.some((f) => f === target || f.endsWith(`/${target}`));
+    const name = target.split(/[.#:]/).pop() ?? target;
+    const seen = runtimeTests(process.cwd(), runtimeMap, {
+      files: home,
+      names: isFile ? [] : [name],
+    });
+    const graph = new Set(r.impactedFiles);
+    r.runtime = {
+      recordedAt: runtimeMap.recordedAt,
+      stale: seen.stale,
+      tests: seen.tests,
+      missedByGraph: seen.tests.filter((t) => !graph.has(t)),
+    };
+  }
   if (json) {
     console.log(JSON.stringify(r, null, 2));
     return;
@@ -1529,6 +1604,38 @@ HANDLERS.impact = async (argv) => {
       console.log(
         `    … ${downstream.length - 5} more — \`${BRAND.cli} impact ${target} --json\` lists all`,
       );
+  }
+  if (r.runtime) {
+    const rt = r.runtime;
+    console.log(
+      `\n  run by tests: ${rt.tests.length} test file(s) executed it (recorded ${rt.recordedAt.slice(0, 10)})`,
+    );
+    for (const t of rt.tests.slice(0, 10))
+      console.log(
+        `    - ${t}${rt.missedByGraph.includes(t) ? paint("  (not in the graph)", "warn") : ""}`,
+      );
+    if (rt.tests.length > 10) console.log(`    … ${rt.tests.length - 10} more`);
+    if (rt.missedByGraph.length)
+      console.log(
+        paint(
+          `  ! ${rt.missedByGraph.length} of them reach it in a way the import graph cannot see`,
+          "warn",
+        ),
+      );
+    if (rt.stale.length)
+      console.log(
+        paint(
+          `  ! changed since the recording: ${rt.stale.join(", ")} — re-run \`${BRAND.cli} impact --record\``,
+          "warn",
+        ),
+      );
+  } else if (r.found) {
+    console.log(
+      paint(
+        `\n  tip: \`${BRAND.cli} impact --record\` adds the tests that actually execute this code`,
+        "dim",
+      ),
+    );
   }
   // Completeness: a blast radius is only as good as the graph under it — say when it isn't.
   if (r.capped)

@@ -664,7 +664,7 @@ export const COMMANDS = {
     summary:
       "hazard-aware blast radius — SCC-aware propagation + data-driven threshold from PageRank centrality and ledger incident history",
     usage:
-      "forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json]",
+      'forge impact <symbol|file> [--json] [--basic] [--all-relations] | forge impact --diff [--staged | --since <ref>] [--json] | forge impact --record [--command "<test command with {file}>"] [--jobs <n>] [--json]',
     flags: [
       { flag: "--json", desc: "machine-readable report" },
       {
@@ -681,8 +681,18 @@ export const COMMANDS = {
         flag: "--basic",
         desc: "skip hazard-aware enhancements (fixed threshold, no SCC expansion)",
       },
+      {
+        flag: "--record",
+        desc: "run each test file under V8 coverage and save which functions it executes (.forge/runtime-map.json); later queries list the tests that run the target, including ones the import graph misses",
+      },
+      {
+        flag: '--command "<cmd {file}>"',
+        desc: "with --record: the per-file test command (default: the project's runner, e.g. node --test {file})",
+      },
+      { flag: "--jobs <n>", desc: "with --record: test files run at once (default 4)" },
     ],
     examples: [
+      "forge impact --record",
       "forge impact src/atlas.js",
       "forge impact computeTax --json",
       "forge impact src/val.js --basic",

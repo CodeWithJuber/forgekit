@@ -466,7 +466,10 @@ the project policy and verifier to tool calls made inside that run.
   implemented, but the repository does not provide equivalent real-world exercise evidence for
   every supported host.
 - **The code graph is heuristic.** Regex extraction is not a sound call graph and can both
-  over-predict and miss dependencies.
+  over-predict and miss dependencies: against a mutation oracle on this repository it named 53 of
+  132 breaking test files. `forge impact --record` adds runtime evidence (the tests that executed
+  the code), which named all 132, but it covers only JavaScript and TypeScript run by Node and only
+  code some test runs.
 - **Routing and costs.** `forge route` recommends a model tier. A supervised run uses its configured
   endpoint and enforces run and project budgets using the operator's prices. The Python routing
   study's 62.1% saving failed to reproduce on held-out tasks. [Evaluation](EVIDENCE.md#measured-evidence)
