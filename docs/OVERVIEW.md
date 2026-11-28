@@ -177,8 +177,9 @@ The day-to-day value first — what the substrate keeps outside the model, so it
 - **Guardrails that can't be forgotten.** _[Implemented on Claude Code]_ Deterministic hooks
   check the rules a model shouldn't break (protected paths, cost budget, doom loops) — they
   survive a context compaction the way `CLAUDE.md` prose does not. They reduce risk as
-  defence in depth; they are not a sandbox, and a sufficiently creative shell command can
-  still bypass a regex guard.
+  defence in depth; they are not a sandbox. Commands are normalized the way the shell reads
+  them before they are judged, so quoting, variables and inline programs no longer hide a
+  delete or a secret read, but a program the guard cannot evaluate still can.
 - **Work that finishes end to end.** A completion gate blocks "done" once per session when
   code moved without test evidence or a doc/state artifact (a UI-only change — styling,
   class strings, JSX text — owes a design record or a UI check instead of a unit test, and
@@ -474,7 +475,10 @@ the project policy and verifier to tool calls made inside that run.
   that a model does not guarantee on its own — one tested way to do that, not the only one.
 - **Embeddings are an adapter, not an included model or vector store.** A user supplies the
   external command or HTTP service. MinHash remains the default and fallback.
-- **Guardrails are defence in depth.** Shell-regex checks can be bypassed and post-tool redaction
+- **Guardrails are defence in depth.** Commands are normalized before they are judged (quotes,
+  variables, substitutions, inline programs); on a 25-command held-out bypass set the guard
+  blocked 23 at first measurement, against 4 before. It is static analysis: a program it cannot
+  evaluate can still get past it, and post-tool redaction
   runs after the external tool has executed. Forgekit is not a sandbox.
 - **Human ratification is a workflow convention.** Ratify and retract operations record the git
   author, but this repository does not authenticate a human or enforce enterprise approval roles.

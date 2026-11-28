@@ -2136,10 +2136,29 @@ exiting 1, which Claude Code treats as a non-blocking error. `node run.mjs --fai
 denied by Claude Code itself: a `settings.json` install keeps `Read(./.env.*)` and
 `Read(./**/.npmrc)` in `permissions.deny`, and deny always wins, so there a Read of
 `.env.example` or of a token-less `.npmrc` is still refused (Bash `cat` of them is not; a plugin
-install has no such deny list). It is pattern matching, not a sandbox: variable indirection
-(`f=.env; cat $f`), `find … -exec cat`, `xargs -a`, command substitutions other than a literal
-`$(echo …)`, and interpreters (`python -c`, `node -e`) are out of scope, and secret-redact still
-masks leaked values after the tool runs.
+install has no such deny list).
+
+Before judging, the guard normalizes each command the way the shell will read it: quotes and
+escapes are removed (`"rm"`, `r\m` and `$'\x72m'` are all `rm`), a variable set earlier in the same
+command is substituted (`f=.env; cat $f`, `R=rm; $R -rf /`), `$(echo …)` and `$(pwd)` are
+replaced by their output, aliases and function bodies are read as commands, `find -exec` and
+`xargs` get the files they act on, a shell started further along a command (`docker exec app
+sh -c "…"`, `kubectl exec … -- bash -c "…"`) has its string judged, and inline programs
+(`python -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`, and a heredoc fed to `python3 -` or
+`node`) are scanned for secret paths, recursive deletes and the command strings they run. Arguments that are only data (echo text, a commit message, a grep pattern, a heredoc fed to
+`cat`) are left out of the destructive patterns, so `git commit -m "block rm -rf /"` passes.
+Where an unknown would decide the verdict, it fails closed: a command name computed at run time
+that would be destructive as `rm`, `git` or `dd`, a recursive delete of a path that is not
+known (a fresh `mktemp` directory is), and `eval`, `sh -c`, `source` or `bash` of text that is
+downloaded or decoded at run time. Editors, `source`/`.`, archivers and transfer tools (`tar`,
+`zip`, `scp`, `rsync`, `curl -F file=@…`) count as reading the files they are given.
+`test/protect_paths_normalize.test.js` holds the adversarial and benign corpora
+([measured result](EVIDENCE.md#measured-evidence)).
+
+It is still static analysis, not a sandbox: a value set outside the command or computed by a
+script, and a file read by a program the guard does not inspect, stay unknown. secret-redact
+still masks leaked values after the tool runs; where you need a boundary, run the agent in an OS
+sandbox.
 
 Three more ambient layers ride the same hooks:
 
