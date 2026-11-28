@@ -160,8 +160,9 @@ Refutations, boundaries and the research prototypes are in [docs/EVIDENCE.md](do
   files and over-warn. On this repository it named 40% of the test files that broke when a
   function broke; `forge impact --record` adds the tests that actually run the code, which named
   all of them, but only for code some test runs.
-- **Guardrails are defence in depth, not a sandbox.** A creative shell command can still get
-  past a regex guard.
+- **Guardrails are defence in depth, not a sandbox.** Commands are normalized the way the shell
+  reads them (quotes, variables, substitutions, inline programs) before they are judged. It is
+  static analysis: a program the guard cannot evaluate can still get past it.
 - **Memory is external state.** Facts live in files and are retrieved into context; no model is
   retrained.
 

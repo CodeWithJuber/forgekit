@@ -10,6 +10,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`forge impact --record`** runs each test file in its own process under V8's built-in coverage and saves which functions it executed (`.forge/runtime-map.json`, kept out of git). Every later `forge impact <symbol|file>` then lists the test files that actually ran the target and marks the ones the import graph missed (a computed import, a registry, a child process), and `forge test-select` adds them to its selection. A source file changed since the recording is reported as stale. The per-file command follows the project's runner (`node --test`, vitest, jest, mocha) or `--command`.
 
+### Fixed
+
+- The path guard read many spellings of a dangerous command as harmless: a quoted or escaped name (`"rm" -rf /`), a variable (`R=rm; $R -rf /`, `f=.env; cat $f`), `$(echo rm)`, `find -name .env -exec cat {}`, `source .env`, an editor or archiver, and inline programs (`python3 -c "open('.env')"`, `node -e "fs.rmSync('/')"`). It also blocked text that only mentioned one, such as `git commit -m "block rm -rf /"`. Commands are now normalized the way the shell reads them before they are judged, data arguments stay out of the destructive patterns, and unknowns that decide the verdict fail closed (a computed command name that would be destructive, a recursive delete of an unknown path, `eval` or `sh -c` of downloaded or decoded text). On a held-out set of 25 bypasses and 20 ordinary commands, the old guard blocked 4 and wrongly blocked 3; the new one blocked 23 and wrongly blocked none at first measurement, and the two misses are fixed.
+
 ## [1.23.0] - 2026-11-27
 
 ### Added

@@ -86,7 +86,8 @@ On Claude Code the guards run automatically, and five can stop or pause an actio
 
 `doom-loop`, `secret-redact`, `format-on-edit`, `lean-guard` and the session learner are advisory:
 they warn, redact output after the fact or record, and never block. Guards are defence in depth, not
-a sandbox: a sufficiently creative shell command can bypass a regex guard. Tests run each guard with
+a sandbox: the path guard normalizes a command before judging it, but a program it cannot evaluate
+can still get past it. Tests run each guard with
 synthetic payloads (`test/guards.test.js`, `test/protect_paths.test.js`, `test/stop_gate.test.js`,
 `test/depgate.test.js`, `test/depgate_generic.test.js`,
 `test/hook_launcher.test.js`), and `test/hook_manifests.test.js` checks that the plugin manifest and
