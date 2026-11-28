@@ -2,7 +2,9 @@
 // result can carry it. Keep only the redacted query, scoped to this user, repo and session.
 import { createHash, randomUUID } from "node:crypto";
 import {
+  closeSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -56,16 +58,32 @@ export function queueQuery(host, root, sessionId, query) {
 export function takeQuery(host, root, sessionId) {
   const file = queryPath(host, root, sessionId);
   if (!file) return "";
-  const tmp = `${file.path}.${randomUUID()}`;
+  // Parallel tools must not each inject the same prompt. Claim with an exclusive create: one
+  // process wins on POSIX and on Windows alike. A rename claim is not exclusive on Windows,
+  // where it can move a file that another process opened before the first rename landed, so
+  // both read it.
+  const claim = `${file.path}.claim`;
+  let fd;
   try {
-    // Claim by rename so parallel tools cannot each inject the same prompt.
-    renameSync(file.path, tmp);
-    return Date.now() - statSync(tmp).mtimeMs <= MAX_AGE ? readFileSync(tmp, "utf8") : "";
+    fd = openSync(claim, "wx", 0o600);
+  } catch {
+    try {
+      // A claim left by a process that died expires with the query itself.
+      if (Date.now() - statSync(claim).mtimeMs > MAX_AGE) rmSync(claim, { force: true });
+    } catch {}
+    return "";
+  }
+  try {
+    const text =
+      Date.now() - statSync(file.path).mtimeMs <= MAX_AGE ? readFileSync(file.path, "utf8") : "";
+    rmSync(file.path, { force: true });
+    return text;
   } catch {
     return "";
   } finally {
     try {
-      rmSync(tmp, { force: true });
+      closeSync(fd);
+      rmSync(claim, { force: true });
     } catch {}
   }
 }

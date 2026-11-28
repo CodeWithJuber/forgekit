@@ -1,0 +1,7 @@
+### Added
+
+- `scripts/resolve-conflicts.mjs` resolves the merge conflicts that have one right answer and leaves the rest: lines that both branches only inserted at the same spot (two new rows in one table, two bullets in one list) are both kept, the base branch's first, and hunks inside a `forge:render` block are rebuilt by `forge docs render`; a spot where both sides edited the same existing lines stays for a person. `npm run sync:master` merges master and runs it. The PR sync workflow does the same for every open same-repo pull request when master moves, and comments once on a pull request whose conflicts need a person. A push made with the default token does not start CI, so the workflow uses `FORGE_DOCS_TOKEN` when it is set.
+
+### Fixed
+
+- A prompt queued for evidence lookup could be injected twice when two tools of one turn finished together on Windows: the claim was a rename, which Windows does not make exclusive when the other process already holds the file open. The claim is now an exclusive create, which one process wins on every platform.
