@@ -775,7 +775,30 @@ export const COMMANDS = {
   },
   handoff: "bounded session snapshot — rewrite .forge/state.md, re-injected each session start",
   decide: "append-only decision log — D-#### ADR-lite entries in .forge/decisions.md",
-  know: "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped",
+  know: {
+    summary:
+      "route any fact to its storage home (decision / ledger / recall / …) — total, never dropped; a checkable policy can be compiled into a commit check",
+    usage:
+      'forge know "<fact>" [--dry-run] [--json] | forge know --enforce "<rule>" [--warn] [--json] | forge know --rules [--json] | forge know --check [--json] | forge know --remove <id> [--json]',
+    flags: [
+      { flag: "--dry-run", desc: "show where the fact would go without writing it" },
+      {
+        flag: '--enforce "<rule>"',
+        desc: 'compile a policy into a check `forge precommit` runs on every commit: a banned import ("never import moment"), a construct ("no console.log in src", "avoid default exports"), a quoted literal, or another package manager\'s lockfile ("use pnpm, not npm"); anything else is refused and stays memory',
+      },
+      { flag: "--warn", desc: "with --enforce: a violation warns instead of refusing the commit" },
+      { flag: "--rules", desc: "list the enforced rules (.forge/rules.json)" },
+      { flag: "--check", desc: "check the working changes against the enforced rules now" },
+      { flag: "--remove <id>", desc: "drop an enforced rule" },
+      { flag: "--json", desc: "machine-readable result" },
+    ],
+    examples: [
+      'forge know "we picked Postgres over Mongo for transactions"',
+      'forge know --enforce "never import moment"',
+      'forge know --enforce "use pnpm, not npm"',
+      "forge know --check",
+    ],
+  },
   diagnose: {
     summary:
       "doom-loop check — record a failure; the same signature three times mints a diagnosis and an escalation",

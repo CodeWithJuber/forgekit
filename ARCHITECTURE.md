@@ -681,7 +681,7 @@ from the tree it describes.
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#201a15','primaryTextColor':'#f2ede7','primaryBorderColor':'#372c22','lineColor':'#f26430','secondaryColor':'#272019','tertiaryColor':'#171310','edgeLabelBackground':'#201a15','clusterBkg':'#171310','clusterBorder':'#4a3b2e','fontFamily':'ui-sans-serif, system-ui, sans-serif','fontSize':'14px'},'flowchart':{'curve':'basis','padding':10,'nodeSpacing':36,'rankSpacing':44}}}%%
 flowchart LR
   src["src<br/>250+ files"]
-  test["test<br/>220+ files"]
+  test["test<br/>230+ files"]
   landing["landing<br/>60+ files"]
   research["research<br/>30+ files"]
   scripts["scripts<br/>18 files"]

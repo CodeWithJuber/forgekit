@@ -107,7 +107,8 @@ Forge states its own ceiling everywhere.
 - **Verification reduces, does not certify.** Crew verifiers and the hallucinated-symbol
   flag cut review burden; they do not prove the code correct.
 - **No weight-level learning.** `recall` / `cortex` are file-and-prompt memory only — no
-  RL, no fine-tuning.
+  RL, no fine-tuning. A checkable policy can be compiled into a commit check instead
+  (`forge know --enforce`).
 - **The impact graph is regex-approximate** — not a sound call graph, and not conservative: it
   can miss affected files, so an empty result means "unknown", not "safe". `forge impact --record`
   adds the tests that actually run the code.
