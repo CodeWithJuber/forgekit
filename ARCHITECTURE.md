@@ -684,7 +684,7 @@ flowchart LR
   test["test<br/>220+ files"]
   landing["landing<br/>60+ files"]
   research["research<br/>30+ files"]
-  scripts["scripts<br/>17 files"]
+  scripts["scripts<br/>18 files"]
   bench["bench<br/>7 files"]
   global["global<br/>6 files"]
   docs["docs<br/>1 file"]
@@ -694,7 +694,7 @@ flowchart LR
   bench -- 14 --> src
   test -- 9 --> global
   src -- 6 --> global
-  test -- 5 --> scripts
+  test -- 6 --> scripts
   examples -- 4 --> src
   scripts -- 4 --> test
   test -- 2 --> bench
