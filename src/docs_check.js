@@ -4,9 +4,11 @@
 // a feature can no longer ship without its docs and the gap silently accumulate — the
 // exact failure that let a whole command family go undocumented. Self-check: it runs
 // against the forge package root (BRAND.root), not the host repo.
+
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 import { BRAND } from "./brand.js";
+import { FRAGMENT_DIR, fragmentErrors, readFragments } from "./changelog_fragments.js";
 import { COMMANDS, HIDDEN_COMMANDS } from "./commands.js";
 import { renderDocs } from "./docs_render.js";
 import { TOOLS } from "./mcp_tools.js";
@@ -387,9 +389,24 @@ function checkChangelog(root, issues) {
     }
   }
   const unreleased = sections.find((s) => s[1].toLowerCase() === "unreleased");
-  if (unreleased && !unreleased[2].trim()) {
+  // changelog.d/: unreleased entries live in fragment files, one per change, so parallel
+  // pull requests never edit the same CHANGELOG lines. [Unreleased] stays empty there.
+  const fragments = readFragments(root);
+  if (fragments) {
+    for (const e of fragmentErrors(fragments))
+      issues.push({ check: "changelog", severity: "error", detail: `${e.file}: ${e.detail}` });
+    if (unreleased?.[2].trim())
+      issues.push({
+        check: "changelog",
+        severity: "error",
+        detail: `CHANGELOG.md [Unreleased] has entries, but this repository collects them in ${FRAGMENT_DIR}/ — move them to a file there (e.g. ${FRAGMENT_DIR}/<branch>.md) so open pull requests do not conflict`,
+      });
+  }
+  if (unreleased && !unreleased[2].trim() && !fragments?.length) {
     const srcT = Number(git(root, ["log", "-1", "--format=%ct", "--", "src"]) || 0);
-    const clT = Number(git(root, ["log", "-1", "--format=%ct", "--", "CHANGELOG.md"]) || 0);
+    const clT = Number(
+      git(root, ["log", "-1", "--format=%ct", "--", "CHANGELOG.md", FRAGMENT_DIR]) || 0,
+    );
     if (srcT && clT && srcT > clT) {
       issues.push({
         check: "changelog",
