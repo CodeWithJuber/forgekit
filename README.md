@@ -155,7 +155,9 @@ Refutations, boundaries and the research prototypes are in [docs/EVIDENCE.md](do
 
 ## Honest limits
 
-- **Beta.** Releases follow Semantic Versioning, and support is best effort with no SLA.
+- **Beta.** Releases follow Semantic Versioning, and support is best effort with no SLA. What is
+  stable today, the deprecation policy and the criteria for dropping the label are in
+  [docs/STABILITY.md](docs/STABILITY.md).
 - **Impact is heuristic.** A regex-derived code graph, not a sound call graph: it can miss
   files and over-warn. On this repository it named 40% of the test files that broke when a
   function broke; `forge impact --record` adds the tests that actually run the code, which named
