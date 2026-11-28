@@ -579,6 +579,42 @@ Forge impact — blast radius (hazard-aware)
     - src/session.js
 ```
 
+#### `forge impact --record` — the tests that actually run the code
+
+The graph reads imports and call sites, so it cannot see code reached through a computed name,
+a registry, an event, a dynamic import or a child process. On forgekit itself, most of the tests
+it misses run the CLI as a subprocess. `forge impact --record` adds the other kind of evidence.
+It runs every test file in its own process with V8's built-in coverage switched on
+(`NODE_V8_COVERAGE`, no dependency), and every process a test spawns inherits the switch. It then
+saves which functions each test file executed to `.forge/runtime-map.json`, which is per machine
+and kept out of git.
+
+```console
+$ forge impact --record
+  215 test file(s), 250 source file(s) executed, 137 s
+  command: node --test --import ./test/_setup.js {file}
+$ forge impact cortexBlock
+  …
+  run by tests: 27 test file(s) executed it (recorded 2026-11-28)
+    - test/cli_init.test.js  (not in the graph)
+    …
+  ! 10 of them reach it in a way the import graph cannot see
+```
+
+After a recording, every `forge impact <symbol|file>` lists the test files that executed the
+target and marks the ones the graph missed. `--json` carries them as `runtime.tests` and
+`runtime.missedByGraph`. `forge test-select` adds those tests to its selection for a medium-tier
+change. A source file that changed since the recording is reported (`runtime.stale`), never
+silently trusted: re-run `--record` after large changes.
+
+The per-file command follows the project's runner: `node --test {file}` keeping the test script's
+`--import`/`--require` preloads, `npx vitest run {file}`, `npx jest --runTestsByPath {file}` or
+`npx mocha {file}`. `--command "<cmd with {file}>"` overrides it, and `--jobs <n>` sets how many
+files run at once (default 4). It covers JavaScript and TypeScript run by Node. "Executed" means V8
+saw the function run at least once: a test that runs the code is not always a test that would
+fail if the code broke, and code no test runs is not in the map at all, so the graph still answers
+for it ([measured result](EVIDENCE.md#measured-evidence)).
+
 #### `forge impact --diff` — coupled files you did not name
 
 `forge impact --diff` asks the same question of the change you are making: the working
@@ -2669,8 +2705,9 @@ code reads but this table misses fails CI on the forge repo):
   still live in prose.
 - **`recall` / `cortex` are file + prompt memory**, not weight-level learning.
 - **The atlas graph is regex-approximate** — not a sound call graph, and not conservative:
-  it can miss affected files (dynamic dispatch and generated code among them), so an empty
-  impact set means "unknown", not "safe".
+  it can miss affected files (dynamic dispatch, child processes and generated code among them),
+  so an empty impact set means "unknown", not "safe". `forge impact --record` adds the tests that
+  actually executed the code; it does not see code that no test runs.
 - **`forge reuse`'s MinHash near-match is weak on very short specs** — a few words hash
   to too few shingles to rank reliably; write a sentence, not a keyword — or configure
   the optional `FORGE_EMBED` embeddings tier, which replaces exactly this term.
