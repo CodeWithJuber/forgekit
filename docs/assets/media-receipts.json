@@ -1,6 +1,6 @@
 {
   "demos": {
-    "input": "39653fb5dab6e69515356c02486e8b658df42ca8660f13f5ca83ec8219c129ff",
+    "input": "af6c9d5134e1d75cbb5e0190e3968c3de248998da3b53f0bd4a8066770373de3",
     "artifacts": {
       "docs/assets/demo.gif": "d069e21acb1e7c49a1ebf837706cf6f4cfe6c35dd48131443ec606fc97ff1fa8",
       "mintlify/images/supervised-setup.gif": "d069e21acb1e7c49a1ebf837706cf6f4cfe6c35dd48131443ec606fc97ff1fa8",
@@ -12,14 +12,14 @@
     }
   },
   "hero": {
-    "input": "47a91db74c80f5e89c5e595b3ebb1ca8e3f2232e39808d7b1c2876540c8dcdb7",
+    "input": "4e1d583a9fe44695404bf000dce646765fb56ea319bd51bea04155689b02df82",
     "artifacts": {
       "docs/assets/hero-light.svg": "d23e7e77d48282b0e4144f54aeb2c2e62f51bb61a6485b16c966d12c2121b07f",
       "docs/assets/hero-dark.svg": "98b6b2b3e8486068f6b1694085cc16054bfa42f65291155c00b947914098d300"
     }
   },
   "social": {
-    "input": "72721257e4ca223a0d6588be83a78f138181f5e38d72ba17b93fc748755b5826",
+    "input": "ebb463e64463b0b637622b9c97056f172d7b33704e6535d8eba7a17d9621024c",
     "artifacts": {
       "docs/assets/og.jpg": "efb9df0a84032b0f7332039755f22352f06822bb74a6a08a9faf085e3b251df0",
       ".github/assets/social-preview.png": "0d3340e726fca974f8784fcac558a93655cd64385b8e9e3f4a87a7c626b5366d",
@@ -27,7 +27,7 @@
     }
   },
   "dashboard": {
-    "input": "9fe2ac3c70a1a194dfab8d970048637fbf68d211c9343cf87285805a45efc16f",
+    "input": "20c20e3820d6cdb4de7b51b52f907cbb14b16e63d92d7421398cef2bc1fd7c2f",
     "artifacts": {
       "docs/assets/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b",
       "mintlify/images/dashboard.png": "03b612f16355a27df2178881c8aede5bf1fbf593647f47169c7d91a8971d887b"
