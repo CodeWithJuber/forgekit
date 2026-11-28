@@ -1,0 +1,90 @@
+name: PR sync
+
+# When master moves, bring every open same-repo pull request up to date and resolve the
+# conflicts that have one right answer (scripts/resolve-conflicts.mjs): lines both sides only
+# added (a table row, a list bullet) are kept in order, and machine-owned `forge:render`
+# blocks are rebuilt by `forge docs render`. A conflict where both sides edited the same
+# existing lines is left for a person, with one comment on the pull request naming the files.
+# Pull requests from forks are never touched.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: pr-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      # A push made with the default token does not start CI on the pull request; set
+      # FORGE_DOCS_TOKEN (the docs bot's token) so the synced head is tested like any push.
+      GH_TOKEN: ${{ secrets.FORGE_DOCS_TOKEN || github.token }}
+      FORGE_NO_HINT: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          package-manager-cache: false
+          node-version: 22.14.0
+
+      - name: Merge master into conflicting pull requests
+        run: |
+          gh auth setup-git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The resolver from master, not from the branch being merged.
+          cp scripts/resolve-conflicts.mjs "$RUNNER_TEMP/resolve-conflicts.mjs"
+          # GitHub computes mergeability after a push; wait until no PR reads UNKNOWN.
+          for attempt in 1 2 3 4 5 6; do
+            gh pr list --base master --state open --limit 100 \
+              --json number,headRefName,isCrossRepository,isDraft,mergeable > "$RUNNER_TEMP/prs.json"
+            if ! jq -e '[.[] | select(.mergeable == "UNKNOWN")] | length > 0' "$RUNNER_TEMP/prs.json" > /dev/null; then break; fi
+            sleep 10
+          done
+          jq -r '.[] | select(.isCrossRepository == false and .isDraft == false and .mergeable == "CONFLICTING")
+                 | select(.headRefName | test("^(release/|docs/auto-update$)") | not)
+                 | "\(.number) \(.headRefName)"' "$RUNNER_TEMP/prs.json" > "$RUNNER_TEMP/todo.txt"
+          if [[ ! -s "$RUNNER_TEMP/todo.txt" ]]; then
+            echo "::notice::No open pull request conflicts with master."
+            exit 0
+          fi
+          while read -r number branch; do
+            echo "::group::#$number ($branch)"
+            git checkout -q --detach origin/master
+            git fetch -q origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            git checkout -q -B "$branch" "origin/$branch"
+            if git merge --no-edit origin/master > /dev/null 2>&1 \
+               || node "$RUNNER_TEMP/resolve-conflicts.mjs" --commit; then
+              git push origin "HEAD:refs/heads/$branch"
+              echo "::notice::#$number: merged master and resolved its conflicts"
+            else
+              conflicted=$(git diff --name-only --diff-filter=U | sort)
+              files=$(sed 's/^/- `/; s/$/`/' <<< "$conflicted")
+              git merge --abort
+              # One comment per set of files, not one per push to master.
+              marker="<!-- pr-sync: $(tr '\n' ' ' <<< "$conflicted")-->"
+              if ! gh pr view "$number" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+                gh pr comment "$number" --body "$(printf '%s\n%s\n\n%s\n\n%s\n%s' "$marker" \
+                  "Merging master into this branch leaves conflicts where both sides changed the same lines, so they need a person:" \
+                  "$files" \
+                  "Everything else resolves on its own: run \`npm run sync:master\`, fix the files above, then commit." "")"
+              fi
+              echo "::warning::#$number: conflicts need a person"
+            fi
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/todo.txt"

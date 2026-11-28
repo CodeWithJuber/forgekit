@@ -40,6 +40,11 @@ npm run check     # Biome lint + format check
    [changelog.d/README.md](./changelog.d/README.md). (Skip it and the release still cuts,
    synthesizing notes from your commit subjects — but your wording is better.)
 6. Open a PR. CI (tests on Node 20/22, Biome, typecheck, shellcheck) must pass.
+7. Keeping the branch current: `npm run sync:master` merges master and resolves the conflicts
+   that have one right answer (`scripts/resolve-conflicts.mjs`): lines both sides only added,
+   such as two new rows in the same table, are both kept, and generated `forge:render` blocks
+   are rebuilt. Only a spot where both sides edited the same existing lines is left for you.
+   The PR sync workflow does the same for open PRs whenever master moves.
 
 ## Project shape
 
